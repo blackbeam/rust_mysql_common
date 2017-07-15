@@ -1,0 +1,12 @@
+[package]
+name = "mysql_common"
+version = "0.1.0"
+authors = ["blackbeam <aikorsky@gmail.com>"]
+
+[dependencies]
+bitflags = "0.9"
+byteorder = "1"
+chrono = "0.4"
+lazy_static = "0.2"
+regex = "0.2"
+time = "0.1"
