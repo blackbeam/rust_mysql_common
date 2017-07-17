@@ -587,12 +587,57 @@ impl<'a> fmt::Display for ErrPacket<'a> {
     }
 }
 
+pub struct LocalInfilePacket<'a> {
+    file_name: Cow<'a, [u8]>,
+}
+
+pub fn parse_local_infile_packet(payload: &[u8]) -> io::Result<LocalInfilePacket> {
+    LocalInfilePacket::parse(payload)
+}
+
+impl<'a> LocalInfilePacket<'a> {
+    fn parse(mut payload: &[u8]) -> io::Result<LocalInfilePacket> {
+        if payload.read_u8()? != 0xfb {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Invalid LOCAL_INFILE packet header",
+            ));
+        }
+
+        Ok(LocalInfilePacket {
+            file_name: payload.into(),
+        })
+    }
+
+    pub fn file_name_ref(&self) -> &[u8] {
+        self.file_name.as_ref()
+    }
+
+    pub fn file_name_str(&self) -> Cow<str> {
+        String::from_utf8_lossy(self.file_name.as_ref())
+    }
+
+    pub fn into_owned(self) -> LocalInfilePacket<'static> {
+        LocalInfilePacket {
+            file_name: self.file_name.into_owned().into(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod test {
     use constants::{CLIENT_PROGRESS_OBSOLETE, CLIENT_SESSION_TRACK, NOT_NULL_FLAG,
                     SERVER_SESSION_STATE_CHANGED, SERVER_STATUS_AUTOCOMMIT, UTF8_GENERAL_CI,
                     ColumnType, CapabilityFlags};
-    use super::{parse_column, parse_err_packet, parse_ok_packet, SessionStateChange};
+    use super::{parse_column, parse_err_packet, parse_local_infile_packet, parse_ok_packet, SessionStateChange};
+
+    #[test]
+    fn should_parse_local_infile_packet() {
+        const LIP: &[u8] = b"\xfbfile_name";
+
+        let lip = parse_local_infile_packet(LIP).unwrap();
+        assert_eq!(lip.file_name_str(), "file_name");
+    }
 
     #[test]
     fn should_parse_err_packet() {
