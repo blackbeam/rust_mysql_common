@@ -751,13 +751,64 @@ impl<'a> HandshakePacket<'a> {
     }
 }
 
+pub struct StmtPacket {
+    statement_id: u32,
+    num_columns: u16,
+    num_params: u16,
+    warning_count: u16,
+}
+
+pub fn parse_stmt_packet(payload: &[u8]) -> io::Result<StmtPacket> {
+    StmtPacket::parse(payload)
+}
+
+impl StmtPacket {
+    fn parse(mut payload: &[u8]) -> io::Result<StmtPacket> {
+        if payload.read_u8()? != 0x00 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Invalid statement packet status",
+            ));
+        }
+
+        let statement_id = payload.read_u32::<LE>()?;
+        let num_columns = payload.read_u16::<LE>()?;
+        let num_params = payload.read_u16::<LE>()?;
+        payload.read_u8()?;
+        let warning_count = payload.read_u16::<LE>()?;
+
+        Ok(StmtPacket {
+            statement_id,
+            num_columns,
+            num_params,
+            warning_count,
+        })
+    }
+
+    pub fn statement_id(&self) -> u32 {
+        self.statement_id
+    }
+
+    pub fn num_columns(&self) -> u16 {
+        self.num_columns
+    }
+
+    pub fn num_params(&self) -> u16 {
+        self.num_params
+    }
+
+    pub fn warning_count(&self) -> u16 {
+        self.warning_count
+    }
+}
+
 #[cfg(test)]
 mod test {
     use constants::{CLIENT_PROGRESS_OBSOLETE, CLIENT_SESSION_TRACK, NOT_NULL_FLAG,
                     SERVER_SESSION_STATE_CHANGED, SERVER_STATUS_AUTOCOMMIT, UTF8_GENERAL_CI,
                     CapabilityFlags, ColumnType, StatusFlags};
     use super::{parse_column, parse_err_packet, parse_handshake_packet, parse_local_infile_packet,
-                parse_ok_packet, SessionStateChange};
+                parse_ok_packet, parse_stmt_packet, SessionStateChange};
 
     #[test]
     fn should_parse_local_infile_packet() {
@@ -765,6 +816,24 @@ mod test {
 
         let lip = parse_local_infile_packet(LIP).unwrap();
         assert_eq!(lip.file_name_str(), "file_name");
+    }
+
+    #[test]
+    fn should_parse_stmt_packet() {
+        const SP: &[u8] = b"\x00\x01\x00\x00\x00\x01\x00\x02\x00\x00\x00\x00";
+        const SP_2: &[u8] = b"\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00";
+
+        let sp = parse_stmt_packet(SP).unwrap();
+        assert_eq!(sp.statement_id(), 0x01);
+        assert_eq!(sp.num_columns(), 0x01);
+        assert_eq!(sp.num_params(), 0x02);
+        assert_eq!(sp.warning_count(), 0x00);
+
+        let sp = parse_stmt_packet(SP_2).unwrap();
+        assert_eq!(sp.statement_id(), 0x01);
+        assert_eq!(sp.num_columns(), 0x00);
+        assert_eq!(sp.num_params(), 0x00);
+        assert_eq!(sp.warning_count(), 0x00);
     }
 
     #[test]
