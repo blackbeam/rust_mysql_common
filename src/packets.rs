@@ -1,8 +1,10 @@
 use io::ReadMysqlExt;
 use byteorder::{LittleEndian as LE, ReadBytesExt};
-use constants::{CLIENT_PROGRESS_OBSOLETE, CLIENT_SESSION_TRACK, SERVER_SESSION_STATE_CHANGED,
-                CapabilityFlags, ColumnFlags, ColumnType, SessionStateType, StatusFlags};
+use constants::{CLIENT_PLUGIN_AUTH, CLIENT_PROGRESS_OBSOLETE, CLIENT_SECURE_CONNECTION,
+                CLIENT_SESSION_TRACK, SERVER_SESSION_STATE_CHANGED, CapabilityFlags, ColumnFlags,
+                ColumnType, SessionStateType, StatusFlags};
 use std::borrow::Cow;
+use std::cmp::max;
 use std::fmt;
 use std::io;
 use std::ptr;
@@ -387,12 +389,7 @@ impl<'a> ProgressReport<'a> {
         progress: u32,
         stage_info: &'x [u8],
     ) -> ProgressReport<'x> {
-        ProgressReport {
-            stage,
-            max_stage,
-            progress,
-            stage_info: stage_info.into(),
-        }
+        ProgressReport { stage, max_stage, progress, stage_info: stage_info.into() }
     }
 
     /// 1 to max_stage
@@ -604,9 +601,7 @@ impl<'a> LocalInfilePacket<'a> {
             ));
         }
 
-        Ok(LocalInfilePacket {
-            file_name: payload.into(),
-        })
+        Ok(LocalInfilePacket { file_name: payload.into() })
     }
 
     pub fn file_name_ref(&self) -> &[u8] {
@@ -618,9 +613,141 @@ impl<'a> LocalInfilePacket<'a> {
     }
 
     pub fn into_owned(self) -> LocalInfilePacket<'static> {
-        LocalInfilePacket {
-            file_name: self.file_name.into_owned().into(),
+        LocalInfilePacket { file_name: self.file_name.into_owned().into() }
+    }
+}
+
+pub struct HandshakePacket<'a> {
+    protocol_version: u8,
+    server_version: Cow<'a, [u8]>,
+    connection_id: u32,
+    scramble_1: Cow<'a, [u8]>,
+    scramble_2: Option<Cow<'a, [u8]>>,
+    capabilities: CapabilityFlags,
+    default_collation: u8,
+    status_flags: StatusFlags,
+    auth_plugin_name: Option<Cow<'a, [u8]>>,
+}
+
+pub fn parse_handshake_packet(payload: &[u8]) -> io::Result<HandshakePacket> {
+    HandshakePacket::parse(payload)
+}
+
+impl<'a> HandshakePacket<'a> {
+    fn parse(mut payload: &[u8]) -> io::Result<HandshakePacket> {
+        let protocol_version = payload.read_u8()?;
+        let mut nul_byte_pos = 0;
+        for (i, byte) in payload.iter().enumerate() {
+            if *byte == 0x00 {
+                nul_byte_pos = i;
+                break;
+            }
         }
+        let (server_version, mut payload) =
+            split_at_or_err!(payload, nul_byte_pos, "Invalid handshake packet")?;
+        payload.read_u8()?;
+        let connection_id = payload.read_u32::<LE>()?;
+        let (scramble_1, mut payload) = split_at_or_err!(payload, 8, "Invalid handshake packet")?;
+        payload.read_u8()?;
+        let capabilities_1 = payload.read_u16::<LE>()?;
+        let default_collation = payload.read_u8()?;
+        let status_flags = payload.read_u16::<LE>()?;
+        let capabilities_2 = payload.read_u16::<LE>()?;
+        let capabilities = CapabilityFlags::from_bits_truncate(
+            capabilities_1 as u32 | ((capabilities_2 as u32) << 16),
+        );
+        let scramble_len = payload.read_u8()?;
+        let (_, payload) = split_at_or_err!(payload, 10, "Invalid handshake packet")?;
+        let (scramble_2, payload) = if capabilities.contains(CLIENT_SECURE_CONNECTION) {
+            let (scramble_2, mut payload) = split_at_or_err!(
+                payload,
+                max(12, (scramble_len as i8 - 9)) as usize,
+                "Invalid handshake packet"
+            )?;
+            payload.read_u8()?;
+            (Some(scramble_2), payload)
+        } else {
+            (None, payload)
+        };
+        let auth_plugin_name = if capabilities.contains(CLIENT_PLUGIN_AUTH) {
+            if payload[payload.len() - 1] == 0x00 {
+                Some(&payload[..payload.len() - 1])
+            } else {
+                Some(payload)
+            }
+
+        } else {
+            None
+        };
+        Ok(HandshakePacket {
+            protocol_version,
+            server_version: server_version.into(),
+            connection_id,
+            scramble_1: scramble_1.into(),
+            scramble_2: scramble_2.map(Into::into),
+            capabilities,
+            default_collation,
+            status_flags: StatusFlags::from_bits_truncate(status_flags),
+            auth_plugin_name: auth_plugin_name.map(Into::into),
+        })
+    }
+
+    pub fn into_owned(self) -> HandshakePacket<'static> {
+        HandshakePacket {
+            protocol_version: self.protocol_version,
+            server_version: self.server_version.into_owned().into(),
+            connection_id: self.connection_id,
+            scramble_1: self.scramble_1.into_owned().into(),
+            scramble_2: self.scramble_2.map(Cow::into_owned).map(Into::into),
+            capabilities: self.capabilities,
+            default_collation: self.default_collation,
+            status_flags: self.status_flags,
+            auth_plugin_name: self.auth_plugin_name.map(Cow::into_owned).map(Into::into),
+        }
+    }
+
+    pub fn protocol_version(&self) -> u8 {
+        self.protocol_version
+    }
+
+    pub fn server_version_ref(&self) -> &[u8] {
+        self.server_version.as_ref()
+    }
+
+    pub fn server_version_str(&self) -> Cow<str> {
+        String::from_utf8_lossy(self.server_version_ref())
+    }
+
+    pub fn connection_id(&self) -> u32 {
+        self.connection_id
+    }
+
+    pub fn scramble_1_ref(&self) -> &[u8] {
+        self.scramble_1.as_ref()
+    }
+
+    pub fn scramble_2_ref(&self) -> Option<&[u8]> {
+        self.scramble_2.as_ref().map(Cow::as_ref)
+    }
+
+    pub fn capabilities(&self) -> CapabilityFlags {
+        self.capabilities
+    }
+
+    pub fn default_collation(&self) -> u8 {
+        self.default_collation
+    }
+
+    pub fn status_flags(&self) -> StatusFlags {
+        self.status_flags
+    }
+
+    pub fn auth_plugin_name_ref(&self) -> Option<&[u8]> {
+        self.auth_plugin_name.as_ref().map(Cow::as_ref)
+    }
+
+    pub fn auth_plugin_name_str(&self) -> Option<Cow<str>> {
+        self.auth_plugin_name_ref().map(String::from_utf8_lossy)
     }
 }
 
@@ -628,8 +755,9 @@ impl<'a> LocalInfilePacket<'a> {
 mod test {
     use constants::{CLIENT_PROGRESS_OBSOLETE, CLIENT_SESSION_TRACK, NOT_NULL_FLAG,
                     SERVER_SESSION_STATE_CHANGED, SERVER_STATUS_AUTOCOMMIT, UTF8_GENERAL_CI,
-                    ColumnType, CapabilityFlags};
-    use super::{parse_column, parse_err_packet, parse_local_infile_packet, parse_ok_packet, SessionStateChange};
+                    CapabilityFlags, ColumnType, StatusFlags};
+    use super::{parse_column, parse_err_packet, parse_handshake_packet, parse_local_infile_packet,
+                parse_ok_packet, SessionStateChange};
 
     #[test]
     fn should_parse_local_infile_packet() {
@@ -637,6 +765,52 @@ mod test {
 
         let lip = parse_local_infile_packet(LIP).unwrap();
         assert_eq!(lip.file_name_str(), "file_name");
+    }
+
+    #[test]
+    fn should_parse_handshake_packet() {
+        const HSP: &[u8] = b"\x0a\x35\x2e\x35\x2e\x32\x2d\x6d\x32\x00\x0b\x00\
+                             \x00\x00\x64\x76\x48\x40\x49\x2d\x43\x4a\x00\xff\xf7\x08\x02\x00\
+                             \x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x2a\x34\x64\
+                             \x7c\x63\x5a\x77\x6b\x34\x5e\x5d\x3a\x00";
+
+        const HSP_2: &[u8] = b"\x0a\x35\x2e\x36\x2e\x34\x2d\x6d\x37\x2d\x6c\x6f\
+                               \x67\x00\x56\x0a\x00\x00\x52\x42\x33\x76\x7a\x26\x47\x72\x00\xff\
+                               \xff\x08\x02\x00\x0f\xc0\x15\x00\x00\x00\x00\x00\x00\x00\x00\x00\
+                               \x00\x2b\x79\x44\x26\x2f\x5a\x5a\x33\x30\x35\x5a\x47\x00\x6d\x79\
+                               \x73\x71\x6c\x5f\x6e\x61\x74\x69\x76\x65\x5f\x70\x61\x73\x73\x77\
+                               \x6f\x72\x64\x00";
+
+        let hsp = parse_handshake_packet(HSP).unwrap();
+        assert_eq!(hsp.protocol_version, 0x0a);
+        assert_eq!(hsp.server_version_str(), "5.5.2-m2");
+        assert_eq!(hsp.connection_id(), 0x0b);
+        assert_eq!(hsp.scramble_1_ref(), b"dvH@I-CJ");
+        assert_eq!(
+            hsp.capabilities(),
+            CapabilityFlags::from_bits_truncate(0xf7ff)
+        );
+        assert_eq!(hsp.default_collation(), 0x08);
+        assert_eq!(hsp.status_flags(), StatusFlags::from_bits_truncate(0x0002));
+        assert_eq!(hsp.scramble_2_ref(), Some(&b"*4d|cZwk4^]:"[..]));
+        assert_eq!(hsp.auth_plugin_name_ref(), None);
+
+        let hsp = parse_handshake_packet(HSP_2).unwrap();
+        assert_eq!(hsp.protocol_version, 0x0a);
+        assert_eq!(hsp.server_version_str(), "5.6.4-m7-log");
+        assert_eq!(hsp.connection_id(), 0x0a56);
+        assert_eq!(hsp.scramble_1_ref(), b"RB3vz&Gr");
+        assert_eq!(
+            hsp.capabilities(),
+            CapabilityFlags::from_bits_truncate(0xc00fffff)
+        );
+        assert_eq!(hsp.default_collation(), 0x08);
+        assert_eq!(hsp.status_flags(), StatusFlags::from_bits_truncate(0x0002));
+        assert_eq!(hsp.scramble_2_ref(), Some(&b"+yD&/ZZ305ZG"[..]));
+        assert_eq!(
+            hsp.auth_plugin_name_ref(),
+            Some(&b"mysql_native_password"[..])
+        );
     }
 
     #[test]
