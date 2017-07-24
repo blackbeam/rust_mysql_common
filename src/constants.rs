@@ -381,7 +381,7 @@ pub enum Command {
     COM_END,
 }
 
-/// Type of state change information that the server can include in the Ok packet.
+/// Type of state change information (part of MySql's Ok packet).
 #[allow(non_camel_case_types)]
 #[derive(Clone, Copy, Eq, PartialEq, Debug)]
 #[repr(u8)]

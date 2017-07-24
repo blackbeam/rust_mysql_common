@@ -28,14 +28,17 @@ pub enum Value {
     Time(bool, u32, u8, u8, u8, u32),
 }
 
+/// Reads value in text format.
 pub fn read_text_value(input: &mut &[u8]) -> io::Result<Value> {
     Value::read_text(input)
 }
 
+/// Reads multiple values in text format.
 pub fn read_text_values(input: &[u8], count: usize) -> io::Result<SmallVec<[Value; 12]>> {
     Value::read_text_many(input, count)
 }
 
+/// Reads value in binary format.
 pub fn read_bin_value(
     input: &mut &[u8],
     column_type: ColumnType,
@@ -44,10 +47,13 @@ pub fn read_bin_value(
     Value::read_bin(input, column_type, unsigned)
 }
 
+/// Reads multiple values in binary format.
 pub fn read_bin_values(input: &[u8], columns: &[Column]) -> io::Result<SmallVec<[Value; 12]>> {
     Value::read_bin_many(input, columns)
 }
 
+/// Will serialize multiple `values` in binary format as `params` using passed
+/// `max_allowed_packet` value.
 pub fn serialize_bin_many(
     params: &[Column],
     values: &[Value],

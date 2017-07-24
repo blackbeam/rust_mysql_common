@@ -39,6 +39,7 @@ macro_rules! params {
     );
 }
 
+/// Non panicking Slice::split_at
 macro_rules! split_at_or_err {
     ($reader:expr, $at:expr, $msg:expr) => {
         if $reader.len() >= $at {
@@ -49,6 +50,7 @@ macro_rules! split_at_or_err {
     };
 }
 
+/// Reads MySql's length-encoded string
 #[macro_export]
 macro_rules! read_lenenc_str {
     ($reader:expr) => {

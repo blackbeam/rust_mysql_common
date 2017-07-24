@@ -59,7 +59,7 @@ impl<T: DeserializeOwned> FromValue for Deserialized<T> {
     type Intermediate = DeserializedIr<T>;
 }
 
-
+/// Intermediate result of a Value-to-Json conversion.
 #[derive(Debug)]
 pub struct JsonIr {
     bytes: Vec<u8>,

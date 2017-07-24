@@ -141,6 +141,7 @@ impl<'a> Index<&'a str> for Row {
     }
 }
 
+/// Things that may be used as an index of a row column.
 pub trait ColumnIndex {
     fn idx(&self, columns: &Vec<Column>) -> Option<usize>;
 }

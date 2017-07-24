@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 
+/// Appears if a statement have both named and positional parameters.
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct MixedParamsError;
 
@@ -13,6 +14,11 @@ enum ParserState {
 
 use self::ParserState::*;
 
+/// Returns pair of:
+///
+/// * names of named parameters (if any) in order of appearance in `query`. Same name may
+///   appear multiple times if named parameter used more than once.
+/// * query string to pass to MySql (named parameters replaced with `?`).
 pub fn parse_named_params<'a>(
     query: &'a str,
 ) -> Result<(Option<Vec<String>>, Cow<'a, str>), MixedParamsError> {

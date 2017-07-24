@@ -28,6 +28,7 @@ lazy_static! {
     };
 }
 
+/// Represents MySql Column (column packet).
 #[derive(Clone, Eq, PartialEq, Debug)]
 pub struct Column {
     payload: Vec<u8>,
@@ -43,11 +44,13 @@ pub struct Column {
     decimals: u8,
 }
 
+/// Converts column-packet payload to an instance of `Column` structure.
 pub fn column_from_payload(payload: Vec<u8>) -> io::Result<Column> {
     Column::from_payload(payload)
 }
 
 impl Column {
+    /// Converts column-packet payload to an instance of `Column` structure.
     fn from_payload(payload: Vec<u8>) -> io::Result<Column> {
         let schema;
         let table;
@@ -91,67 +94,87 @@ impl Column {
         })
     }
 
+    /// Returns value of the column_length field of a column packet.
     pub fn column_length(&self) -> u32 {
         self.column_length
     }
 
+    /// Returns value of the column_type field of a column packet.
     pub fn column_type(&self) -> ColumnType {
         self.column_type
     }
 
+    /// Returns value of the character_set field of a column packet.
     pub fn character_set(&self) -> u16 {
         self.character_set
     }
 
+    /// Returns value of the flags field of a column packet.
     pub fn flags(&self) -> ColumnFlags {
         self.flags
     }
 
+    /// Returns value of the decimals field of a column packet.
     pub fn decimals(&self) -> u8 {
         self.decimals
     }
 
+    /// Returns value of the schema field of a column packet as a byte slice.
     pub fn schema_ref(&self) -> &[u8] {
         &self.payload[self.schema.0..self.schema.0 + self.schema.1]
     }
 
+    /// Returns value of the schema field of a column packet as a string (lossy converted).
     pub fn schema_str(&self) -> Cow<str> {
         String::from_utf8_lossy(self.schema_ref())
     }
 
+    /// Returns value of the table field of a column packet as a byte slice.
     pub fn table_ref(&self) -> &[u8] {
         &self.payload[self.table.0..self.table.0 + self.table.1]
     }
 
+    /// Returns value of the table field of a column packet as a string (lossy converted).
     pub fn table_str(&self) -> Cow<str> {
         String::from_utf8_lossy(self.table_ref())
     }
 
+    /// Returns value of the org_table field of a column packet as a byte slice.
+    ///
+    /// "org_table" is for original table name.
     pub fn org_table_ref(&self) -> &[u8] {
         &self.payload[self.org_table.0..self.org_table.0 + self.org_table.1]
     }
 
+    /// Returns value of the org_table field of a column packet as a string (lossy converted).
     pub fn org_table_str(&self) -> Cow<str> {
         String::from_utf8_lossy(self.org_table_ref())
     }
 
+    /// Returns value of the name field of a column packet as a byte slice.
     pub fn name_ref(&self) -> &[u8] {
         &self.payload[self.name.0..self.name.0 + self.name.1]
     }
 
+    /// Returns value of the name field of a column packet as a string (lossy converted).
     pub fn name_str(&self) -> Cow<str> {
         String::from_utf8_lossy(self.name_ref())
     }
 
+    /// Returns value of the org_name field of a column packet as a byte slice.
+    ///
+    /// "org_name" is for original column name.
     pub fn org_name_ref(&self) -> &[u8] {
         &self.payload[self.org_name.0..self.org_name.0 + self.org_name.1]
     }
 
+    /// Returns value of the org_name field of a column packet as a string (lossy converted).
     pub fn org_name_str(&self) -> Cow<str> {
         String::from_utf8_lossy(self.org_name_ref())
     }
 }
 
+/// Represents parsed change in session state (part of MySql's Ok packet).
 #[derive(Clone, Eq, PartialEq, Debug)]
 pub enum SessionStateChange<'a> {
     IsTracked(bool),
@@ -180,6 +203,7 @@ impl<'a> SessionStateChange<'a> {
     }
 }
 
+/// Represents change in session state (part of MySql's Ok packet).
 #[derive(Clone, Eq, PartialEq, Debug)]
 pub struct SessionStateInfo<'a> {
     data_type: SessionStateType,
@@ -233,6 +257,7 @@ impl<'a> SessionStateInfo<'a> {
     }
 }
 
+/// Represents MySql's Ok packet.
 #[derive(Clone, Eq, PartialEq, Debug)]
 pub struct OkPacket<'a> {
     affected_rows: u64,
@@ -243,11 +268,13 @@ pub struct OkPacket<'a> {
     session_state_info: Option<SessionStateInfo<'a>>,
 }
 
+/// Parses Ok packet from `payload` assuming passed client-server `capabilities`.
 pub fn parse_ok_packet(payload: &[u8], capabilities: CapabilityFlags) -> io::Result<OkPacket> {
     OkPacket::parse(payload, capabilities)
 }
 
 impl<'a> OkPacket<'a> {
+    /// Parses Ok packet from `payload` assuming passed client-server `capabilities`.
     fn parse<'x>(mut payload: &'x [u8], capabilities: CapabilityFlags) -> io::Result<OkPacket<'x>> {
         let header = payload.read_u8()?;
         let (affected_rows, last_insert_id, status_flags, warnings, info, session_state_info) =
@@ -332,26 +359,32 @@ impl<'a> OkPacket<'a> {
         }
     }
 
+    /// Value of the affected_rows field of an Ok packet.
     pub fn affected_rows(&self) -> u64 {
         self.affected_rows
     }
 
+    /// Value of the last_insert_id field of an Ok packet.
     pub fn last_insert_id(&self) -> Option<u64> {
         self.last_insert_id
     }
 
+    /// Value of the status_flags field of an Ok packet.
     pub fn status_flags(&self) -> StatusFlags {
         self.status_flags
     }
 
+    /// Value of the warnings field of an Ok packet.
     pub fn warnings(&self) -> u16 {
         self.warnings
     }
 
+    /// Value of the info field of an Ok packet as a byte slice.
     pub fn info_ref(&self) -> Option<&[u8]> {
         self.info.as_ref().map(|x| x.as_ref())
     }
 
+    /// Value of the info field of an Ok packet as a string (lossy converted).
     pub fn info_str<'x>(&'x self) -> Option<Cow<'x, str>> {
         self.info.as_ref().map(
             |x| String::from_utf8_lossy(x.as_ref()),
@@ -363,6 +396,7 @@ impl<'a> OkPacket<'a> {
     }
 }
 
+/// Progress report information (may be in an error packet of MariaDB server).
 #[derive(Debug, PartialEq, Clone)]
 pub struct ProgressReport<'a> {
     stage: u8,
@@ -395,12 +429,12 @@ impl<'a> ProgressReport<'a> {
         self.progress
     }
 
-    /// Status or state name
+    /// Status or state name as a byte slice.
     pub fn stage_info_ref(&self) -> &[u8] {
         &self.stage_info.as_ref()
     }
 
-    /// Status or state name
+    /// Status or state name as a string (lossy converted).
     pub fn stage_info_str(&self) -> Cow<str> {
         String::from_utf8_lossy(self.stage_info.as_ref())
     }
@@ -439,11 +473,13 @@ pub enum ErrPacket<'a> {
     Progress(ProgressReport<'a>),
 }
 
+/// Parses error packet from `payload` assuming passed client-server `capabilities`.
 pub fn parse_err_packet(payload: &[u8], capabilities: CapabilityFlags) -> io::Result<ErrPacket> {
     ErrPacket::parse(payload, capabilities)
 }
 
 impl<'a> ErrPacket<'a> {
+    /// Parses error packet from `payload` assuming passed client-server `capabilities`.
     fn parse(mut payload: &[u8], capabilities: CapabilityFlags) -> io::Result<ErrPacket> {
         if payload.read_u8()? != 0xFF {
             return Err(io::Error::new(
@@ -485,6 +521,7 @@ impl<'a> ErrPacket<'a> {
         }
     }
 
+    /// Returns false if this error packet contains progress report.
     pub fn is_error(&self) -> bool {
         match *self {
             ErrPacket::Error(..) => true,
@@ -492,6 +529,7 @@ impl<'a> ErrPacket<'a> {
         }
     }
 
+    /// Returns true if this error packet contains progress report.
     pub fn is_progress_report(&self) -> bool {
         !self.is_error()
     }
@@ -573,15 +611,18 @@ impl<'a> fmt::Display for ErrPacket<'a> {
     }
 }
 
+/// Represents MySql's local infile packet.
 pub struct LocalInfilePacket<'a> {
     file_name: Cow<'a, [u8]>,
 }
 
+/// Will parse payload as a local infile packet.
 pub fn parse_local_infile_packet(payload: &[u8]) -> io::Result<LocalInfilePacket> {
     LocalInfilePacket::parse(payload)
 }
 
 impl<'a> LocalInfilePacket<'a> {
+    /// Will parse payload as a local infile packet.
     fn parse(mut payload: &[u8]) -> io::Result<LocalInfilePacket> {
         if payload.read_u8()? != 0xfb {
             return Err(io::Error::new(
@@ -593,10 +634,12 @@ impl<'a> LocalInfilePacket<'a> {
         Ok(LocalInfilePacket { file_name: payload.into() })
     }
 
+    /// Value of the file_name field of a local infile packet as a byte slice.
     pub fn file_name_ref(&self) -> &[u8] {
         self.file_name.as_ref()
     }
 
+    /// Value of the file_name field of a local infile packet as a string (lossy converted).
     pub fn file_name_str(&self) -> Cow<str> {
         String::from_utf8_lossy(self.file_name.as_ref())
     }
@@ -606,6 +649,7 @@ impl<'a> LocalInfilePacket<'a> {
     }
 }
 
+/// Represents MySql's initial handshake packet.
 pub struct HandshakePacket<'a> {
     protocol_version: u8,
     server_version: Cow<'a, [u8]>,
@@ -618,11 +662,13 @@ pub struct HandshakePacket<'a> {
     auth_plugin_name: Option<Cow<'a, [u8]>>,
 }
 
+/// Parses payload as an initial handshake packet.
 pub fn parse_handshake_packet(payload: &[u8]) -> io::Result<HandshakePacket> {
     HandshakePacket::parse(payload)
 }
 
 impl<'a> HandshakePacket<'a> {
+    /// Parses payload as an initial handshake packet.
     fn parse(mut payload: &[u8]) -> io::Result<HandshakePacket> {
         let protocol_version = payload.read_u8()?;
         let mut nul_byte_pos = 0;
@@ -695,18 +741,25 @@ impl<'a> HandshakePacket<'a> {
         }
     }
 
+    /// Value of the protocol_version field of an initial handshake packet.
     pub fn protocol_version(&self) -> u8 {
         self.protocol_version
     }
 
+    /// Value of the server_version field of an initial handshake packet as a byte slice.
     pub fn server_version_ref(&self) -> &[u8] {
         self.server_version.as_ref()
     }
 
+    /// Value of the server_version field of an initial handshake packet as a string
+    /// (lossy converted).
     pub fn server_version_str(&self) -> Cow<str> {
         String::from_utf8_lossy(self.server_version_ref())
     }
 
+    /// Parsed server version.
+    ///
+    /// Will parse first \d+.\d+.\d+ of a server version string (if any).
     pub fn server_version_parsed(&self) -> Option<(u16, u16, u16)> {
         VERSION_RE.captures(self.server_version_ref())
             .map(|captures| {
@@ -719,6 +772,7 @@ impl<'a> HandshakePacket<'a> {
             })
     }
 
+    /// Parsed mariadb server version.
     pub fn maria_db_server_version_parsed(&self) -> Option<(u16, u16, u16)> {
         MARIADB_VERSION_RE.captures(self.server_version_ref())
             .map(|captures| {
@@ -731,39 +785,49 @@ impl<'a> HandshakePacket<'a> {
             })
     }
 
+    /// Value of the connection_id field of an initial handshake packet.
     pub fn connection_id(&self) -> u32 {
         self.connection_id
     }
 
+    /// Value of the scramble_1 field of an initial handshake packet as a byte slice.
     pub fn scramble_1_ref(&self) -> &[u8] {
         self.scramble_1.as_ref()
     }
 
+    /// Value of the scramble_2 field of an initial handshake packet as a byte slice.
     pub fn scramble_2_ref(&self) -> Option<&[u8]> {
         self.scramble_2.as_ref().map(Cow::as_ref)
     }
 
+    /// Value of a server capabilities.
     pub fn capabilities(&self) -> CapabilityFlags {
         self.capabilities
     }
 
+    /// Value of the default_collation field of an initial handshake packet.
     pub fn default_collation(&self) -> u8 {
         self.default_collation
     }
 
+    /// Value of a status flags.
     pub fn status_flags(&self) -> StatusFlags {
         self.status_flags
     }
 
+    /// Value of the auth_plugin_name field of an initial handshake packet as a byte slice.
     pub fn auth_plugin_name_ref(&self) -> Option<&[u8]> {
         self.auth_plugin_name.as_ref().map(Cow::as_ref)
     }
 
+    /// Value of the auth_plugin_name field of an initial handshake packet as a string
+    /// (lossy converted).
     pub fn auth_plugin_name_str(&self) -> Option<Cow<str>> {
         self.auth_plugin_name_ref().map(String::from_utf8_lossy)
     }
 }
 
+/// Represents MySql's statement packet.
 pub struct StmtPacket {
     statement_id: u32,
     num_columns: u16,
@@ -771,11 +835,13 @@ pub struct StmtPacket {
     warning_count: u16,
 }
 
+/// Parses payload as a statement packet.
 pub fn parse_stmt_packet(payload: &[u8]) -> io::Result<StmtPacket> {
     StmtPacket::parse(payload)
 }
 
 impl StmtPacket {
+    /// Parses payload as a statement packet.
     fn parse(mut payload: &[u8]) -> io::Result<StmtPacket> {
         if payload.read_u8()? != 0x00 {
             return Err(io::Error::new(
@@ -798,18 +864,22 @@ impl StmtPacket {
         })
     }
 
+    /// Value of the statement_id field of a statement packet.
     pub fn statement_id(&self) -> u32 {
         self.statement_id
     }
 
+    /// Value of the num_columns field of a statement packet.
     pub fn num_columns(&self) -> u16 {
         self.num_columns
     }
 
+    /// Value of the num_params field of a statement packet.
     pub fn num_params(&self) -> u16 {
         self.num_params
     }
 
+    /// Value of the warning_count field of a statement packet.
     pub fn warning_count(&self) -> u16 {
         self.warning_count
     }

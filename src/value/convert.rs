@@ -198,6 +198,7 @@ macro_rules! impl_from_value_num {
     );
 }
 
+/// Intermediate result of a Value-to-Option<T> conversion.
 #[derive(Debug)]
 pub struct OptionIr<T> {
     value: Option<Value>,
@@ -276,6 +277,7 @@ impl FromValue for Value {
     }
 }
 
+/// Intermediate result of a Value-to-String conversion.
 #[derive(Debug)]
 pub struct StringIr {
     bytes: Vec<u8>,
@@ -301,6 +303,7 @@ impl ConvIr<String> for StringIr {
     }
 }
 
+/// Intermediate result of a Value-to-Integer conversion.
 #[derive(Debug)]
 pub struct ParseIr<T> {
     value: Value,
@@ -429,6 +432,7 @@ impl ConvIr<bool> for ParseIr<bool> {
     }
 }
 
+/// Intermediate result of a Value-to-Vec<u8> conversion.
 #[derive(Debug)]
 pub struct BytesIr {
     bytes: Vec<u8>,
@@ -1065,6 +1069,7 @@ impl Into<Value> for Uuid {
     }
 }
 
+/// Intermediate result of a Value-to-Uuid conversion.
 #[derive(Debug)]
 pub struct UuidIr {
     val: Uuid,

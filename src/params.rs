@@ -28,6 +28,7 @@ impl Error for MissingNamedParameterError {
     }
 }
 
+/// Representations of parameters of a prepared statement.
 #[derive(PartialEq, Clone, Debug)]
 pub enum Params {
     Empty,
@@ -36,6 +37,8 @@ pub enum Params {
 }
 
 impl Params {
+    /// Will convert named parameters into positional assuming order passed in `named_params`
+    /// attribute.
     pub fn into_positional(self, named_params: &Vec<String>) -> Result<Params, MissingNamedParameterError> {
         match self {
             Params::Named(mut map) => {
