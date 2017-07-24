@@ -1,39 +1,41 @@
+use atoi::atoi;
 use io::ReadMysqlExt;
 use byteorder::{LittleEndian as LE, ReadBytesExt};
 use constants::{CLIENT_PLUGIN_AUTH, CLIENT_PROGRESS_OBSOLETE, CLIENT_SECURE_CONNECTION,
                 CLIENT_SESSION_TRACK, SERVER_SESSION_STATE_CHANGED, CapabilityFlags, ColumnFlags,
                 ColumnType, SessionStateType, StatusFlags};
+use regex::bytes::Regex;
 use std::borrow::Cow;
 use std::cmp::max;
 use std::fmt;
 use std::io;
 use std::ptr;
 
-macro_rules! split_at_or_err {
-    ($reader:expr, $at:expr, $msg:expr) => {
-        if $reader.len() >= $at {
-            Ok($reader.split_at($at))
-        } else {
-            Err(io::Error::new(io::ErrorKind::UnexpectedEof, $msg))
-        }
-    };
+macro_rules! get_offset_and_len {
+    ($buffer:expr, $slice:expr) => {{
+        let val = $slice;
+        (val.as_ptr() as usize - $buffer.as_ptr() as usize, val.len())
+    }};
 }
 
-macro_rules! read_lenenc_str {
-    ($reader:expr) => {
-        $reader.read_lenenc_int().and_then(|len| {
-            split_at_or_err!($reader, len as usize, "EOF while reading length-encoded string")
-        })
+lazy_static! {
+    static ref MARIADB_VERSION_RE: Regex = {
+        Regex::new(r"^5.5.5-(\d{1,2})\.(\d{1,2})\.(\d{1,3})-MariaDB").unwrap()
+    };
+
+    static ref VERSION_RE: Regex = {
+        Regex::new(r"^(\d{1,2})\.(\d{1,2})\.(\d{1,3})(.*)").unwrap()
     };
 }
 
 #[derive(Clone, Eq, PartialEq, Debug)]
-pub struct Column<'a> {
-    schema: Cow<'a, [u8]>,
-    table: Cow<'a, [u8]>,
-    org_table: Cow<'a, [u8]>,
-    name: Cow<'a, [u8]>,
-    org_name: Cow<'a, [u8]>,
+pub struct Column {
+    payload: Vec<u8>,
+    schema: (usize, usize),
+    table: (usize, usize),
+    org_table: (usize, usize),
+    name: (usize, usize),
+    org_name: (usize, usize),
     column_length: u32,
     character_set: u16,
     flags: ColumnFlags,
@@ -41,65 +43,52 @@ pub struct Column<'a> {
     decimals: u8,
 }
 
-pub fn parse_column(payload: &[u8]) -> io::Result<Column> {
-    Column::parse(payload)
+pub fn column_from_payload(payload: Vec<u8>) -> io::Result<Column> {
+    Column::from_payload(payload)
 }
 
-impl<'a> Column<'a> {
-    fn parse<'x>(payload: &'x [u8]) -> io::Result<Column<'x>> {
-        // Skip "def"
-        let mut reader = &payload[4..];
-        let (schema, mut reader) = read_lenenc_str!(reader)?;
-        let (table, mut reader) = read_lenenc_str!(reader)?;
-        let (org_table, mut reader) = read_lenenc_str!(reader)?;
-        let (name, mut reader) = read_lenenc_str!(reader)?;
-        let (org_name, mut reader) = read_lenenc_str!(reader)?;
-        reader = &reader[1..];
-        let character_set = reader.read_u16::<LE>()?;
-        let column_length = reader.read_u32::<LE>()?;
-        let column_type = reader.read_u8()?;
-        let flags = reader.read_u16::<LE>()?;
-        let decimals = reader.read_u8()?;
+impl Column {
+    fn from_payload(payload: Vec<u8>) -> io::Result<Column> {
+        let schema;
+        let table;
+        let org_table;
+        let name;
+        let org_name;
+        let character_set;
+        let column_length;
+        let column_type;
+        let flags;
+        let decimals;
+
+        {
+            // Skip "def"
+            let mut reader = &payload[4..];
+            schema = get_offset_and_len!(payload, read_lenenc_str!(&mut reader)?);
+            table = get_offset_and_len!(payload, read_lenenc_str!(&mut reader)?);
+            org_table = get_offset_and_len!(payload, read_lenenc_str!(&mut reader)?);
+            name = get_offset_and_len!(payload, read_lenenc_str!(&mut reader)?);
+            org_name = get_offset_and_len!(payload, read_lenenc_str!(&mut reader)?);
+            reader = &reader[1..];
+            character_set = reader.read_u16::<LE>()?;
+            column_length = reader.read_u32::<LE>()?;
+            column_type = reader.read_u8()?;
+            flags = reader.read_u16::<LE>()?;
+            decimals = reader.read_u8()?;
+        }
 
         Ok(Column {
-            schema: schema.into(),
-            table: table.into(),
-            org_table: org_table.into(),
-            name: name.into(),
-            org_name: org_name.into(),
+            schema,
+            table,
+            org_table,
+            name,
+            org_name,
+            payload: payload,
             column_length,
             character_set,
             flags: ColumnFlags::from_bits_truncate(flags),
             column_type: ColumnType::from(column_type),
             decimals,
         })
-    }
-
-    pub fn into_owned(self) -> Column<'static> {
-        let Column {
-            schema,
-            table,
-            org_table,
-            name,
-            org_name,
-            column_length,
-            character_set,
-            flags,
-            column_type,
-            decimals,
-        } = self;
-        Column {
-            schema: schema.into_owned().into(),
-            table: table.into_owned().into(),
-            org_table: org_table.into_owned().into(),
-            name: name.into_owned().into(),
-            org_name: org_name.into_owned().into(),
-            column_length,
-            character_set,
-            flags,
-            column_type,
-            decimals,
-        }
     }
 
     pub fn column_length(&self) -> u32 {
@@ -123,43 +112,43 @@ impl<'a> Column<'a> {
     }
 
     pub fn schema_ref(&self) -> &[u8] {
-        self.schema.as_ref()
+        &self.payload[self.schema.0..self.schema.0 + self.schema.1]
     }
 
-    pub fn schema_str(&'a self) -> Cow<'a, str> {
-        String::from_utf8_lossy(self.schema.as_ref())
+    pub fn schema_str(&self) -> Cow<str> {
+        String::from_utf8_lossy(self.schema_ref())
     }
 
     pub fn table_ref(&self) -> &[u8] {
-        self.table.as_ref()
+        &self.payload[self.table.0..self.table.0 + self.table.1]
     }
 
-    pub fn table_str(&'a self) -> Cow<'a, str> {
-        String::from_utf8_lossy(self.table.as_ref())
+    pub fn table_str(&self) -> Cow<str> {
+        String::from_utf8_lossy(self.table_ref())
     }
 
     pub fn org_table_ref(&self) -> &[u8] {
-        self.org_table.as_ref()
+        &self.payload[self.org_table.0..self.org_table.0 + self.org_table.1]
     }
 
-    pub fn org_table_str(&'a self) -> Cow<'a, str> {
-        String::from_utf8_lossy(self.org_table.as_ref())
+    pub fn org_table_str(&self) -> Cow<str> {
+        String::from_utf8_lossy(self.org_table_ref())
     }
 
     pub fn name_ref(&self) -> &[u8] {
-        self.name.as_ref()
+        &self.payload[self.name.0..self.name.0 + self.name.1]
     }
 
-    pub fn name_str(&'a self) -> Cow<'a, str> {
-        String::from_utf8_lossy(self.name.as_ref())
+    pub fn name_str(&self) -> Cow<str> {
+        String::from_utf8_lossy(self.name_ref())
     }
 
     pub fn org_name_ref(&self) -> &[u8] {
-        self.org_name.as_ref()
+        &self.payload[self.org_name.0..self.org_name.0 + self.org_name.1]
     }
 
-    pub fn org_name_str(&'a self) -> Cow<'a, str> {
-        String::from_utf8_lossy(self.org_name.as_ref())
+    pub fn org_name_str(&self) -> Cow<str> {
+        String::from_utf8_lossy(self.org_name_ref())
     }
 }
 
@@ -202,7 +191,7 @@ impl<'a> SessionStateInfo<'a> {
         let data_type = payload.read_u8()?;
         Ok(SessionStateInfo {
             data_type: data_type.into(),
-            data: read_lenenc_str!(payload)?.0.into(),
+            data: read_lenenc_str!(&mut payload)?.into(),
         })
     }
 
@@ -219,19 +208,19 @@ impl<'a> SessionStateInfo<'a> {
         let mut reader = self.data.as_ref();
         match self.data_type {
             SessionStateType::SESSION_TRACK_SYSTEM_VARIABLES => {
-                let (name, mut reader) = read_lenenc_str!(reader)?;
-                let (value, _) = read_lenenc_str!(reader)?;
+                let name = read_lenenc_str!(&mut reader)?;
+                let value = read_lenenc_str!(&mut reader)?;
                 Ok(SessionStateChange::SystemVariable(
                     name.into(),
                     value.into(),
                 ))
             }
             SessionStateType::SESSION_TRACK_SCHEMA => {
-                let (schema, _) = read_lenenc_str!(reader)?;
+                let schema = read_lenenc_str!(&mut reader)?;
                 Ok(SessionStateChange::Schema(schema.into()))
             }
             SessionStateType::SESSION_TRACK_STATE_CHANGE => {
-                let (is_tracked, _) = read_lenenc_str!(reader)?;
+                let is_tracked = read_lenenc_str!(&mut reader)?;
                 Ok(SessionStateChange::IsTracked(is_tracked == b"1"))
             }
             // Layout not specified in documentation
@@ -270,10 +259,10 @@ impl<'a> OkPacket<'a> {
                 let warnings = payload.read_u16::<LE>()?;
 
                 let (info, session_state_info) = if capabilities.contains(CLIENT_SESSION_TRACK) {
-                    let (info, mut payload) = read_lenenc_str!(payload)?;
+                    let info = read_lenenc_str!(&mut payload)?;
                     let session_state_info =
                         if status_flags.contains(SERVER_SESSION_STATE_CHANGED) {
-                            let (session_state_info, _) = read_lenenc_str!(payload)?;
+                            let session_state_info = read_lenenc_str!(&mut payload)?;
                             session_state_info
                         } else {
                             &[][..]
@@ -470,7 +459,7 @@ impl<'a> ErrPacket<'a> {
             let stage = payload.read_u8()?;
             let max_stage = payload.read_u8()?;
             let progress = payload.read_uint::<LE>(3)?;
-            let (progress_info, _) = read_lenenc_str!(payload)?;
+            let progress_info = read_lenenc_str!(&mut payload)?;
             Ok(ErrPacket::Progress(ProgressReport::new(
                 stage,
                 max_stage,
@@ -718,6 +707,30 @@ impl<'a> HandshakePacket<'a> {
         String::from_utf8_lossy(self.server_version_ref())
     }
 
+    pub fn server_version_parsed(&self) -> Option<(u16, u16, u16)> {
+        VERSION_RE.captures(self.server_version_ref())
+            .map(|captures| {
+                // Should not panic because validated with regex
+                (
+                    atoi::<u16>(captures.get(1).unwrap().as_bytes()).unwrap(),
+                    atoi::<u16>(captures.get(2).unwrap().as_bytes()).unwrap(),
+                    atoi::<u16>(captures.get(3).unwrap().as_bytes()).unwrap(),
+                )
+            })
+    }
+
+    pub fn maria_db_server_version_parsed(&self) -> Option<(u16, u16, u16)> {
+        MARIADB_VERSION_RE.captures(self.server_version_ref())
+            .map(|captures| {
+                // Should not panic because validated with regex
+                (
+                    atoi::<u16>(captures.get(1).unwrap().as_bytes()).unwrap(),
+                    atoi::<u16>(captures.get(2).unwrap().as_bytes()).unwrap(),
+                    atoi::<u16>(captures.get(3).unwrap().as_bytes()).unwrap(),
+                )
+            })
+    }
+
     pub fn connection_id(&self) -> u32 {
         self.connection_id
     }
@@ -807,8 +820,8 @@ mod test {
     use constants::{CLIENT_PROGRESS_OBSOLETE, CLIENT_SESSION_TRACK, NOT_NULL_FLAG,
                     SERVER_SESSION_STATE_CHANGED, SERVER_STATUS_AUTOCOMMIT, UTF8_GENERAL_CI,
                     CapabilityFlags, ColumnType, StatusFlags};
-    use super::{parse_column, parse_err_packet, parse_handshake_packet, parse_local_infile_packet,
-                parse_ok_packet, parse_stmt_packet, SessionStateChange};
+    use super::{column_from_payload, parse_err_packet, parse_handshake_packet,
+                parse_local_infile_packet, parse_ok_packet, parse_stmt_packet, SessionStateChange};
 
     #[test]
     fn should_parse_local_infile_packet() {
@@ -838,7 +851,7 @@ mod test {
 
     #[test]
     fn should_parse_handshake_packet() {
-        const HSP: &[u8] = b"\x0a\x35\x2e\x35\x2e\x32\x2d\x6d\x32\x00\x0b\x00\
+        const HSP: &[u8] = b"\x0a5.5.5-10.0.17-MariaDB-log\x00\x0b\x00\
                              \x00\x00\x64\x76\x48\x40\x49\x2d\x43\x4a\x00\xff\xf7\x08\x02\x00\
                              \x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x2a\x34\x64\
                              \x7c\x63\x5a\x77\x6b\x34\x5e\x5d\x3a\x00";
@@ -852,7 +865,9 @@ mod test {
 
         let hsp = parse_handshake_packet(HSP).unwrap();
         assert_eq!(hsp.protocol_version, 0x0a);
-        assert_eq!(hsp.server_version_str(), "5.5.2-m2");
+        assert_eq!(hsp.server_version_str(), "5.5.5-10.0.17-MariaDB-log");
+        assert_eq!(hsp.server_version_parsed(), Some((5, 5, 5)));
+        assert_eq!(hsp.maria_db_server_version_parsed(), Some((10, 0, 17)));
         assert_eq!(hsp.connection_id(), 0x0b);
         assert_eq!(hsp.scramble_1_ref(), b"dvH@I-CJ");
         assert_eq!(
@@ -867,6 +882,8 @@ mod test {
         let hsp = parse_handshake_packet(HSP_2).unwrap();
         assert_eq!(hsp.protocol_version, 0x0a);
         assert_eq!(hsp.server_version_str(), "5.6.4-m7-log");
+        assert_eq!(hsp.server_version_parsed(), Some((5, 6, 4)));
+        assert_eq!(hsp.maria_db_server_version_parsed(), None);
         assert_eq!(hsp.connection_id(), 0x0a56);
         assert_eq!(hsp.scramble_1_ref(), b"RB3vz&Gr");
         assert_eq!(
@@ -907,7 +924,7 @@ mod test {
         const COLUMN_PACKET: &[u8] =
             b"\x03def\x06schema\x05table\x09org_table\x04name\
               \x08org_name\x0c\x21\x00\x0F\x00\x00\x00\x00\x01\x00\x08\x00\x00";
-        let column = parse_column(COLUMN_PACKET).unwrap();
+        let column = column_from_payload(COLUMN_PACKET.into()).unwrap();
         assert_eq!(column.schema_str(), "schema");
         assert_eq!(column.table_str(), "table");
         assert_eq!(column.org_table_str(), "org_table");

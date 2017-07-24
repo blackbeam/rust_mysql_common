@@ -1,4 +1,5 @@
 use packets::Column;
+use smallvec::SmallVec;
 use std::fmt;
 use std::ops::Index;
 use std::sync::Arc;
@@ -14,8 +15,8 @@ pub mod convert;
 /// `Error::FromRowError` and also numerical indexing on taken columns will panic.
 #[derive(Clone, PartialEq)]
 pub struct Row {
-    values: Vec<Option<Value>>,
-    columns: Arc<Vec<Column<'static>>>
+    values: SmallVec<[Option<Value>; 12]>,
+    columns: Arc<Vec<Column>>
 }
 
 impl fmt::Debug for Row {
@@ -36,7 +37,7 @@ impl fmt::Debug for Row {
 }
 
 /// Creates `Row` from values and columns.
-pub fn new_row(values: Vec<Value>, columns: Arc<Vec<Column<'static>>>) -> Row {
+pub fn new_row(values: SmallVec<[Value; 12]>, columns: Arc<Vec<Column>>) -> Row {
     assert!(values.len() == columns.len());
     Row {
         values: values.into_iter().map(|value| Some(value)).collect(),

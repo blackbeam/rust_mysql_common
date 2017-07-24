@@ -5,8 +5,8 @@ use std::fmt;
 use std::str::{FromStr, from_utf8, from_utf8_unchecked};
 use std::time::Duration;
 use time::{self, Timespec, Tm, at, strptime};
+use uuid::Uuid;
 use value::Value;
-
 
 lazy_static! {
     static ref DATETIME_RE_YMD: Regex = {
@@ -1059,4 +1059,36 @@ from_array_impl!(30);
 from_array_impl!(31);
 from_array_impl!(32);
 
+impl Into<Value> for Uuid {
+    fn into(self) -> Value {
+        Value::Bytes(self.as_bytes().to_vec())
+    }
+}
 
+#[derive(Debug)]
+pub struct UuidIr {
+    val: Uuid,
+    bytes: Vec<u8>,
+}
+
+impl ConvIr<Uuid> for UuidIr {
+    fn new(v: Value) -> Result<UuidIr, FromValueError> {
+        match v {
+            Value::Bytes(bytes) => match Uuid::from_bytes(bytes.as_slice()) {
+                Ok(val) => Ok(UuidIr { val: val, bytes: bytes }),
+                Err(_) => Err(FromValueError(Value::Bytes(bytes))),
+            },
+            v => Err(FromValueError(v)),
+        }
+    }
+    fn commit(self) -> Uuid {
+        self.val
+    }
+    fn rollback(self) -> Value {
+        Value::Bytes(self.bytes)
+    }
+}
+
+impl FromValue for Uuid {
+    type Intermediate = UuidIr;
+}

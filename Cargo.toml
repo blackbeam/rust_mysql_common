@@ -4,9 +4,26 @@ version = "0.1.0"
 authors = ["blackbeam <aikorsky@gmail.com>"]
 
 [dependencies]
+atoi = "0.2"
 bitflags = "0.9"
+bit-vec = "0.4"
 byteorder = "1"
 chrono = "0.4"
 lazy_static = "0.2"
 regex = "0.2"
+smallvec = "0.4"
 time = "0.1"
+twox-hash = "1"
+uuid = "0.5"
+
+[dependencies.rustc-serialize]
+version = "0.3"
+optional= true
+
+[features]
+default = []
+rustc_serialize = ["rustc-serialize"]
+
+[target.'cfg(not(feature = "rustc_serialize"))'.dependencies]
+serde = "1"
+serde_json = "1"
