@@ -3,7 +3,7 @@ use std::error::Error;
 use std::fmt;
 use value::convert::{ConvIr, FromValue, FromValueError};
 
-/// `FromValue` conversion error.
+/// `FromRow` conversion error.
 #[derive(Debug)]
 pub struct FromRowError(pub Row);
 
