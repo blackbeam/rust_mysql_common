@@ -9,9 +9,7 @@ extern crate lazy_static;
 extern crate regex;
 #[cfg(feature = "rustc_serialize")]
 pub extern crate rustc_serialize;
-#[cfg(not(feature = "rustc_serialize"))]
 pub extern crate serde;
-#[cfg(not(feature = "rustc_serialize"))]
 pub extern crate serde_json;
 extern crate smallvec;
 extern crate time;

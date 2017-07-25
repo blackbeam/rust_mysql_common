@@ -19,21 +19,21 @@ impl<T: Encodable> From<Serialized<T>> for Value {
 
 
 impl<T: Decodable> ConvIr<Deserialized<T>> for DeserializedIr<T> {
-    fn new(v: Value) -> MyResult<DeserializedIr<T>> {
+    fn new(v: Value) -> Result<DeserializedIr<T>, FromValueError> {
         let (output, bytes) = {
             let bytes = match v {
                 Value::Bytes(bytes) => {
                     match from_utf8(&*bytes) {
                         Ok(_) => bytes,
-                        Err(_) => return Err(Error::FromValueError(Value::Bytes(bytes))),
+                        Err(_) => return Err(FromValueError(Value::Bytes(bytes))),
                     }
                 }
-                v => return Err(Error::FromValueError(v)),
+                v => return Err(FromValueError(v)),
             };
             let output = {
                 match json::decode(unsafe { from_utf8_unchecked(&*bytes) }) {
                     Ok(output) => output,
-                    Err(_) => return Err(Error::FromValueError(Value::Bytes(bytes))),
+                    Err(_) => return Err(FromValueError(Value::Bytes(bytes))),
                 }
             };
             (output, bytes)
@@ -65,21 +65,21 @@ pub struct JsonIr {
 }
 
 impl ConvIr<Json> for JsonIr {
-    fn new(v: Value) -> MyResult<JsonIr> {
+    fn new(v: Value) -> Result<JsonIr, FromValueError> {
         let (output, bytes) = {
             let bytes = match v {
                 Value::Bytes(bytes) => {
                     match from_utf8(&*bytes) {
                         Ok(_) => bytes,
-                        Err(_) => return Err(Error::FromValueError(Value::Bytes(bytes))),
+                        Err(_) => return Err(FromValueError(Value::Bytes(bytes))),
                     }
                 }
-                v => return Err(Error::FromValueError(v)),
+                v => return Err(FromValueError(v)),
             };
             let output = {
                 match Json::from_str(unsafe { from_utf8_unchecked(&*bytes) }) {
                     Ok(output) => output,
-                    Err(_) => return Err(Error::FromValueError(Value::Bytes(bytes))),
+                    Err(_) => return Err(FromValueError(Value::Bytes(bytes))),
                 }
             };
             (output, bytes)

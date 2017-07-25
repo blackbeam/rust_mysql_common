@@ -15,6 +15,8 @@ smallvec = "0.4"
 time = "0.1"
 twox-hash = "1"
 uuid = "0.5"
+serde = "1"
+serde_json = "1"
 
 [dependencies.rustc-serialize]
 version = "0.3"
@@ -23,7 +25,3 @@ optional= true
 [features]
 default = []
 rustc_serialize = ["rustc-serialize"]
-
-[target.'cfg(not(feature = "rustc_serialize"))'.dependencies]
-serde = "1"
-serde_json = "1"
