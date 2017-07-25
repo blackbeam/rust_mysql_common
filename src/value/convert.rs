@@ -1,8 +1,9 @@
+use atoi::atoi;
 use chrono::{NaiveDate, NaiveTime, NaiveDateTime, Datelike, Timelike};
 use regex::bytes::Regex;
 use std::error::Error;
 use std::fmt;
-use std::str::{FromStr, from_utf8, from_utf8_unchecked};
+use std::str::{FromStr, from_utf8};
 use std::time::Duration;
 use time::{self, Timespec, Tm, at, strptime};
 use uuid::Uuid;
@@ -172,10 +173,7 @@ macro_rules! impl_from_value_num {
                         output: x as $t,
                     }),
                     Value::Bytes(bytes) => {
-                        let val = from_utf8(&*bytes).ok().and_then(|x| {
-                            FromStr::from_str(x).ok()
-                        });
-                        match val {
+                        match atoi(&*bytes) {
                             Some(x) => Ok(ParseIr {
                                 value: Value::Bytes(bytes),
                                 output: x,
@@ -319,8 +317,7 @@ impl ConvIr<i64> for ParseIr<i64> {
                 output: x as i64,
             }),
             Value::Bytes(bytes) => {
-                let val = from_utf8(&*bytes).ok().and_then(|x| i64::from_str(x).ok());
-                match val {
+                match atoi(&*bytes) {
                     Some(x) => Ok(ParseIr { value: Value::Bytes(bytes), output: x }),
                     None => Err(FromValueError(Value::Bytes(bytes))),
                 }
@@ -342,10 +339,9 @@ impl ConvIr<u64> for ParseIr<u64> {
             Value::Int(x) if x >= 0 => Ok(ParseIr { value: Value::Int(x), output: x as u64 }),
             Value::UInt(x) => Ok(ParseIr { value: Value::UInt(x), output: x }),
             Value::Bytes(bytes) => {
-                let val = from_utf8(&*bytes).ok().and_then(|x| u64::from_str(x).ok());
-                match val {
+                match atoi(&*bytes) {
                     Some(x) => Ok(ParseIr { value: Value::Bytes(bytes), output: x }),
-                    _ => Err(FromValueError(Value::Bytes(bytes))),
+                    None => Err(FromValueError(Value::Bytes(bytes))),
                 }
             }
             v => Err(FromValueError(v)),
@@ -584,42 +580,31 @@ fn parse_mysql_datetime_string(bytes: &[u8]) -> Option<(u32, u32, u32, u32, u32,
         .or_else(|| DATETIME_RE_YMD.captures(bytes))
         .or_else(|| DATETIME_RE_YMD_HMS_NS.captures(bytes))
         .map(|cts| {
-            // should be safe because content is validated by regex
-            let year_str = unsafe { from_utf8_unchecked(cts.get(1).unwrap().as_bytes()) };
-            let month_str = unsafe { from_utf8_unchecked(cts.get(2).unwrap().as_bytes()) };
-            let day_str = unsafe { from_utf8_unchecked(cts.get(3).unwrap().as_bytes()) };
-
-            // unwrap should not panic because content is validated by regex
-            let year = year_str.parse::<u32>().unwrap();
-            let month = month_str.parse::<u32>().unwrap();
-            let day = day_str.parse::<u32>().unwrap();
+            // shouldn't panic because content is validated by regex
+            let year = atoi(cts.get(1).unwrap().as_bytes()).unwrap();
+            let month = atoi(cts.get(2).unwrap().as_bytes()).unwrap();
+            let day = atoi(cts.get(3).unwrap().as_bytes()).unwrap();
 
             let (hour, minute, second, micros) = if cts.len() > 4 {
-                // should be safe because content is validated by regex
-                let hour_str = unsafe { from_utf8_unchecked(cts.get(4).unwrap().as_bytes()) };
-                let minute_str = unsafe { from_utf8_unchecked(cts.get(5).unwrap().as_bytes()) };
-                let second_str = unsafe { from_utf8_unchecked(cts.get(6).unwrap().as_bytes()) };
-
-                // unwrap should not panic because content is validated by regex
-                let hour = hour_str.parse::<u32>().unwrap();
-                let minute = minute_str.parse::<u32>().unwrap();
-                let second = second_str.parse::<u32>().unwrap();
+                // shouldn't panic because content is validated by regex
+                let hour = atoi(cts.get(4).unwrap().as_bytes()).unwrap();
+                let minute = atoi(cts.get(5).unwrap().as_bytes()).unwrap();
+                let second = atoi(cts.get(6).unwrap().as_bytes()).unwrap();
                 let micros = if cts.len() == 8 {
-                    // should be safe because content is validated by regex
-                    let micros_str = unsafe { from_utf8_unchecked(cts.get(7).unwrap().as_bytes()) };
+                    // shouldn't panic because content is validated by regex
+                    let micros_bytes = cts.get(7).unwrap().as_bytes();
+                    let mut micros = atoi(micros_bytes).unwrap();
 
                     let mut pad_zero_cnt = 0;
-                    for b in micros_str.bytes() {
-                        if b == b'0' {
+                    for b in micros_bytes.iter() {
+                        if *b == b'0' {
                             pad_zero_cnt += 1;
                         } else {
                             break;
                         }
                     }
 
-                    // unwrap should not panic because content is validated by regex
-                    let mut micros = micros_str.parse::<u32>().unwrap();
-                    for _ in 0..(6 - pad_zero_cnt - (micros_str.len() - pad_zero_cnt)) {
+                    for _ in 0..(6 - pad_zero_cnt - (micros_bytes.len() - pad_zero_cnt)) {
                         micros *= 10;
                     }
                     micros
@@ -648,31 +633,26 @@ fn parse_mysql_time_string(mut bytes: &[u8]) -> Option<(bool, u32, u32, u32, u32
         .or_else(|| TIME_RE_HH_MM_SS.captures(bytes))
         .or_else(|| TIME_RE_HH_MM_SS_MS.captures(bytes))
         .map(|cts| {
-            // should be safe because content is validated by regex
-            let hours_str = unsafe { from_utf8_unchecked(cts.get(1).unwrap().as_bytes()) };
-            let minutes_str = unsafe { from_utf8_unchecked(cts.get(2).unwrap().as_bytes()) };
-            let seconds_str = unsafe { from_utf8_unchecked(cts.get(3).unwrap().as_bytes()) };
-
-            // unwrap should not panic because content is validated by regex
-            let hours = hours_str.parse::<u32>().unwrap();
-            let minutes = minutes_str.parse::<u32>().unwrap();
-            let seconds = seconds_str.parse::<u32>().unwrap();
+            // shouldn't panic because content is validated by regex
+            let hours = atoi(cts.get(1).unwrap().as_bytes()).unwrap();
+            let minutes = atoi(cts.get(2).unwrap().as_bytes()).unwrap();
+            let seconds = atoi(cts.get(3).unwrap().as_bytes()).unwrap();
 
             let microseconds = if cts.len() == 5 {
-                let micros_str = unsafe { from_utf8_unchecked(cts.get(4).unwrap().as_bytes()) };
+                // shouldn't panic because content is validated by regex
+                let micros_bytes = cts.get(4).unwrap().as_bytes();
+                let mut micros = atoi(micros_bytes).unwrap();
 
                 let mut pad_zero_cnt = 0;
-                for b in micros_str.bytes() {
-                    if b == b'0' {
+                for b in micros_bytes.iter() {
+                    if *b == b'0' {
                         pad_zero_cnt += 1;
                     } else {
                         break;
                     }
                 }
 
-                // unwrap should not panic because content is validated by regex
-                let mut micros = micros_str.parse::<u32>().unwrap();
-                for _ in 0..(6 - pad_zero_cnt - (micros_str.len() - pad_zero_cnt)) {
+                for _ in 0..(6 - pad_zero_cnt - (micros_bytes.len() - pad_zero_cnt)) {
                     micros *= 10;
                 }
                 micros
