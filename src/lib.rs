@@ -17,7 +17,7 @@ extern crate twox_hash;
 pub extern crate uuid;
 
 /// Macro to conveniently generate named parameters for a statement.
-/// Parameter name is T where String: From<T>, and 
+/// Parameter name is `T` where `String: From<T>`, and
 ///
 /// ```ignore
 /// params! {
