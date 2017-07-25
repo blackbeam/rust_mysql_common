@@ -3,7 +3,7 @@ extern crate bit_vec;
 #[macro_use]
 extern crate bitflags;
 extern crate byteorder;
-extern crate chrono;
+pub extern crate chrono;
 #[macro_use]
 extern crate lazy_static;
 extern crate regex;
@@ -12,7 +12,7 @@ pub extern crate rustc_serialize;
 pub extern crate serde;
 pub extern crate serde_json;
 extern crate smallvec;
-extern crate time;
+pub extern crate time;
 extern crate twox_hash;
 pub extern crate uuid;
 
