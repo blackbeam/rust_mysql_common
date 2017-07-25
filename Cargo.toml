@@ -1,7 +1,14 @@
 [package]
-name = "mysql_common"
-version = "0.1.0"
 authors = ["blackbeam <aikorsky@gmail.com>"]
+name = "mysql_common"
+description = "MySql protocol primitives"
+license = "MIT/Apache-2.0"
+homepage = "https://github.com/blackbeam/rust_mysql_common"
+documentation = "https://docs.rs/mysql_common"
+repository = "https://github.com/blackbeam/rust_mysql_common"
+keywords = ["mysql", "database"]
+categories = ["database"]
+version = "0.1.0"
 
 [dependencies]
 atoi = "0.2"

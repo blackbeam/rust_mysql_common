@@ -1,3 +1,11 @@
+// Copyright (c) 2017 Anatoly Ikorsky
+//
+// Licensed under the Apache License, Version 2.0
+// <LICENSE-APACHE or http://www.apache.org/licenses/LICENSE-2.0> or the MIT
+// license <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. All files in the project carrying such notice may not be copied,
+// modified, or distributed except according to those terms.
+
 use packets::Column;
 use smallvec::SmallVec;
 use std::fmt;
@@ -16,7 +24,7 @@ pub mod convert;
 #[derive(Clone, PartialEq)]
 pub struct Row {
     values: SmallVec<[Option<Value>; 12]>,
-    columns: Arc<Vec<Column>>
+    columns: Arc<Vec<Column>>,
 }
 
 impl fmt::Debug for Row {
@@ -26,10 +34,10 @@ impl fmt::Debug for Row {
             match *val {
                 Some(ref val) => {
                     debug.field(column.name_str().as_ref(), val);
-                },
+                }
                 None => {
                     debug.field(column.name_str().as_ref(), &"<taken>");
-                },
+                }
             }
         }
         debug.finish()
@@ -62,10 +70,14 @@ impl Row {
     /// Will copy value at index `index` if it was not taken by `Row::take` earlier,
     /// then will convert it to `T`.
     pub fn get<T, I>(&mut self, index: I) -> Option<T>
-        where T: FromValue,
-              I: ColumnIndex {
+    where
+        T: FromValue,
+        I: ColumnIndex,
+    {
         index.idx(&*self.columns).and_then(|idx| {
-            self.values.get(idx).and_then(|x| x.as_ref()).map(|x| from_value::<T>(x.clone()))
+            self.values.get(idx).and_then(|x| x.as_ref()).map(|x| {
+                from_value::<T>(x.clone())
+            })
         })
     }
 
@@ -73,9 +85,12 @@ impl Row {
     /// earlier, then will attempt convert it to `T`. Unlike `Row::get`, `Row::get_opt` will
     /// allow you to directly handle errors if the value could not be converted to `T`.
     pub fn get_opt<T, I>(&mut self, index: I) -> Option<Result<T, FromValueError>>
-        where T: FromValue,
-              I: ColumnIndex {
-        index.idx(&*self.columns)
+    where
+        T: FromValue,
+        I: ColumnIndex,
+    {
+        index
+            .idx(&*self.columns)
             .and_then(|idx| self.values.get(idx))
             .and_then(|x| x.as_ref())
             .and_then(|x| Some(from_value_opt::<T>(x.clone())))
@@ -84,10 +99,14 @@ impl Row {
     /// Will take value of a column with index `index` if it exists and wasn't taken earlier then
     /// will converts it to `T`.
     pub fn take<T, I>(&mut self, index: I) -> Option<T>
-        where T: FromValue,
-              I: ColumnIndex {
+    where
+        T: FromValue,
+        I: ColumnIndex,
+    {
         index.idx(&*self.columns).and_then(|idx| {
-            self.values.get_mut(idx).and_then(|x| x.take()).map(from_value::<T>)
+            self.values.get_mut(idx).and_then(|x| x.take()).map(
+                from_value::<T>,
+            )
         })
     }
 
@@ -95,9 +114,12 @@ impl Row {
     /// will attempt to convert it to `T`. Unlike `Row::take`, `Row::take_opt` will allow you to
     /// directly handle errors if the value could not be converted to `T`.
     pub fn take_opt<T, I>(&mut self, index: I) -> Option<Result<T, FromValueError>>
-        where T: FromValue,
-              I: ColumnIndex {
-        index.idx(&*self.columns)
+    where
+        T: FromValue,
+        I: ColumnIndex,
+    {
+        index
+            .idx(&*self.columns)
             .and_then(|idx| self.values.get_mut(idx))
             .and_then(|x| x.take())
             .and_then(|x| Some(from_value_opt::<T>(x)))
@@ -109,8 +131,11 @@ impl Row {
     ///
     /// Panics if any of columns was taken by `take` method.
     pub fn unwrap(self) -> Vec<Value> {
-        self.values.into_iter()
-            .map(|x| x.expect("Can't unwrap row if some of columns was taken"))
+        self.values
+            .into_iter()
+            .map(|x| {
+                x.expect("Can't unwrap row if some of columns was taken")
+            })
             .collect()
     }
 

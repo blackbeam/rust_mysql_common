@@ -1,3 +1,11 @@
+// Copyright (c) 2017 Anatoly Ikorsky
+//
+// Licensed under the Apache License, Version 2.0
+// <LICENSE-APACHE or http://www.apache.org/licenses/LICENSE-2.0> or the MIT
+// license <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. All files in the project carrying such notice may not be copied,
+// modified, or distributed except according to those terms.
+
 use atoi::atoi;
 use io::ReadMysqlExt;
 use byteorder::{LittleEndian as LE, ReadBytesExt};
@@ -761,28 +769,30 @@ impl<'a> HandshakePacket<'a> {
     ///
     /// Will parse first \d+.\d+.\d+ of a server version string (if any).
     pub fn server_version_parsed(&self) -> Option<(u16, u16, u16)> {
-        VERSION_RE.captures(self.server_version_ref())
-            .map(|captures| {
+        VERSION_RE.captures(self.server_version_ref()).map(
+            |captures| {
                 // Should not panic because validated with regex
                 (
                     atoi::<u16>(captures.get(1).unwrap().as_bytes()).unwrap(),
                     atoi::<u16>(captures.get(2).unwrap().as_bytes()).unwrap(),
                     atoi::<u16>(captures.get(3).unwrap().as_bytes()).unwrap(),
                 )
-            })
+            },
+        )
     }
 
     /// Parsed mariadb server version.
     pub fn maria_db_server_version_parsed(&self) -> Option<(u16, u16, u16)> {
-        MARIADB_VERSION_RE.captures(self.server_version_ref())
-            .map(|captures| {
+        MARIADB_VERSION_RE.captures(self.server_version_ref()).map(
+            |captures| {
                 // Should not panic because validated with regex
                 (
                     atoi::<u16>(captures.get(1).unwrap().as_bytes()).unwrap(),
                     atoi::<u16>(captures.get(2).unwrap().as_bytes()).unwrap(),
                     atoi::<u16>(captures.get(3).unwrap().as_bytes()).unwrap(),
                 )
-            })
+            },
+        )
     }
 
     /// Value of the connection_id field of an initial handshake packet.

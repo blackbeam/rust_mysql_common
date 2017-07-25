@@ -1,3 +1,11 @@
+// Copyright (c) 2017 Anatoly Ikorsky
+//
+// Licensed under the Apache License, Version 2.0
+// <LICENSE-APACHE or http://www.apache.org/licenses/LICENSE-2.0> or the MIT
+// license <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. All files in the project carrying such notice may not be copied,
+// modified, or distributed except according to those terms.
+
 use smallvec::SmallVec;
 use std::collections::HashMap;
 use std::collections::hash_map::Entry::Occupied;
@@ -14,11 +22,7 @@ pub struct MissingNamedParameterError(pub String);
 
 impl fmt::Display for MissingNamedParameterError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "Missing named parameter `{}` for statement",
-            self.0
-        )
+        write!(f, "Missing named parameter `{}` for statement", self.0)
     }
 }
 
@@ -39,7 +43,10 @@ pub enum Params {
 impl Params {
     /// Will convert named parameters into positional assuming order passed in `named_params`
     /// attribute.
-    pub fn into_positional(self, named_params: &Vec<String>) -> Result<Params, MissingNamedParameterError> {
+    pub fn into_positional(
+        self,
+        named_params: &Vec<String>,
+    ) -> Result<Params, MissingNamedParameterError> {
         match self {
             Params::Named(mut map) => {
                 let mut params: SmallVec<[Value; 12]> = SmallVec::new();
@@ -55,12 +62,12 @@ impl Params {
                                 x -= 1;
                             }
                             params.push(entry.remove());
-                        },
+                        }
                         _ => return Err(MissingNamedParameterError(name.clone())),
                     }
                 }
                 Ok(Params::Positional(params))
-            },
+            }
             params => Ok(params),
         }
     }
@@ -73,7 +80,8 @@ impl<'a, T: Into<Params> + Clone> From<&'a T> for Params {
 }
 
 impl<T> From<Vec<T>> for Params
-where Value: From<T>
+where
+    Value: From<T>,
 {
     fn from(x: Vec<T>) -> Params {
         let mut raw_params: SmallVec<[Value; 12]> = SmallVec::new();
@@ -89,8 +97,9 @@ where Value: From<T>
 }
 
 impl<N, V> From<Vec<(N, V)>> for Params
-where String: From<N>,
-      Value: From<V>,
+where
+    String: From<N>,
+    Value: From<V>,
 {
     fn from(x: Vec<(N, V)>) -> Params {
         let mut map = HashMap::default();
@@ -139,15 +148,70 @@ macro_rules! into_params_impl {
     );
 }
 
-into_params_impl!([A,a]);
-into_params_impl!([A,a],[B,b]);
-into_params_impl!([A,a],[B,b],[C,c]);
-into_params_impl!([A,a],[B,b],[C,c],[D,d]);
-into_params_impl!([A,a],[B,b],[C,c],[D,d],[E,e]);
-into_params_impl!([A,a],[B,b],[C,c],[D,d],[E,e],[F,f]);
-into_params_impl!([A,a],[B,b],[C,c],[D,d],[E,e],[F,f],[G,g]);
-into_params_impl!([A,a],[B,b],[C,c],[D,d],[E,e],[F,f],[G,g],[H,h]);
-into_params_impl!([A,a],[B,b],[C,c],[D,d],[E,e],[F,f],[G,g],[H,h],[I,i]);
-into_params_impl!([A,a],[B,b],[C,c],[D,d],[E,e],[F,f],[G,g],[H,h],[I,i],[J,j]);
-into_params_impl!([A,a],[B,b],[C,c],[D,d],[E,e],[F,f],[G,g],[H,h],[I,i],[J,j],[K,k]);
-into_params_impl!([A,a],[B,b],[C,c],[D,d],[E,e],[F,f],[G,g],[H,h],[I,i],[J,j],[K,k],[L,l]);
+into_params_impl!([A, a]);
+into_params_impl!([A, a], [B, b]);
+into_params_impl!([A, a], [B, b], [C, c]);
+into_params_impl!([A, a], [B, b], [C, c], [D, d]);
+into_params_impl!([A, a], [B, b], [C, c], [D, d], [E, e]);
+into_params_impl!([A, a], [B, b], [C, c], [D, d], [E, e], [F, f]);
+into_params_impl!([A, a], [B, b], [C, c], [D, d], [E, e], [F, f], [G, g]);
+into_params_impl!(
+    [A, a],
+    [B, b],
+    [C, c],
+    [D, d],
+    [E, e],
+    [F, f],
+    [G, g],
+    [H, h]
+);
+into_params_impl!(
+    [A, a],
+    [B, b],
+    [C, c],
+    [D, d],
+    [E, e],
+    [F, f],
+    [G, g],
+    [H, h],
+    [I, i]
+);
+into_params_impl!(
+    [A, a],
+    [B, b],
+    [C, c],
+    [D, d],
+    [E, e],
+    [F, f],
+    [G, g],
+    [H, h],
+    [I, i],
+    [J, j]
+);
+into_params_impl!(
+    [A, a],
+    [B, b],
+    [C, c],
+    [D, d],
+    [E, e],
+    [F, f],
+    [G, g],
+    [H, h],
+    [I, i],
+    [J, j],
+    [K, k]
+);
+into_params_impl!(
+    [A, a],
+    [B, b],
+    [C, c],
+    [D, d],
+    [E, e],
+    [F, f],
+    [G, g],
+    [H, h],
+    [I, i],
+    [J, j],
+    [K, k],
+    [L, l]
+);

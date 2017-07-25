@@ -2,6 +2,14 @@ use atoi::atoi;
 use chrono::{NaiveDate, NaiveTime, NaiveDateTime, Datelike, Timelike};
 use regex::bytes::Regex;
 use std::error::Error;
+// Copyright (c) 2017 Anatoly Ikorsky
+//
+// Licensed under the Apache License, Version 2.0
+// <LICENSE-APACHE or http://www.apache.org/licenses/LICENSE-2.0> or the MIT
+// license <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. All files in the project carrying such notice may not be copied,
+// modified, or distributed except according to those terms.
+
 use std::fmt;
 use std::str::{FromStr, from_utf8};
 use std::time::Duration;
@@ -576,7 +584,8 @@ fn parse_mysql_datetime_string(bytes: &[u8]) -> Option<(u32, u32, u32, u32, u32,
     if bytes.len() == 0 {
         return None;
     }
-    DATETIME_RE_YMD_HMS.captures(bytes)
+    DATETIME_RE_YMD_HMS
+        .captures(bytes)
         .or_else(|| DATETIME_RE_YMD.captures(bytes))
         .or_else(|| DATETIME_RE_YMD_HMS_NS.captures(bytes))
         .map(|cts| {
@@ -628,7 +637,8 @@ fn parse_mysql_time_string(mut bytes: &[u8]) -> Option<(bool, u32, u32, u32, u32
     if is_neg {
         bytes = &bytes[1..];
     }
-    TIME_RE_HHH_MM_SS.captures(bytes)
+    TIME_RE_HHH_MM_SS
+        .captures(bytes)
         .or_else(|| TIME_RE_HHH_MM_SS_MS.captures(bytes))
         .or_else(|| TIME_RE_HH_MM_SS.captures(bytes))
         .or_else(|| TIME_RE_HH_MM_SS_MS.captures(bytes))
@@ -876,7 +886,7 @@ impl From<f64> for Value {
 
 impl From<bool> for Value {
     fn from(x: bool) -> Value {
-        Value::Int(if x {1} else {0})
+        Value::Int(if x { 1 } else { 0 })
     }
 }
 
@@ -927,15 +937,7 @@ impl From<NaiveDate> for Value {
         if 1000 > x.year() || x.year() > 9999 {
             panic!("Year `{}` not in supported range [1000, 9999]", x.year())
         }
-        Value::Date(
-            x.year() as u16,
-            x.month() as u8,
-            x.day() as u8,
-            0,
-            0,
-            0,
-            0
-        )
+        Value::Date(x.year() as u16, x.month() as u8, x.day() as u8, 0, 0, 0, 0)
     }
 }
 
@@ -962,7 +964,8 @@ impl From<Timespec> for Value {
             t.tm_hour as u8,
             t.tm_min as u8,
             t.tm_sec as u8,
-            t.tm_nsec as u32 / 1000)
+            t.tm_nsec as u32 / 1000,
+        )
     }
 }
 
@@ -976,7 +979,14 @@ impl From<Duration> for Value {
         secs_total -= (minutes as u64) * 60;
         let hours = ((secs_total % (60 * 60 * 24)) / (60 * 60)) as u8;
         secs_total -= (hours as u64) * 60 * 60;
-        Value::Time(false, (secs_total / (60 * 60 * 24)) as u32, hours, minutes, seconds, micros)
+        Value::Time(
+            false,
+            (secs_total / (60 * 60 * 24)) as u32,
+            hours,
+            minutes,
+            seconds,
+            micros,
+        )
     }
 }
 
@@ -1059,10 +1069,12 @@ pub struct UuidIr {
 impl ConvIr<Uuid> for UuidIr {
     fn new(v: Value) -> Result<UuidIr, FromValueError> {
         match v {
-            Value::Bytes(bytes) => match Uuid::from_bytes(bytes.as_slice()) {
-                Ok(val) => Ok(UuidIr { val: val, bytes: bytes }),
-                Err(_) => Err(FromValueError(Value::Bytes(bytes))),
-            },
+            Value::Bytes(bytes) => {
+                match Uuid::from_bytes(bytes.as_slice()) {
+                    Ok(val) => Ok(UuidIr { val: val, bytes: bytes }),
+                    Err(_) => Err(FromValueError(Value::Bytes(bytes))),
+                }
+            }
             v => Err(FromValueError(v)),
         }
     }
