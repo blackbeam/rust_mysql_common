@@ -1,11 +1,12 @@
 use bit_vec::BitVec;
 use byteorder::{LittleEndian as LE, ReadBytesExt};
-use constants::{UNSIGNED_FLAG, ColumnType};
+use constants::{ColumnType, UNSIGNED_FLAG};
 use io::{ReadMysqlExt, WriteMysqlExt};
 use packets::Column;
 use smallvec::SmallVec;
 use std::fmt;
 use std::io;
+use std::str::from_utf8;
 
 use self::Value::*;
 
@@ -62,7 +63,97 @@ pub fn serialize_bin_many(
     Value::serialize_bin_many(params, values, max_allowed_packet)
 }
 
+/// Will escape string for SQL depending on `no_backslash_escape` flag.
+fn escaped(input: &str, no_backslash_escape: bool) -> String {
+    let mut output = String::with_capacity(input.len());
+    output.push('\'');
+    if no_backslash_escape {
+        for c in input.chars() {
+            if c == '\'' {
+                output.push('\'');
+                output.push('\'');
+            } else {
+                output.push(c);
+            }
+        }
+    } else {
+        for c in input.chars() {
+            if c == '\x00' {
+                output.push('\\');
+                output.push('0');
+            } else if c == '\n' {
+                output.push('\\');
+                output.push('n');
+            } else if c == '\r' {
+                output.push('\\');
+                output.push('r');
+            } else if c == '\\' || c == '\'' || c == '"' {
+                output.push('\\');
+                output.push(c);
+            } else if c == '\x1a' {
+                output.push('\\');
+                output.push('Z');
+            } else {
+                output.push(c);
+            }
+        }
+    }
+    output.push('\'');
+    output
+}
+
 impl Value {
+    pub fn as_sql(&self, no_backslash_escape: bool) -> String {
+        match *self {
+            Value::NULL => "NULL".into(),
+            Value::Int(x) => format!("{}", x),
+            Value::UInt(x) => format!("{}", x),
+            Value::Float(x) => format!("{}", x),
+            Value::Date(y, m, d, 0, 0, 0, 0) => format!("'{:04}-{:02}-{:02}'", y, m, d),
+            Value::Date(y, m, d, h, i, s, 0) => {
+                format!("'{:04}-{:02}-{:02} {:02}:{:02}:{:02}'", y, m, d, h, i, s)
+            }
+            Value::Date(y, m, d, h, i, s, u) => {
+                format!(
+                    "'{:04}-{:02}-{:02} {:02}:{:02}:{:02}.{:06}'",
+                    y,
+                    m,
+                    d,
+                    h,
+                    i,
+                    s,
+                    u
+                )
+            }
+            Value::Time(neg, d, h, i, s, 0) => {
+                if neg {
+                    format!("'-{:03}:{:02}:{:02}'", d * 24 + h as u32, i, s)
+                } else {
+                    format!("'{:03}:{:02}:{:02}'", d * 24 + h as u32, i, s)
+                }
+            }
+            Value::Time(neg, d, h, i, s, u) => {
+                if neg {
+                    format!("'-{:03}:{:02}:{:02}.{:06}'", d * 24 + h as u32, i, s, u)
+                } else {
+                    format!("'{:03}:{:02}:{:02}.{:06}'", d * 24 + h as u32, i, s, u)
+                }
+            }
+            Value::Bytes(ref bytes) => {
+                match from_utf8(&*bytes) {
+                    Ok(string) => escaped(string, no_backslash_escape),
+                    Err(_) => {
+                        let mut s = String::from("0x");
+                        for c in bytes.iter() {
+                            s.extend(format!("{:02X}", *c).chars())
+                        }
+                        s
+                    }
+                }
+            }
+        }
+    }
+
     fn read_text(input: &mut &[u8]) -> io::Result<Value> {
         if input.len() == 0 {
             Err(io::Error::new(
@@ -211,7 +302,9 @@ impl Value {
 
         let mut bitmap = BitVec::<u8>::default();
         for i in 0..columns.len() {
-            bitmap.push(input[(i + BIT_OFFSET) / 8] & (1 << ((i + BIT_OFFSET) % 8)) > 0)
+            bitmap.push(
+                input[(i + BIT_OFFSET) / 8] & (1 << ((i + BIT_OFFSET) % 8)) > 0,
+            )
         }
 
         let mut values = SmallVec::<[Value; 12]>::new();
@@ -257,7 +350,7 @@ impl Value {
                 Value::NULL => {
                     null_bitmap.push(true);
                     large_bitmap.push(false);
-                },
+                }
                 Value::Bytes(ref bytes) => {
                     null_bitmap.push(false);
                     if bytes.len() as u64 >= cap as u64 - written {
@@ -266,7 +359,7 @@ impl Value {
                         large_bitmap.push(false);
                         written += output.write_bin_value(value)?;
                     }
-                },
+                }
                 _ => {
                     null_bitmap.push(false);
                     if cap as u64 - written < MAX_NON_BYTES_VALUE_BINARY_SIZE as u64 {
