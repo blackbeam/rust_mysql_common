@@ -13,29 +13,29 @@ pub mod serde_integration;
 
 
 
-/// Use it to pass `T: Encodable` as JSON to a prepared statement.
+/// Use it to pass `T: Serialize` as JSON to a prepared statement.
 ///
 /// ```ignore
-/// #[derive(RustcEncodable)]
-/// struct EncodableStruct {
+/// #[derive(Serialize)]
+/// struct SerializableStruct {
 ///     // ...
 /// }
 ///
 /// conn.prep_exec("INSERT INTO table (json_column) VALUES (?)",
-///                (Serialized(EncosdableStruct),));
+///                (Serialized(SerializableStruct),));
 /// ```
 #[derive(Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Debug, Hash)]
 pub struct Serialized<T>(pub T);
 
-/// Use it to parse `T: Decodable` from `Value`.
+/// Use it to parse `T: Deserialize` from `Value`.
 ///
 /// ```ignore
-/// #[derive(RustcDecodable)]
-/// struct DecodableStruct {
+/// #[derive(Deserialize)]
+/// struct DeserializableStruct {
 ///     // ...
 /// }
 /// // ...
-/// let (Deserialized(val),): (Deserialized<DecodableStruct>,)
+/// let (Deserialized(val),): (Deserialized<DeserializableStruct>,)
 ///     = from_row(row_with_single_json_column);
 /// ```
 #[derive(Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Debug, Hash)]
