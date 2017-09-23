@@ -8,13 +8,14 @@
 
 use atoi::atoi;
 use io::ReadMysqlExt;
-use byteorder::{LittleEndian as LE, ReadBytesExt};
-use constants::{CapabilityFlags, ColumnFlags, ColumnType, SessionStateType, StatusFlags};
+use byteorder::{LittleEndian as LE, ReadBytesExt, WriteBytesExt};
+use constants::{CapabilityFlags, ColumnFlags, ColumnType, SessionStateType, StatusFlags,
+                UTF8_GENERAL_CI, UTF8MB4_GENERAL_CI};
 use regex::bytes::Regex;
 use std::borrow::Cow;
 use std::cmp::max;
 use std::fmt;
-use std::io;
+use std::io::{self, Write};
 use std::ptr;
 
 macro_rules! get_offset_and_len {
@@ -837,6 +838,65 @@ impl<'a> HandshakePacket<'a> {
     }
 }
 
+#[derive(Debug)]
+pub struct HandshakeResponse {
+    data: Vec<u8>,
+}
+
+impl HandshakeResponse {
+    pub fn new(
+        scramble_buf: &Option<[u8; 20]>,
+        server_version: (u16, u16, u16),
+        user: Option<&str>,
+        db_name: Option<&str>,
+        client_flags: CapabilityFlags,
+    ) -> HandshakeResponse {
+        let user_len = user.map(|user| user.len()).unwrap_or(0);
+        let database_len = db_name.map(|database| database.len()).unwrap_or(0);
+        let scramble_len = scramble_buf
+            .map(|scramble_buf| scramble_buf.len())
+            .unwrap_or(0);
+
+        let mut payload_len = 4 + 4 + 1 + 23 + user_len + 1 + 1 + scramble_len;
+        if database_len > 0 {
+            payload_len += database_len + 1;
+        }
+
+        let mut data = vec![0u8; payload_len];
+        {
+            let mut writer = &mut *data;
+            writer.write_u32::<LE>(client_flags.bits()).unwrap();
+            writer.write_all(&[0u8; 4]).unwrap();
+            let mut collation = UTF8_GENERAL_CI;
+            if server_version >= (5, 5, 3) {
+                collation = UTF8MB4_GENERAL_CI;
+            }
+            writer.write_u8(collation as u8).unwrap();
+            writer.write_all(&[0u8; 23]).unwrap();
+            if let Some(user) = user.as_ref() {
+                writer.write_all(user.as_bytes()).unwrap();
+            }
+            writer.write_u8(0).unwrap();
+            writer.write_u8(scramble_len as u8).unwrap();
+            if let Some(ref scramble_buf) = *scramble_buf {
+                writer.write_all(&scramble_buf[..]).unwrap();
+            }
+            if let Some(database) = db_name.as_ref() {
+                if database_len > 0 {
+                    writer.write_all(database.as_bytes()).unwrap();
+                    writer.write_u8(0).unwrap();
+                }
+            }
+        }
+
+        HandshakeResponse { data }
+    }
+
+    pub fn as_ref(&self) -> &[u8] {
+        &self.data[..]
+    }
+}
+
 /// Represents MySql's statement packet.
 pub struct StmtPacket {
     statement_id: u32,
@@ -988,7 +1048,8 @@ mod test {
         assert_eq!(err_packet.error_code(), 1096);
         assert_eq!(err_packet.message_str(), "No tables used");
 
-        let err_packet = parse_err_packet(PROGRESS_PACKET, CapabilityFlags::CLIENT_PROGRESS_OBSOLETE).unwrap();
+        let err_packet =
+            parse_err_packet(PROGRESS_PACKET, CapabilityFlags::CLIENT_PROGRESS_OBSOLETE).unwrap();
         assert!(err_packet.is_progress_report());
         let progress_report = err_packet.progress_report();
         assert_eq!(progress_report.stage(), 1);
@@ -1029,12 +1090,16 @@ mod test {
         let ok_packet = parse_ok_packet(PLAIN_OK, CapabilityFlags::empty()).unwrap();
         assert_eq!(ok_packet.affected_rows(), 0);
         assert_eq!(ok_packet.last_insert_id(), None);
-        assert_eq!(ok_packet.status_flags(), StatusFlags::SERVER_STATUS_AUTOCOMMIT);
+        assert_eq!(
+            ok_packet.status_flags(),
+            StatusFlags::SERVER_STATUS_AUTOCOMMIT
+        );
         assert_eq!(ok_packet.warnings(), 0);
         assert_eq!(ok_packet.info_ref(), None);
         assert_eq!(ok_packet.session_state_info(), None);
 
-        let ok_packet = parse_ok_packet(SESS_STATE_SYS_VAR_OK, CapabilityFlags::CLIENT_SESSION_TRACK).unwrap();
+        let ok_packet =
+            parse_ok_packet(SESS_STATE_SYS_VAR_OK, CapabilityFlags::CLIENT_SESSION_TRACK).unwrap();
         assert_eq!(ok_packet.affected_rows(), 0);
         assert_eq!(ok_packet.last_insert_id(), None);
         assert_eq!(
@@ -1049,7 +1114,8 @@ mod test {
             SessionStateChange::SystemVariable((&b"autocommit"[..]).into(), (&b"OFF"[..]).into())
         );
 
-        let ok_packet = parse_ok_packet(SESS_STATE_SCHEMA_OK, CapabilityFlags::CLIENT_SESSION_TRACK).unwrap();
+        let ok_packet =
+            parse_ok_packet(SESS_STATE_SCHEMA_OK, CapabilityFlags::CLIENT_SESSION_TRACK).unwrap();
         assert_eq!(ok_packet.affected_rows(), 0);
         assert_eq!(ok_packet.last_insert_id(), None);
         assert_eq!(
@@ -1064,7 +1130,8 @@ mod test {
             SessionStateChange::Schema((&b"test"[..]).into())
         );
 
-        let ok_packet = parse_ok_packet(SESS_STATE_TRACK_OK, CapabilityFlags::CLIENT_SESSION_TRACK).unwrap();
+        let ok_packet = parse_ok_packet(SESS_STATE_TRACK_OK, CapabilityFlags::CLIENT_SESSION_TRACK)
+            .unwrap();
         assert_eq!(ok_packet.affected_rows(), 0);
         assert_eq!(ok_packet.last_insert_id(), None);
         assert_eq!(
@@ -1082,7 +1149,10 @@ mod test {
         let ok_packet = parse_ok_packet(EOF, CapabilityFlags::CLIENT_SESSION_TRACK).unwrap();
         assert_eq!(ok_packet.affected_rows(), 0);
         assert_eq!(ok_packet.last_insert_id(), None);
-        assert_eq!(ok_packet.status_flags(), StatusFlags::SERVER_STATUS_AUTOCOMMIT);
+        assert_eq!(
+            ok_packet.status_flags(),
+            StatusFlags::SERVER_STATUS_AUTOCOMMIT
+        );
         assert_eq!(ok_packet.warnings(), 0);
         assert_eq!(ok_packet.info_ref(), None);
         assert_eq!(ok_packet.session_state_info(), None);
