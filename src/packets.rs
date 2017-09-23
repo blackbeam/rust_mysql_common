@@ -897,6 +897,29 @@ impl HandshakeResponse {
     }
 }
 
+#[derive(Debug)]
+pub struct SslRequest {
+    data: Vec<u8>,
+}
+
+impl SslRequest {
+    pub fn new(capabilities: CapabilityFlags) -> SslRequest {
+        let mut data = vec![0u8; 4 + 4 + 1 + 23];
+        // Buffer is preallocated so no panic during unwrap.
+        {
+            let mut writer = &mut data[..];
+            writer.write_u32::<LE>(capabilities.bits()).unwrap();
+            writer.write_u32::<LE>(1024 * 1024).unwrap();
+            writer.write_u8(UTF8_GENERAL_CI as u8).unwrap();
+        }
+        SslRequest { data }
+    }
+
+    pub fn as_ref(&self) -> &[u8] {
+        &*self.data
+    }
+}
+
 /// Represents MySql's statement packet.
 pub struct StmtPacket {
     statement_id: u32,
