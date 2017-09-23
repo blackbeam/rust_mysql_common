@@ -9,9 +9,7 @@
 use atoi::atoi;
 use io::ReadMysqlExt;
 use byteorder::{LittleEndian as LE, ReadBytesExt};
-use constants::{CLIENT_PLUGIN_AUTH, CLIENT_PROGRESS_OBSOLETE, CLIENT_SECURE_CONNECTION,
-                CLIENT_SESSION_TRACK, SERVER_SESSION_STATE_CHANGED, CapabilityFlags, ColumnFlags,
-                ColumnType, SessionStateType, StatusFlags};
+use constants::{CapabilityFlags, ColumnFlags, ColumnType, SessionStateType, StatusFlags};
 use regex::bytes::Regex;
 use std::borrow::Cow;
 use std::cmp::max;
@@ -293,19 +291,20 @@ impl<'a> OkPacket<'a> {
                 let status_flags = StatusFlags::from_bits_truncate(payload.read_u16::<LE>()?);
                 let warnings = payload.read_u16::<LE>()?;
 
-                let (info, session_state_info) = if capabilities.contains(CLIENT_SESSION_TRACK) {
-                    let info = read_lenenc_str!(&mut payload)?;
-                    let session_state_info =
-                        if status_flags.contains(SERVER_SESSION_STATE_CHANGED) {
-                            let session_state_info = read_lenenc_str!(&mut payload)?;
-                            session_state_info
-                        } else {
-                            &[][..]
-                        };
-                    (info, session_state_info)
-                } else {
-                    (payload, &[][..])
-                };
+                let (info, session_state_info) =
+                    if capabilities.contains(CapabilityFlags::CLIENT_SESSION_TRACK) {
+                        let info = read_lenenc_str!(&mut payload)?;
+                        let session_state_info =
+                            if status_flags.contains(StatusFlags::SERVER_SESSION_STATE_CHANGED) {
+                                let session_state_info = read_lenenc_str!(&mut payload)?;
+                                session_state_info
+                            } else {
+                                &[][..]
+                            };
+                        (info, session_state_info)
+                    } else {
+                        (payload, &[][..])
+                    };
                 (
                     affected_rows,
                     last_insert_id,
@@ -498,7 +497,7 @@ impl<'a> ErrPacket<'a> {
 
         let code = payload.read_u16::<LE>()?;
         // We assume that CLIENT_PROTOCOL_41 was set
-        if code == 0xFFFF && capabilities.contains(CLIENT_PROGRESS_OBSOLETE) {
+        if code == 0xFFFF && capabilities.contains(CapabilityFlags::CLIENT_PROGRESS_OBSOLETE) {
             payload.read_u8()?; // Ignore number of strings.
             let stage = payload.read_u8()?;
             let max_stage = payload.read_u8()?;
@@ -701,18 +700,19 @@ impl<'a> HandshakePacket<'a> {
         );
         let scramble_len = payload.read_u8()?;
         let (_, payload) = split_at_or_err!(payload, 10, "Invalid handshake packet")?;
-        let (scramble_2, payload) = if capabilities.contains(CLIENT_SECURE_CONNECTION) {
-            let (scramble_2, mut payload) = split_at_or_err!(
-                payload,
-                max(12, (scramble_len as i8 - 9)) as usize,
-                "Invalid handshake packet"
-            )?;
-            payload.read_u8()?;
-            (Some(scramble_2), payload)
-        } else {
-            (None, payload)
-        };
-        let auth_plugin_name = if capabilities.contains(CLIENT_PLUGIN_AUTH) {
+        let (scramble_2, payload) =
+            if capabilities.contains(CapabilityFlags::CLIENT_SECURE_CONNECTION) {
+                let (scramble_2, mut payload) = split_at_or_err!(
+                    payload,
+                    max(12, (scramble_len as i8 - 9)) as usize,
+                    "Invalid handshake packet"
+                )?;
+                payload.read_u8()?;
+                (Some(scramble_2), payload)
+            } else {
+                (None, payload)
+            };
+        let auth_plugin_name = if capabilities.contains(CapabilityFlags::CLIENT_PLUGIN_AUTH) {
             if payload[payload.len() - 1] == 0x00 {
                 Some(&payload[..payload.len() - 1])
             } else {
@@ -897,9 +897,7 @@ impl StmtPacket {
 
 #[cfg(test)]
 mod test {
-    use constants::{CLIENT_PROGRESS_OBSOLETE, CLIENT_SESSION_TRACK, NOT_NULL_FLAG,
-                    SERVER_SESSION_STATE_CHANGED, SERVER_STATUS_AUTOCOMMIT, UTF8_GENERAL_CI,
-                    CapabilityFlags, ColumnType, StatusFlags};
+    use constants::{UTF8_GENERAL_CI, CapabilityFlags, ColumnFlags, ColumnType, StatusFlags};
     use super::{column_from_payload, parse_err_packet, parse_handshake_packet,
                 parse_local_infile_packet, parse_ok_packet, parse_stmt_packet, SessionStateChange};
 
@@ -990,7 +988,7 @@ mod test {
         assert_eq!(err_packet.error_code(), 1096);
         assert_eq!(err_packet.message_str(), "No tables used");
 
-        let err_packet = parse_err_packet(PROGRESS_PACKET, CLIENT_PROGRESS_OBSOLETE).unwrap();
+        let err_packet = parse_err_packet(PROGRESS_PACKET, CapabilityFlags::CLIENT_PROGRESS_OBSOLETE).unwrap();
         assert!(err_packet.is_progress_report());
         let progress_report = err_packet.progress_report();
         assert_eq!(progress_report.stage(), 1);
@@ -1013,7 +1011,7 @@ mod test {
         assert_eq!(column.character_set(), UTF8_GENERAL_CI);
         assert_eq!(column.column_length(), 15);
         assert_eq!(column.column_type(), ColumnType::MYSQL_TYPE_DECIMAL);
-        assert_eq!(column.flags(), NOT_NULL_FLAG);
+        assert_eq!(column.flags(), ColumnFlags::NOT_NULL_FLAG);
         assert_eq!(column.decimals(), 8);
     }
 
@@ -1031,17 +1029,17 @@ mod test {
         let ok_packet = parse_ok_packet(PLAIN_OK, CapabilityFlags::empty()).unwrap();
         assert_eq!(ok_packet.affected_rows(), 0);
         assert_eq!(ok_packet.last_insert_id(), None);
-        assert_eq!(ok_packet.status_flags(), SERVER_STATUS_AUTOCOMMIT);
+        assert_eq!(ok_packet.status_flags(), StatusFlags::SERVER_STATUS_AUTOCOMMIT);
         assert_eq!(ok_packet.warnings(), 0);
         assert_eq!(ok_packet.info_ref(), None);
         assert_eq!(ok_packet.session_state_info(), None);
 
-        let ok_packet = parse_ok_packet(SESS_STATE_SYS_VAR_OK, CLIENT_SESSION_TRACK).unwrap();
+        let ok_packet = parse_ok_packet(SESS_STATE_SYS_VAR_OK, CapabilityFlags::CLIENT_SESSION_TRACK).unwrap();
         assert_eq!(ok_packet.affected_rows(), 0);
         assert_eq!(ok_packet.last_insert_id(), None);
         assert_eq!(
             ok_packet.status_flags(),
-            SERVER_STATUS_AUTOCOMMIT | SERVER_SESSION_STATE_CHANGED
+            StatusFlags::SERVER_STATUS_AUTOCOMMIT | StatusFlags::SERVER_SESSION_STATE_CHANGED
         );
         assert_eq!(ok_packet.warnings(), 0);
         assert_eq!(ok_packet.info_ref(), None);
@@ -1051,12 +1049,12 @@ mod test {
             SessionStateChange::SystemVariable((&b"autocommit"[..]).into(), (&b"OFF"[..]).into())
         );
 
-        let ok_packet = parse_ok_packet(SESS_STATE_SCHEMA_OK, CLIENT_SESSION_TRACK).unwrap();
+        let ok_packet = parse_ok_packet(SESS_STATE_SCHEMA_OK, CapabilityFlags::CLIENT_SESSION_TRACK).unwrap();
         assert_eq!(ok_packet.affected_rows(), 0);
         assert_eq!(ok_packet.last_insert_id(), None);
         assert_eq!(
             ok_packet.status_flags(),
-            SERVER_STATUS_AUTOCOMMIT | SERVER_SESSION_STATE_CHANGED
+            StatusFlags::SERVER_STATUS_AUTOCOMMIT | StatusFlags::SERVER_SESSION_STATE_CHANGED
         );
         assert_eq!(ok_packet.warnings(), 0);
         assert_eq!(ok_packet.info_ref(), None);
@@ -1066,12 +1064,12 @@ mod test {
             SessionStateChange::Schema((&b"test"[..]).into())
         );
 
-        let ok_packet = parse_ok_packet(SESS_STATE_TRACK_OK, CLIENT_SESSION_TRACK).unwrap();
+        let ok_packet = parse_ok_packet(SESS_STATE_TRACK_OK, CapabilityFlags::CLIENT_SESSION_TRACK).unwrap();
         assert_eq!(ok_packet.affected_rows(), 0);
         assert_eq!(ok_packet.last_insert_id(), None);
         assert_eq!(
             ok_packet.status_flags(),
-            SERVER_STATUS_AUTOCOMMIT | SERVER_SESSION_STATE_CHANGED
+            StatusFlags::SERVER_STATUS_AUTOCOMMIT | StatusFlags::SERVER_SESSION_STATE_CHANGED
         );
         assert_eq!(ok_packet.warnings(), 0);
         assert_eq!(ok_packet.info_ref(), None);
@@ -1081,10 +1079,10 @@ mod test {
             SessionStateChange::IsTracked(true)
         );
 
-        let ok_packet = parse_ok_packet(EOF, CLIENT_SESSION_TRACK).unwrap();
+        let ok_packet = parse_ok_packet(EOF, CapabilityFlags::CLIENT_SESSION_TRACK).unwrap();
         assert_eq!(ok_packet.affected_rows(), 0);
         assert_eq!(ok_packet.last_insert_id(), None);
-        assert_eq!(ok_packet.status_flags(), SERVER_STATUS_AUTOCOMMIT);
+        assert_eq!(ok_packet.status_flags(), StatusFlags::SERVER_STATUS_AUTOCOMMIT);
         assert_eq!(ok_packet.warnings(), 0);
         assert_eq!(ok_packet.info_ref(), None);
         assert_eq!(ok_packet.session_state_info(), None);

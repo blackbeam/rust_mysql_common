@@ -8,7 +8,7 @@
 
 use bit_vec::BitVec;
 use byteorder::{LittleEndian as LE, ReadBytesExt};
-use constants::{ColumnType, UNSIGNED_FLAG};
+use constants::{ColumnFlags, ColumnType};
 use io::{ReadMysqlExt, WriteMysqlExt};
 use packets::Column;
 use smallvec::SmallVec;
@@ -327,7 +327,7 @@ impl Value {
                 values.push(read_bin_value(
                     &mut input,
                     column.column_type(),
-                    column.flags().contains(UNSIGNED_FLAG),
+                    column.flags().contains(ColumnFlags::UNSIGNED_FLAG),
                 )?)
             }
         }
