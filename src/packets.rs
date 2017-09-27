@@ -9,8 +9,8 @@
 use atoi::atoi;
 use io::ReadMysqlExt;
 use byteorder::{LittleEndian as LE, ReadBytesExt, WriteBytesExt};
-use constants::{CapabilityFlags, ColumnFlags, ColumnType, SessionStateType, StatusFlags,
-                UTF8_GENERAL_CI, UTF8MB4_GENERAL_CI};
+use constants::{CapabilityFlags, ColumnFlags, ColumnType, MAX_PAYLOAD_LEN, SessionStateType,
+                StatusFlags, UTF8_GENERAL_CI, UTF8MB4_GENERAL_CI};
 use regex::bytes::Regex;
 use std::borrow::Cow;
 use std::cmp::max;
@@ -33,6 +33,73 @@ lazy_static! {
     static ref VERSION_RE: Regex = {
         Regex::new(r"^(\d{1,2})\.(\d{1,2})\.(\d{1,3})(.*)").unwrap()
     };
+}
+
+/// Raw mysql packet
+#[derive(Debug, Eq, PartialEq, Clone, Hash)]
+pub struct RawPacket(pub Vec<u8>);
+
+#[derive(Debug)]
+pub enum ParseResult {
+    NeedHeader(PacketParser, usize),
+    Incomplete(PacketParser, usize),
+    /// (<raw packet payload>, <sequence id>)
+    Done(RawPacket, u8),
+}
+
+#[derive(Debug)]
+/// Incremental packet parser.
+pub struct PacketParser {
+    data: Vec<u8>,
+    length: usize,
+    header: Vec<u8>,
+    last_seq_id: u8,
+}
+
+impl PacketParser {
+    pub fn empty() -> PacketParser {
+        PacketParser {
+            data: Vec::new(),
+            length: 0,
+            header: Vec::with_capacity(4),
+            last_seq_id: 0,
+        }
+    }
+
+    pub fn push(&mut self, byte: u8) {
+        self.data.push(byte);
+    }
+
+    pub fn push_header(&mut self, byte: u8) {
+        assert!(self.header.len() < 4);
+        self.header.push(byte);
+    }
+
+    pub fn parse(mut self) -> ParseResult {
+        let last_packet_part = self.data.len() % MAX_PAYLOAD_LEN;
+        if last_packet_part == 0 {
+            if self.header.len() != 4 {
+                let needed = 4 - self.header.len();
+                return ParseResult::NeedHeader(self, needed);
+            } else {
+                let length = (&*self.header).read_uint::<LE>(3).unwrap();
+                self.last_seq_id = self.header[3];
+                if length == 0 {
+                    return ParseResult::Done(RawPacket(self.data), self.last_seq_id);
+                } else {
+                    self.length = length as usize;
+                    return ParseResult::Incomplete(self, length as usize);
+                }
+            }
+        } else {
+            if last_packet_part == self.length {
+                return ParseResult::Done(RawPacket(self.data), self.last_seq_id);
+            } else {
+                let length = self.length;
+                return ParseResult::Incomplete(self, length - last_packet_part);
+            }
+        }
+    }
 }
 
 /// Represents MySql Column (column packet).
