@@ -342,8 +342,7 @@ impl Value {
         static MAX_NON_BYTES_VALUE_BINARY_SIZE: usize = 13;
 
         let bitmap_len = (params.len() + 7) / 8;
-        let cap =
-            MAX_PAYLOAD_LEN - bitmap_len - values.len() * MAX_NON_BYTES_VALUE_BINARY_SIZE;
+        let cap = MAX_PAYLOAD_LEN - bitmap_len - values.len() * MAX_NON_BYTES_VALUE_BINARY_SIZE;
 
         let mut output = Vec::with_capacity(512);
         let mut written = 0;
