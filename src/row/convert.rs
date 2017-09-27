@@ -108,6 +108,19 @@ macro_rules! take_or_place {
     );
 }
 
+impl FromRow for Row {
+    fn from_row(row: Row) -> Self {
+        row
+    }
+
+    fn from_row_opt(row: Row) -> Result<Self, FromRowError>
+    where
+        Self: Sized,
+    {
+        Ok(row)
+    }
+}
+
 impl<T, Ir> FromRow for T
 where
     Ir: ConvIr<T>,
