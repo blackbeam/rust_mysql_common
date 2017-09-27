@@ -8,7 +8,7 @@
 
 use bit_vec::BitVec;
 use byteorder::{LittleEndian as LE, ReadBytesExt};
-use constants::{ColumnFlags, ColumnType};
+use constants::{ColumnFlags, ColumnType, MAX_PAYLOAD_LEN};
 use io::{ReadMysqlExt, WriteMysqlExt};
 use packets::Column;
 use smallvec::SmallVec;
@@ -63,12 +63,12 @@ pub fn read_bin_values(input: &[u8], columns: &[Column]) -> io::Result<SmallVec<
 
 /// Will serialize multiple `values` in binary format as `params` using passed
 /// `max_allowed_packet` value.
+/// Returns `(<output>, <null_bitmap>, <large_bitmap>)`
 pub fn serialize_bin_many(
     params: &[Column],
     values: &[Value],
-    max_allowed_packet: usize,
 ) -> io::Result<(Vec<u8>, BitVec<u8>, BitVec<u8>)> {
-    Value::serialize_bin_many(params, values, max_allowed_packet)
+    Value::serialize_bin_many(params, values)
 }
 
 /// Will escape string for SQL depending on `no_backslash_escape` flag.
@@ -338,12 +338,12 @@ impl Value {
     fn serialize_bin_many(
         params: &[Column],
         values: &[Value],
-        max_allowed_packet: usize,
     ) -> io::Result<(Vec<u8>, BitVec<u8>, BitVec<u8>)> {
         static MAX_NON_BYTES_VALUE_BINARY_SIZE: usize = 13;
 
         let bitmap_len = (params.len() + 7) / 8;
-        let cap = max_allowed_packet - bitmap_len - values.len() * MAX_NON_BYTES_VALUE_BINARY_SIZE;
+        let cap =
+            MAX_PAYLOAD_LEN - bitmap_len - values.len() * MAX_NON_BYTES_VALUE_BINARY_SIZE;
 
         let mut output = Vec::with_capacity(512);
         let mut written = 0;
@@ -359,14 +359,9 @@ impl Value {
                     null_bitmap.push(true);
                     large_bitmap.push(false);
                 }
-                Value::Bytes(ref bytes) => {
+                Value::Bytes(_) => {
                     null_bitmap.push(false);
-                    if bytes.len() as u64 >= cap as u64 - written {
-                        large_bitmap.push(true);
-                    } else {
-                        large_bitmap.push(false);
-                        written += output.write_bin_value(value)?;
-                    }
+                    large_bitmap.push(true);
                 }
                 _ => {
                     null_bitmap.push(false);
