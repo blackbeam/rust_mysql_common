@@ -13,7 +13,7 @@ use constants::{CapabilityFlags, ColumnFlags, ColumnType, MAX_PAYLOAD_LEN, Sessi
                 StatusFlags, UTF8_GENERAL_CI, UTF8MB4_GENERAL_CI};
 use regex::bytes::Regex;
 use std::borrow::Cow;
-use std::cmp::max;
+use std::cmp::{max, min};
 use std::fmt;
 use std::io::{self, Write};
 use std::ptr;
@@ -41,7 +41,6 @@ pub struct RawPacket(pub Vec<u8>);
 
 #[derive(Debug)]
 pub enum ParseResult {
-    NeedHeader(PacketParser, usize),
     Incomplete(PacketParser, usize),
     /// (<raw packet payload>, <sequence id>)
     Done(RawPacket, u8),
@@ -51,52 +50,58 @@ pub enum ParseResult {
 /// Incremental packet parser.
 pub struct PacketParser {
     data: Vec<u8>,
-    length: usize,
-    header: Vec<u8>,
+    part_length: u64,
+    header: [u8; 4],
+    header_len: usize,
     last_seq_id: u8,
+    num_parts: usize,
 }
 
 impl PacketParser {
     pub fn empty() -> PacketParser {
         PacketParser {
             data: Vec::new(),
-            length: 0,
-            header: Vec::with_capacity(4),
+            part_length: 0,
+            header: [0u8; 4],
+            header_len: 0,
             last_seq_id: 0,
+            num_parts: 0,
         }
     }
 
-    pub fn push(&mut self, byte: u8) {
-        self.data.push(byte);
-    }
-
-    pub fn push_header(&mut self, byte: u8) {
-        assert!(self.header.len() < 4);
-        self.header.push(byte);
+    /// `src.len()` should be equal to the length specified in the latest `ParseResult::Incomplete`.
+    pub fn extend_from_slice(&mut self, src: &[u8]) {
+        let (header, data) = src.split_at(min(4 - self.header_len, src.len()));
+        self.header[..header.len()].copy_from_slice(header);
+        self.header_len += header.len();
+        self.data.extend_from_slice(data);
     }
 
     pub fn parse(mut self) -> ParseResult {
-        let last_packet_part = self.data.len() % MAX_PAYLOAD_LEN;
-        if last_packet_part == 0 {
-            if self.header.len() != 4 {
-                let needed = 4 - self.header.len();
-                return ParseResult::NeedHeader(self, needed);
-            } else {
-                let length = (&*self.header).read_uint::<LE>(3).unwrap();
-                self.last_seq_id = self.header[3];
-                if length == 0 {
-                    return ParseResult::Done(RawPacket(self.data), self.last_seq_id);
-                } else {
-                    self.length = length as usize;
-                    return ParseResult::Incomplete(self, length as usize);
-                }
-            }
+        if self.header_len != 4 {
+            let needed = 4 - self.header_len;
+            ParseResult::Incomplete(self, needed)
         } else {
-            if last_packet_part == self.length {
-                return ParseResult::Done(RawPacket(self.data), self.last_seq_id);
+            let last_packet_part = self.data.len() % MAX_PAYLOAD_LEN;
+
+            if last_packet_part == 0 {
+                if (self.data.len() / MAX_PAYLOAD_LEN) == self.num_parts {
+                    let part_length = (&self.header[..]).read_uint::<LE>(3).unwrap();
+                    self.last_seq_id = self.header[3];
+                    self.part_length = part_length;
+                    ParseResult::Incomplete(self, part_length as usize)
+                } else {
+                    self.num_parts += 1;
+                    self.header_len = 0;
+                    self.parse()
+                }
             } else {
-                let length = self.length;
-                return ParseResult::Incomplete(self, length - last_packet_part);
+                if last_packet_part == self.part_length as usize {
+                    ParseResult::Done(RawPacket(self.data), self.last_seq_id)
+                } else {
+                    let part_length = self.part_length;
+                    ParseResult::Incomplete(self, part_length as usize - last_packet_part)
+                }
             }
         }
     }
