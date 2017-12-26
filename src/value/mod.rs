@@ -358,7 +358,7 @@ impl Value {
                     null_bitmap.push(true);
                     large_bitmap.push(false);
                 }
-                Value::Bytes(_) => {
+                Value::Bytes(ref bytes) if bytes.len() > 0 => {
                     null_bitmap.push(false);
                     large_bitmap.push(true);
                 }
