@@ -780,7 +780,7 @@ impl<'a> HandshakePacket<'a> {
             if capabilities.contains(CapabilityFlags::CLIENT_SECURE_CONNECTION) {
                 let (scramble_2, mut payload) = split_at_or_err!(
                     payload,
-                    max(12, (scramble_len as i8 - 9)) as usize,
+                    max(12, scramble_len as i8 - 9) as usize,
                     "Invalid handshake packet"
                 )?;
                 payload.read_u8()?;
