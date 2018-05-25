@@ -583,20 +583,23 @@ impl<'a> ErrPacket<'a> {
                 progress_info,
             )))
         } else {
-            let marker = payload.read_u8()?;
-            if marker == b'#' {
-                let (state, msg) = split_at_or_err!(payload, 5, "EOF while reading error state")?;
-                Ok(ErrPacket::Error(
-                    code,
-                    unsafe { ptr::read(state.as_ptr() as *const [u8; 5]) },
-                    msg.into(),
-                ))
-            } else {
-                Ok(ErrPacket::Error(
-                    code,
-                    [b'H', b'Y', b'0', b'0', b'0'],
-                    payload.into(),
-                ))
+            match payload.get(0) {
+                Some(b'#') => {
+                    let (state, msg) =
+                        split_at_or_err!(payload, 6, "EOF while reading error state")?;
+                    Ok(ErrPacket::Error(
+                        code,
+                        unsafe { ptr::read(state.as_ptr() as *const [u8; 5]) },
+                        msg.into(),
+                    ))
+                },
+                _ => {
+                    Ok(ErrPacket::Error(
+                        code,
+                        [b'H', b'Y', b'0', b'0', b'0'],
+                        payload.into(),
+                    ))
+                }
             }
         }
     }
@@ -1136,12 +1139,21 @@ mod test {
     fn should_parse_err_packet() {
         const ERR_PACKET: &[u8] = b"\xff\x48\x04\x23\x48\x59\x30\x30\x30\x4e\x6f\x20\x74\x61\x62\
         \x6c\x65\x73\x20\x75\x73\x65\x64";
+        const ERR_PACKET_NO_STATE: &[u8] = b"\xff\x10\x04\x54\x6f\x6f\x20\x6d\x61\x6e\x79\x20\x63\
+        \x6f\x6e\x6e\x65\x63\x74\x69\x6f\x6e\x73";
         const PROGRESS_PACKET: &[u8] = b"\xff\xff\xff\x01\x01\x0a\xcc\x5b\x00\x0astage name";
 
         let err_packet = parse_err_packet(ERR_PACKET, CapabilityFlags::empty()).unwrap();
         assert!(err_packet.is_error());
         assert_eq!(err_packet.error_code(), 1096);
         assert_eq!(err_packet.message_str(), "No tables used");
+
+        let err_packet =
+            parse_err_packet(ERR_PACKET_NO_STATE, CapabilityFlags::CLIENT_PROTOCOL_41).unwrap();
+        assert!(err_packet.is_error());
+        assert_eq!(err_packet.error_code(), 1040);
+        assert_eq!(err_packet.sql_state_str(), "HY000");
+        assert_eq!(err_packet.message_str(), "Too many connections");
 
         let err_packet =
             parse_err_packet(PROGRESS_PACKET, CapabilityFlags::CLIENT_PROGRESS_OBSOLETE).unwrap();
