@@ -11,8 +11,6 @@ pub mod rustc_integration;
 #[cfg(not(feature = "rustc_serialize"))]
 pub mod serde_integration;
 
-
-
 /// Use it to pass `T: Serialize` as JSON to a prepared statement.
 ///
 /// ```ignore

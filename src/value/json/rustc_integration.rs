@@ -6,12 +6,12 @@
 // option. All files in the project carrying such notice may not be copied,
 // modified, or distributed except according to those terms.
 
-use rustc_serialize::{Decodable, Encodable};
+use super::{Deserialized, DeserializedIr, Serialized};
 use rustc_serialize::json::{self, Json};
-use super::{Serialized, Deserialized, DeserializedIr};
-use value::Value;
-use value::convert::{ConvIr, FromValue, FromValueError};
+use rustc_serialize::{Decodable, Encodable};
 use std::str::{from_utf8, from_utf8_unchecked};
+use value::convert::{ConvIr, FromValue, FromValueError};
+use value::Value;
 
 impl From<Json> for Value {
     fn from(x: Json) -> Value {
@@ -25,17 +25,14 @@ impl<T: Encodable> From<Serialized<T>> for Value {
     }
 }
 
-
 impl<T: Decodable> ConvIr<Deserialized<T>> for DeserializedIr<T> {
     fn new(v: Value) -> Result<DeserializedIr<T>, FromValueError> {
         let (output, bytes) = {
             let bytes = match v {
-                Value::Bytes(bytes) => {
-                    match from_utf8(&*bytes) {
-                        Ok(_) => bytes,
-                        Err(_) => return Err(FromValueError(Value::Bytes(bytes))),
-                    }
-                }
+                Value::Bytes(bytes) => match from_utf8(&*bytes) {
+                    Ok(_) => bytes,
+                    Err(_) => return Err(FromValueError(Value::Bytes(bytes))),
+                },
                 v => return Err(FromValueError(v)),
             };
             let output = {
@@ -76,12 +73,10 @@ impl ConvIr<Json> for JsonIr {
     fn new(v: Value) -> Result<JsonIr, FromValueError> {
         let (output, bytes) = {
             let bytes = match v {
-                Value::Bytes(bytes) => {
-                    match from_utf8(&*bytes) {
-                        Ok(_) => bytes,
-                        Err(_) => return Err(FromValueError(Value::Bytes(bytes))),
-                    }
-                }
+                Value::Bytes(bytes) => match from_utf8(&*bytes) {
+                    Ok(_) => bytes,
+                    Err(_) => return Err(FromValueError(Value::Bytes(bytes))),
+                },
                 v => return Err(FromValueError(v)),
             };
             let output = {
@@ -92,7 +87,10 @@ impl ConvIr<Json> for JsonIr {
             };
             (output, bytes)
         };
-        Ok(JsonIr { bytes: bytes, output: output })
+        Ok(JsonIr {
+            bytes: bytes,
+            output: output,
+        })
     }
 
     fn commit(self) -> Json {

@@ -11,8 +11,8 @@ use smallvec::SmallVec;
 use std::fmt;
 use std::ops::Index;
 use std::sync::Arc;
+use value::convert::{from_value, from_value_opt, FromValue, FromValueError};
 use value::Value;
-use value::convert::{FromValue, FromValueError, from_value, from_value_opt};
 
 pub mod convert;
 
@@ -75,9 +75,10 @@ impl Row {
         I: ColumnIndex,
     {
         index.idx(&*self.columns).and_then(|idx| {
-            self.values.get(idx).and_then(|x| x.as_ref()).map(|x| {
-                from_value::<T>(x.clone())
-            })
+            self.values
+                .get(idx)
+                .and_then(|x| x.as_ref())
+                .map(|x| from_value::<T>(x.clone()))
         })
     }
 
@@ -104,9 +105,10 @@ impl Row {
         I: ColumnIndex,
     {
         index.idx(&*self.columns).and_then(|idx| {
-            self.values.get_mut(idx).and_then(|x| x.take()).map(
-                from_value::<T>,
-            )
+            self.values
+                .get_mut(idx)
+                .and_then(|x| x.take())
+                .map(from_value::<T>)
         })
     }
 
@@ -133,9 +135,7 @@ impl Row {
     pub fn unwrap(self) -> Vec<Value> {
         self.values
             .into_iter()
-            .map(|x| {
-                x.expect("Can't unwrap row if some of columns was taken")
-            })
+            .map(|x| x.expect("Can't unwrap row if some of columns was taken"))
             .collect()
     }
 

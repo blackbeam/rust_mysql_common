@@ -1,5 +1,5 @@
 use atoi::atoi;
-use chrono::{NaiveDate, NaiveTime, NaiveDateTime, Datelike, Timelike};
+use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 use regex::bytes::Regex;
 use std::error::Error;
 // Copyright (c) 2017 Anatoly Ikorsky
@@ -11,40 +11,25 @@ use std::error::Error;
 // modified, or distributed except according to those terms.
 
 use std::fmt;
-use std::str::{FromStr, from_utf8};
+use std::str::{from_utf8, FromStr};
 use std::time::Duration;
-use time::{self, Timespec, Tm, at, strptime};
+use time::{self, at, strptime, Timespec, Tm};
 use uuid::Uuid;
 use value::Value;
 
 lazy_static! {
-    static ref DATETIME_RE_YMD: Regex = {
-        Regex::new(r"^(\d{4})-(\d{2})-(\d{2})$").unwrap()
-    };
-
-    static ref DATETIME_RE_YMD_HMS: Regex = {
-        Regex::new(r"^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})$").unwrap()
-    };
-
-    static ref DATETIME_RE_YMD_HMS_NS: Regex = {
-        Regex::new(r"^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})\.(\d{1,6})$").unwrap()
-    };
-
-    static ref TIME_RE_HH_MM_SS: Regex = {
-        Regex::new(r"^(\d{2}):([0-5]\d):([0-5]\d)$").unwrap()
-    };
-
-    static ref TIME_RE_HH_MM_SS_MS: Regex = {
-        Regex::new(r"^(\d{2}):([0-5]\d):([0-5]\d)\.(\d{1,6})$").unwrap()
-    };
-
-    static ref TIME_RE_HHH_MM_SS: Regex = {
-        Regex::new(r"^([0-8]\d\d):([0-5]\d):([0-5]\d)$").unwrap()
-    };
-
-    static ref TIME_RE_HHH_MM_SS_MS: Regex = {
-        Regex::new(r"^([0-8]\d\d):([0-5]\d):([0-5]\d)\.(\d{1,6})$").unwrap()
-    };
+    static ref DATETIME_RE_YMD: Regex = { Regex::new(r"^(\d{4})-(\d{2})-(\d{2})$").unwrap() };
+    static ref DATETIME_RE_YMD_HMS: Regex =
+        { Regex::new(r"^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})$").unwrap() };
+    static ref DATETIME_RE_YMD_HMS_NS: Regex =
+        { Regex::new(r"^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})\.(\d{1,6})$").unwrap() };
+    static ref TIME_RE_HH_MM_SS: Regex = { Regex::new(r"^(\d{2}):([0-5]\d):([0-5]\d)$").unwrap() };
+    static ref TIME_RE_HH_MM_SS_MS: Regex =
+        { Regex::new(r"^(\d{2}):([0-5]\d):([0-5]\d)\.(\d{1,6})$").unwrap() };
+    static ref TIME_RE_HHH_MM_SS: Regex =
+        { Regex::new(r"^([0-8]\d\d):([0-5]\d):([0-5]\d)$").unwrap() };
+    static ref TIME_RE_HHH_MM_SS_MS: Regex =
+        { Regex::new(r"^([0-8]\d\d):([0-5]\d):([0-5]\d)\.(\d{1,6})$").unwrap() };
 }
 
 /// `FromValue` conversion error.
@@ -116,9 +101,9 @@ pub trait FromValue: Sized {
 
     /// Will panic if could not convert `v` to `Self`.
     fn from_value(v: Value) -> Self {
-        Self::from_value_opt(v).ok().expect(
-            "Could not retrieve Self from Value",
-        )
+        Self::from_value_opt(v)
+            .ok()
+            .expect("Could not retrieve Self from Value")
     }
 
     /// Will return `Err(Error::FromValueError(v))` if could not convert `v` to `Self`.
@@ -146,18 +131,18 @@ pub fn from_value_opt<T: FromValue>(v: Value) -> Result<T, FromValueError> {
 }
 
 macro_rules! impl_from_value {
-    ($ty:ty, $ir:ty, $msg:expr) => (
+    ($ty:ty, $ir:ty, $msg:expr) => {
         impl FromValue for $ty {
             type Intermediate = $ir;
             fn from_value(v: Value) -> $ty {
                 <Self as FromValue>::from_value_opt(v).ok().expect($msg)
             }
         }
-    );
+    };
 }
 
 macro_rules! impl_from_value_num {
-    ($t:ident, $msg:expr) => (
+    ($t:ident, $msg:expr) => {
         impl ConvIr<$t> for ParseIr<$t> {
             fn new(v: Value) -> Result<ParseIr<$t>, FromValueError> {
                 match v {
@@ -175,19 +160,17 @@ macro_rules! impl_from_value_num {
                         } else {
                             Err(FromValueError(Value::Int(x)))
                         }
-                    },
+                    }
                     Value::UInt(x) if x <= ::std::$t::MAX as u64 => Ok(ParseIr {
                         value: Value::UInt(x),
                         output: x as $t,
                     }),
-                    Value::Bytes(bytes) => {
-                        match atoi(&*bytes) {
-                            Some(x) => Ok(ParseIr {
-                                value: Value::Bytes(bytes),
-                                output: x,
-                            }),
-                            None => Err(FromValueError(Value::Bytes(bytes))),
-                        }
+                    Value::Bytes(bytes) => match atoi(&*bytes) {
+                        Some(x) => Ok(ParseIr {
+                            value: Value::Bytes(bytes),
+                            output: x,
+                        }),
+                        None => Err(FromValueError(Value::Bytes(bytes))),
                     },
                     v => Err(FromValueError(v)),
                 }
@@ -201,7 +184,7 @@ macro_rules! impl_from_value_num {
         }
 
         impl_from_value!($t, ParseIr<$t>, $msg);
-    );
+    };
 }
 
 /// Intermediate result of a Value-to-Option<T> conversion.
@@ -218,13 +201,17 @@ where
 {
     fn new(v: Value) -> Result<OptionIr<Ir>, FromValueError> {
         match v {
-            Value::NULL => Ok(OptionIr { value: Some(Value::NULL), ir: None }),
-            v => {
-                match T::get_intermediate(v) {
-                    Ok(ir) => Ok(OptionIr { value: None, ir: Some(ir) }),
-                    Err(err) => Err(err),
-                }
-            }
+            Value::NULL => Ok(OptionIr {
+                value: Some(Value::NULL),
+                ir: None,
+            }),
+            v => match T::get_intermediate(v) {
+                Ok(ir) => Ok(OptionIr {
+                    value: None,
+                    ir: Some(ir),
+                }),
+                Err(err) => Err(err),
+            },
         }
     }
     fn commit(self) -> Option<T> {
@@ -237,12 +224,10 @@ where
         let OptionIr { value, ir } = self;
         match value {
             Some(v) => v,
-            None => {
-                match ir {
-                    Some(ir) => ir.rollback(),
-                    None => unreachable!(),
-                }
-            }
+            None => match ir {
+                Some(ir) => ir.rollback(),
+                None => unreachable!(),
+            },
         }
     }
 }
@@ -253,9 +238,9 @@ where
 {
     type Intermediate = OptionIr<T::Intermediate>;
     fn from_value(v: Value) -> Option<T> {
-        <Self as FromValue>::from_value_opt(v).ok().expect(
-            "Could not retrieve Option<T> from Value",
-        )
+        <Self as FromValue>::from_value_opt(v)
+            .ok()
+            .expect("Could not retrieve Option<T> from Value")
     }
 }
 
@@ -292,12 +277,10 @@ pub struct StringIr {
 impl ConvIr<String> for StringIr {
     fn new(v: Value) -> Result<StringIr, FromValueError> {
         match v {
-            Value::Bytes(bytes) => {
-                match from_utf8(&*bytes) {
-                    Ok(_) => Ok(StringIr { bytes: bytes }),
-                    Err(_) => Err(FromValueError(Value::Bytes(bytes))),
-                }
-            }
+            Value::Bytes(bytes) => match from_utf8(&*bytes) {
+                Ok(_) => Ok(StringIr { bytes: bytes }),
+                Err(_) => Err(FromValueError(Value::Bytes(bytes))),
+            },
             v => Err(FromValueError(v)),
         }
     }
@@ -319,17 +302,21 @@ pub struct ParseIr<T> {
 impl ConvIr<i64> for ParseIr<i64> {
     fn new(v: Value) -> Result<ParseIr<i64>, FromValueError> {
         match v {
-            Value::Int(x) => Ok(ParseIr { value: Value::Int(x), output: x }),
+            Value::Int(x) => Ok(ParseIr {
+                value: Value::Int(x),
+                output: x,
+            }),
             Value::UInt(x) if x <= ::std::i64::MAX as u64 => Ok(ParseIr {
                 value: Value::UInt(x),
                 output: x as i64,
             }),
-            Value::Bytes(bytes) => {
-                match atoi(&*bytes) {
-                    Some(x) => Ok(ParseIr { value: Value::Bytes(bytes), output: x }),
-                    None => Err(FromValueError(Value::Bytes(bytes))),
-                }
-            }
+            Value::Bytes(bytes) => match atoi(&*bytes) {
+                Some(x) => Ok(ParseIr {
+                    value: Value::Bytes(bytes),
+                    output: x,
+                }),
+                None => Err(FromValueError(Value::Bytes(bytes))),
+            },
             v => Err(FromValueError(v)),
         }
     }
@@ -344,14 +331,21 @@ impl ConvIr<i64> for ParseIr<i64> {
 impl ConvIr<u64> for ParseIr<u64> {
     fn new(v: Value) -> Result<ParseIr<u64>, FromValueError> {
         match v {
-            Value::Int(x) if x >= 0 => Ok(ParseIr { value: Value::Int(x), output: x as u64 }),
-            Value::UInt(x) => Ok(ParseIr { value: Value::UInt(x), output: x }),
-            Value::Bytes(bytes) => {
-                match atoi(&*bytes) {
-                    Some(x) => Ok(ParseIr { value: Value::Bytes(bytes), output: x }),
-                    None => Err(FromValueError(Value::Bytes(bytes))),
-                }
-            }
+            Value::Int(x) if x >= 0 => Ok(ParseIr {
+                value: Value::Int(x),
+                output: x as u64,
+            }),
+            Value::UInt(x) => Ok(ParseIr {
+                value: Value::UInt(x),
+                output: x,
+            }),
+            Value::Bytes(bytes) => match atoi(&*bytes) {
+                Some(x) => Ok(ParseIr {
+                    value: Value::Bytes(bytes),
+                    output: x,
+                }),
+                None => Err(FromValueError(Value::Bytes(bytes))),
+            },
             v => Err(FromValueError(v)),
         }
     }
@@ -367,12 +361,18 @@ impl ConvIr<f32> for ParseIr<f32> {
     fn new(v: Value) -> Result<ParseIr<f32>, FromValueError> {
         match v {
             Value::Float(x) if x >= ::std::f32::MIN as f64 && x <= ::std::f32::MAX as f64 => {
-                Ok(ParseIr { value: Value::Float(x), output: x as f32 })
+                Ok(ParseIr {
+                    value: Value::Float(x),
+                    output: x as f32,
+                })
             }
             Value::Bytes(bytes) => {
                 let val = from_utf8(&*bytes).ok().and_then(|x| f32::from_str(x).ok());
                 match val {
-                    Some(x) => Ok(ParseIr { value: Value::Bytes(bytes), output: x }),
+                    Some(x) => Ok(ParseIr {
+                        value: Value::Bytes(bytes),
+                        output: x,
+                    }),
                     None => Err(FromValueError(Value::Bytes(bytes))),
                 }
             }
@@ -390,11 +390,17 @@ impl ConvIr<f32> for ParseIr<f32> {
 impl ConvIr<f64> for ParseIr<f64> {
     fn new(v: Value) -> Result<ParseIr<f64>, FromValueError> {
         match v {
-            Value::Float(x) => Ok(ParseIr { value: Value::Float(x), output: x }),
+            Value::Float(x) => Ok(ParseIr {
+                value: Value::Float(x),
+                output: x,
+            }),
             Value::Bytes(bytes) => {
                 let val = from_utf8(&*bytes).ok().and_then(|x| f64::from_str(x).ok());
                 match val {
-                    Some(x) => Ok(ParseIr { value: Value::Bytes(bytes), output: x }),
+                    Some(x) => Ok(ParseIr {
+                        value: Value::Bytes(bytes),
+                        output: x,
+                    }),
                     _ => Err(FromValueError(Value::Bytes(bytes))),
                 }
             }
@@ -412,13 +418,25 @@ impl ConvIr<f64> for ParseIr<f64> {
 impl ConvIr<bool> for ParseIr<bool> {
     fn new(v: Value) -> Result<ParseIr<bool>, FromValueError> {
         match v {
-            Value::Int(0) => Ok(ParseIr { value: Value::Int(0), output: false }),
-            Value::Int(1) => Ok(ParseIr { value: Value::Int(1), output: true }),
+            Value::Int(0) => Ok(ParseIr {
+                value: Value::Int(0),
+                output: false,
+            }),
+            Value::Int(1) => Ok(ParseIr {
+                value: Value::Int(1),
+                output: true,
+            }),
             Value::Bytes(bytes) => {
                 if bytes.len() == 1 {
                     match bytes[0] {
-                        0x30 => Ok(ParseIr { value: Value::Bytes(bytes), output: false }),
-                        0x31 => Ok(ParseIr { value: Value::Bytes(bytes), output: true }),
+                        0x30 => Ok(ParseIr {
+                            value: Value::Bytes(bytes),
+                            output: false,
+                        }),
+                        0x31 => Ok(ParseIr {
+                            value: Value::Bytes(bytes),
+                            output: true,
+                        }),
                         _ => Err(FromValueError(Value::Bytes(bytes))),
                     }
                 } else {
@@ -491,7 +509,10 @@ impl ConvIr<Timespec> for ParseIr<Timespec> {
                         tm.to_timespec()
                     });
                 match val {
-                    Some(timespec) => Ok(ParseIr { value: Value::Bytes(bytes), output: timespec }),
+                    Some(timespec) => Ok(ParseIr {
+                        value: Value::Bytes(bytes),
+                        output: timespec,
+                    }),
                     None => Err(FromValueError(Value::Bytes(bytes))),
                 }
             }
@@ -566,7 +587,10 @@ impl ConvIr<NaiveDate> for ParseIr<NaiveDate> {
         let (date, value) = result?;
 
         if date.is_some() {
-            Ok(ParseIr { value: value, output: date.unwrap() })
+            Ok(ParseIr {
+                value: value,
+                output: date.unwrap(),
+            })
         } else {
             Err(FromValueError(value))
         }
@@ -694,7 +718,10 @@ impl ConvIr<NaiveTime> for ParseIr<NaiveTime> {
         let (time, value) = result?;
 
         if time.is_some() {
-            Ok(ParseIr { value: value, output: time.unwrap() })
+            Ok(ParseIr {
+                value: value,
+                output: time.unwrap(),
+            })
         } else {
             Err(FromValueError(value))
         }
@@ -712,8 +739,10 @@ impl ConvIr<Duration> for ParseIr<Duration> {
         match v {
             Value::Time(false, days, hours, minutes, seconds, microseconds) => {
                 let nanos = (microseconds as u32) * 1000;
-                let secs = seconds as u64 + minutes as u64 * 60 + hours as u64 * 60 * 60 +
-                    days as u64 * 60 * 60 * 24;
+                let secs = seconds as u64
+                    + minutes as u64 * 60
+                    + hours as u64 * 60 * 60
+                    + days as u64 * 60 * 60 * 24;
                 Ok(ParseIr {
                     value: Value::Time(false, days, hours, minutes, seconds, microseconds),
                     output: Duration::new(secs, nanos),
@@ -728,7 +757,10 @@ impl ConvIr<Duration> for ParseIr<Duration> {
                     }
                     _ => return Err(FromValueError(Value::Bytes(val_bytes))),
                 };
-                Ok(ParseIr { value: Value::Bytes(val_bytes), output: duration })
+                Ok(ParseIr {
+                    value: Value::Bytes(val_bytes),
+                    output: duration,
+                })
             }
             v => Err(FromValueError(v)),
         }
@@ -745,11 +777,11 @@ impl ConvIr<time::Duration> for ParseIr<time::Duration> {
     fn new(v: Value) -> Result<ParseIr<time::Duration>, FromValueError> {
         match v {
             Value::Time(is_neg, days, hours, minutes, seconds, microseconds) => {
-                let duration = time::Duration::days(days as i64) +
-                    time::Duration::hours(hours as i64) +
-                    time::Duration::minutes(minutes as i64) +
-                    time::Duration::seconds(seconds as i64) +
-                    time::Duration::microseconds(microseconds as i64);
+                let duration = time::Duration::days(days as i64)
+                    + time::Duration::hours(hours as i64)
+                    + time::Duration::minutes(minutes as i64)
+                    + time::Duration::seconds(seconds as i64)
+                    + time::Duration::microseconds(microseconds as i64);
                 Ok(ParseIr {
                     value: Value::Time(is_neg, days, hours, minutes, seconds, microseconds),
                     output: if is_neg { -duration } else { duration },
@@ -758,15 +790,22 @@ impl ConvIr<time::Duration> for ParseIr<time::Duration> {
             Value::Bytes(val_bytes) => {
                 let duration = match parse_mysql_time_string(&*val_bytes) {
                     Some((is_neg, hours, minutes, seconds, microseconds)) => {
-                        let duration = time::Duration::hours(hours as i64) +
-                            time::Duration::minutes(minutes as i64) +
-                            time::Duration::seconds(seconds as i64) +
-                            time::Duration::microseconds(microseconds as i64);
-                        if is_neg { -duration } else { duration }
+                        let duration = time::Duration::hours(hours as i64)
+                            + time::Duration::minutes(minutes as i64)
+                            + time::Duration::seconds(seconds as i64)
+                            + time::Duration::microseconds(microseconds as i64);
+                        if is_neg {
+                            -duration
+                        } else {
+                            duration
+                        }
                     }
                     _ => return Err(FromValueError(Value::Bytes(val_bytes))),
                 };
-                Ok(ParseIr { value: Value::Bytes(val_bytes), output: duration })
+                Ok(ParseIr {
+                    value: Value::Bytes(val_bytes),
+                    output: duration,
+                })
             }
             v => Err(FromValueError(v)),
         }
@@ -779,14 +818,36 @@ impl ConvIr<time::Duration> for ParseIr<time::Duration> {
     }
 }
 
-impl_from_value!(NaiveDateTime, ParseIr<NaiveDateTime>,
-                 "Could not retrieve NaiveDateTime from Value");
-impl_from_value!(NaiveDate, ParseIr<NaiveDate>, "Could not retrieve NaiveDate from Value");
-impl_from_value!(NaiveTime, ParseIr<NaiveTime>, "Could not retrieve NaiveTime from Value");
-impl_from_value!(Timespec, ParseIr<Timespec>, "Could not retrieve Timespec from Value");
-impl_from_value!(Duration, ParseIr<Duration>, "Could not retrieve Duration from Value");
-impl_from_value!(time::Duration, ParseIr<time::Duration>,
-                 "Could not retrieve time::Duration from Value");
+impl_from_value!(
+    NaiveDateTime,
+    ParseIr<NaiveDateTime>,
+    "Could not retrieve NaiveDateTime from Value"
+);
+impl_from_value!(
+    NaiveDate,
+    ParseIr<NaiveDate>,
+    "Could not retrieve NaiveDate from Value"
+);
+impl_from_value!(
+    NaiveTime,
+    ParseIr<NaiveTime>,
+    "Could not retrieve NaiveTime from Value"
+);
+impl_from_value!(
+    Timespec,
+    ParseIr<Timespec>,
+    "Could not retrieve Timespec from Value"
+);
+impl_from_value!(
+    Duration,
+    ParseIr<Duration>,
+    "Could not retrieve Duration from Value"
+);
+impl_from_value!(
+    time::Duration,
+    ParseIr<time::Duration>,
+    "Could not retrieve time::Duration from Value"
+);
 impl_from_value!(String, StringIr, "Could not retrieve String from Value");
 impl_from_value!(Vec<u8>, BytesIr, "Could not retrieve Vec<u8> from Value");
 impl_from_value!(bool, ParseIr<bool>, "Could not retrieve bool from Value");
@@ -1069,12 +1130,13 @@ pub struct UuidIr {
 impl ConvIr<Uuid> for UuidIr {
     fn new(v: Value) -> Result<UuidIr, FromValueError> {
         match v {
-            Value::Bytes(bytes) => {
-                match Uuid::from_bytes(bytes.as_slice()) {
-                    Ok(val) => Ok(UuidIr { val: val, bytes: bytes }),
-                    Err(_) => Err(FromValueError(Value::Bytes(bytes))),
-                }
-            }
+            Value::Bytes(bytes) => match Uuid::from_bytes(bytes.as_slice()) {
+                Ok(val) => Ok(UuidIr {
+                    val: val,
+                    bytes: bytes,
+                }),
+                Err(_) => Err(FromValueError(Value::Bytes(bytes))),
+            },
             v => Err(FromValueError(v)),
         }
     }

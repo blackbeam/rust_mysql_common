@@ -62,9 +62,11 @@ macro_rules! split_at_or_err {
 macro_rules! read_lenenc_str {
     ($reader:expr) => {
         $reader.read_lenenc_int().and_then(|len| {
-            let (value, rest) = split_at_or_err!($reader,
-                                                 len as usize,
-                                                 "EOF while reading length-encoded string")?;
+            let (value, rest) = split_at_or_err!(
+                $reader,
+                len as usize,
+                "EOF while reading length-encoded string"
+            )?;
             *$reader = rest;
             Ok(value)
         })
@@ -78,6 +80,5 @@ pub mod named_params;
 pub mod packets;
 pub mod params;
 pub mod row;
-pub mod value;
 pub mod scramble;
-
+pub mod value;

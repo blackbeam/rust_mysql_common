@@ -121,18 +121,10 @@ impl Value {
             Value::Date(y, m, d, h, i, s, 0) => {
                 format!("'{:04}-{:02}-{:02} {:02}:{:02}:{:02}'", y, m, d, h, i, s)
             }
-            Value::Date(y, m, d, h, i, s, u) => {
-                format!(
-                    "'{:04}-{:02}-{:02} {:02}:{:02}:{:02}.{:06}'",
-                    y,
-                    m,
-                    d,
-                    h,
-                    i,
-                    s,
-                    u
-                )
-            }
+            Value::Date(y, m, d, h, i, s, u) => format!(
+                "'{:04}-{:02}-{:02} {:02}:{:02}:{:02}.{:06}'",
+                y, m, d, h, i, s, u
+            ),
             Value::Time(neg, d, h, i, s, 0) => {
                 if neg {
                     format!("'-{:03}:{:02}:{:02}'", d * 24 + h as u32, i, s)
@@ -147,18 +139,16 @@ impl Value {
                     format!("'{:03}:{:02}:{:02}.{:06}'", d * 24 + h as u32, i, s, u)
                 }
             }
-            Value::Bytes(ref bytes) => {
-                match from_utf8(&*bytes) {
-                    Ok(string) => escaped(string, no_backslash_escape),
-                    Err(_) => {
-                        let mut s = String::from("0x");
-                        for c in bytes.iter() {
-                            s.extend(format!("{:02X}", *c).chars())
-                        }
-                        s
+            Value::Bytes(ref bytes) => match from_utf8(&*bytes) {
+                Ok(string) => escaped(string, no_backslash_escape),
+                Err(_) => {
+                    let mut s = String::from("0x");
+                    for c in bytes.iter() {
+                        s.extend(format!("{:02X}", *c).chars())
                     }
+                    s
                 }
-            }
+            },
         }
     }
 
@@ -199,20 +189,20 @@ impl Value {
 
     fn read_bin(input: &mut &[u8], column_type: ColumnType, unsigned: bool) -> io::Result<Value> {
         match column_type {
-            ColumnType::MYSQL_TYPE_STRING |
-            ColumnType::MYSQL_TYPE_VAR_STRING |
-            ColumnType::MYSQL_TYPE_BLOB |
-            ColumnType::MYSQL_TYPE_TINY_BLOB |
-            ColumnType::MYSQL_TYPE_MEDIUM_BLOB |
-            ColumnType::MYSQL_TYPE_LONG_BLOB |
-            ColumnType::MYSQL_TYPE_SET |
-            ColumnType::MYSQL_TYPE_ENUM |
-            ColumnType::MYSQL_TYPE_DECIMAL |
-            ColumnType::MYSQL_TYPE_VARCHAR |
-            ColumnType::MYSQL_TYPE_BIT |
-            ColumnType::MYSQL_TYPE_NEWDECIMAL |
-            ColumnType::MYSQL_TYPE_GEOMETRY |
-            ColumnType::MYSQL_TYPE_JSON => Ok(Bytes(read_lenenc_str!(input)?.into())),
+            ColumnType::MYSQL_TYPE_STRING
+            | ColumnType::MYSQL_TYPE_VAR_STRING
+            | ColumnType::MYSQL_TYPE_BLOB
+            | ColumnType::MYSQL_TYPE_TINY_BLOB
+            | ColumnType::MYSQL_TYPE_MEDIUM_BLOB
+            | ColumnType::MYSQL_TYPE_LONG_BLOB
+            | ColumnType::MYSQL_TYPE_SET
+            | ColumnType::MYSQL_TYPE_ENUM
+            | ColumnType::MYSQL_TYPE_DECIMAL
+            | ColumnType::MYSQL_TYPE_VARCHAR
+            | ColumnType::MYSQL_TYPE_BIT
+            | ColumnType::MYSQL_TYPE_NEWDECIMAL
+            | ColumnType::MYSQL_TYPE_GEOMETRY
+            | ColumnType::MYSQL_TYPE_JSON => Ok(Bytes(read_lenenc_str!(input)?.into())),
             ColumnType::MYSQL_TYPE_TINY => {
                 if unsigned {
                     Ok(Int(input.read_u8()? as i64))
@@ -220,16 +210,14 @@ impl Value {
                     Ok(Int(input.read_i8()? as i64))
                 }
             }
-            ColumnType::MYSQL_TYPE_SHORT |
-            ColumnType::MYSQL_TYPE_YEAR => {
+            ColumnType::MYSQL_TYPE_SHORT | ColumnType::MYSQL_TYPE_YEAR => {
                 if unsigned {
                     Ok(Int(input.read_u16::<LE>()? as i64))
                 } else {
                     Ok(Int(input.read_i16::<LE>()? as i64))
                 }
             }
-            ColumnType::MYSQL_TYPE_LONG |
-            ColumnType::MYSQL_TYPE_INT24 => {
+            ColumnType::MYSQL_TYPE_LONG | ColumnType::MYSQL_TYPE_INT24 => {
                 if unsigned {
                     Ok(Int(input.read_u32::<LE>()? as i64))
                 } else {
@@ -245,9 +233,9 @@ impl Value {
             }
             ColumnType::MYSQL_TYPE_FLOAT => Ok(Float(input.read_f32::<LE>()? as f64)),
             ColumnType::MYSQL_TYPE_DOUBLE => Ok(Float(input.read_f64::<LE>()?)),
-            ColumnType::MYSQL_TYPE_TIMESTAMP |
-            ColumnType::MYSQL_TYPE_DATE |
-            ColumnType::MYSQL_TYPE_DATETIME => {
+            ColumnType::MYSQL_TYPE_TIMESTAMP
+            | ColumnType::MYSQL_TYPE_DATE
+            | ColumnType::MYSQL_TYPE_DATETIME => {
                 let len = input.read_u8()?;
                 let mut year = 0u16;
                 let mut month = 0u8;
@@ -310,9 +298,7 @@ impl Value {
 
         let mut bitmap = BitVec::<u8>::default();
         for i in 0..columns.len() {
-            bitmap.push(
-                input[(i + BIT_OFFSET) / 8] & (1 << ((i + BIT_OFFSET) % 8)) > 0,
-            )
+            bitmap.push(input[(i + BIT_OFFSET) / 8] & (1 << ((i + BIT_OFFSET) % 8)) > 0)
         }
 
         let mut values = SmallVec::<[Value; 12]>::new();
@@ -407,13 +393,7 @@ impl fmt::Debug for Value {
             Value::Date(y, m, d, h, i, s, u) => {
                 let format = format!(
                     "'{:04}-{:02}-{:02} {:02}:{:02}:{:02}.{:06}'",
-                    y,
-                    m,
-                    d,
-                    h,
-                    i,
-                    s,
-                    u
+                    y, m, d, h, i, s, u
                 );
                 f.debug_tuple("Date").field(&format).finish()
             }

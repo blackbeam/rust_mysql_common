@@ -38,41 +38,33 @@ pub fn parse_named_params<'a>(
     for (i, c) in query.char_indices() {
         let mut rematch = false;
         match state {
-            TopLevel => {
-                match c {
-                    ':' => state = MaybeInNamedParam,
-                    '\'' => state = InStringLiteral('\'', '\''),
-                    '"' => state = InStringLiteral('"', '"'),
-                    '?' => have_positional = true,
-                    _ => (),
+            TopLevel => match c {
+                ':' => state = MaybeInNamedParam,
+                '\'' => state = InStringLiteral('\'', '\''),
+                '"' => state = InStringLiteral('"', '"'),
+                '?' => have_positional = true,
+                _ => (),
+            },
+            InStringLiteral(separator, prev_char) => match c {
+                x if x == separator && prev_char != '\\' => state = TopLevel,
+                x => state = InStringLiteral(separator, x),
+            },
+            MaybeInNamedParam => match c {
+                'a'...'z' | '_' => {
+                    params.push((i - 1, 0, String::with_capacity(16)));
+                    params[cur_param].2.push(c);
+                    state = InNamedParam;
                 }
-            }
-            InStringLiteral(separator, prev_char) => {
-                match c {
-                    x if x == separator && prev_char != '\\' => state = TopLevel,
-                    x => state = InStringLiteral(separator, x),
+                _ => rematch = true,
+            },
+            InNamedParam => match c {
+                'a'...'z' | '0'...'9' | '_' => params[cur_param].2.push(c),
+                _ => {
+                    params[cur_param].1 = i;
+                    cur_param += 1;
+                    rematch = true;
                 }
-            }
-            MaybeInNamedParam => {
-                match c {
-                    'a'...'z' | '_' => {
-                        params.push((i - 1, 0, String::with_capacity(16)));
-                        params[cur_param].2.push(c);
-                        state = InNamedParam;
-                    }
-                    _ => rematch = true,
-                }
-            }
-            InNamedParam => {
-                match c {
-                    'a'...'z' | '0'...'9' | '_' => params[cur_param].2.push(c),
-                    _ => {
-                        params[cur_param].1 = i;
-                        cur_param += 1;
-                        rematch = true;
-                    }
-                }
-            }
+            },
         }
         if rematch {
             match c {
@@ -172,8 +164,8 @@ mod test {
 
     #[cfg(feature = "nightly")]
     mod bench {
-        use test;
         use named_params::parse_named_params;
+        use test;
 
         #[bench]
         fn parse_ten_named_params(bencher: &mut test::Bencher) {

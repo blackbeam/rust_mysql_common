@@ -7,10 +7,12 @@
 // modified, or distributed except according to those terms.
 
 use atoi::atoi;
-use io::ReadMysqlExt;
 use byteorder::{LittleEndian as LE, ReadBytesExt, WriteBytesExt};
-use constants::{CapabilityFlags, ColumnFlags, ColumnType, MAX_PAYLOAD_LEN, SessionStateType,
-                StatusFlags, UTF8_GENERAL_CI, UTF8MB4_GENERAL_CI};
+use constants::{
+    CapabilityFlags, ColumnFlags, ColumnType, SessionStateType, StatusFlags, UTF8MB4_GENERAL_CI,
+    UTF8_GENERAL_CI, MAX_PAYLOAD_LEN,
+};
+use io::ReadMysqlExt;
 use regex::bytes::Regex;
 use std::borrow::Cow;
 use std::cmp::{max, min};
@@ -26,13 +28,9 @@ macro_rules! get_offset_and_len {
 }
 
 lazy_static! {
-    static ref MARIADB_VERSION_RE: Regex = {
-        Regex::new(r"^5.5.5-(\d{1,2})\.(\d{1,2})\.(\d{1,3})-MariaDB").unwrap()
-    };
-
-    static ref VERSION_RE: Regex = {
-        Regex::new(r"^(\d{1,2})\.(\d{1,2})\.(\d{1,3})(.*)").unwrap()
-    };
+    static ref MARIADB_VERSION_RE: Regex =
+        { Regex::new(r"^5.5.5-(\d{1,2})\.(\d{1,2})\.(\d{1,3})-MariaDB").unwrap() };
+    static ref VERSION_RE: Regex = { Regex::new(r"^(\d{1,2})\.(\d{1,2})\.(\d{1,3})(.*)").unwrap() };
 }
 
 /// Raw mysql packet
@@ -265,12 +263,10 @@ pub enum SessionStateChange<'a> {
 impl<'a> SessionStateChange<'a> {
     pub fn into_owned(self) -> SessionStateChange<'static> {
         match self {
-            SessionStateChange::SystemVariable(name, value) => {
-                SessionStateChange::SystemVariable(
-                    name.into_owned().into(),
-                    value.into_owned().into(),
-                )
-            }
+            SessionStateChange::SystemVariable(name, value) => SessionStateChange::SystemVariable(
+                name.into_owned().into(),
+                value.into_owned().into(),
+            ),
             SessionStateChange::Schema(schema) => {
                 SessionStateChange::Schema(schema.into_owned().into())
             }
@@ -300,7 +296,10 @@ impl<'a> SessionStateInfo<'a> {
 
     pub fn into_owned(self) -> SessionStateInfo<'static> {
         let SessionStateInfo { data_type, data } = self;
-        SessionStateInfo { data_type, data: data.into_owned().into() }
+        SessionStateInfo {
+            data_type,
+            data: data.into_owned().into(),
+        }
     }
 
     pub fn data_type(&self) -> SessionStateType {
@@ -327,9 +326,9 @@ impl<'a> SessionStateInfo<'a> {
                 Ok(SessionStateChange::IsTracked(is_tracked == b"1"))
             }
             // Layout not specified in documentation
-            SessionStateType::SESSION_TRACK_GTIDS |
-            SessionStateType::SESSION_TRACK_TRANSACTION_CHARACTERISTICS |
-            SessionStateType::SESSION_TRACK_TRANSACTION_STATE => {
+            SessionStateType::SESSION_TRACK_GTIDS
+            | SessionStateType::SESSION_TRACK_TRANSACTION_CHARACTERISTICS
+            | SessionStateType::SESSION_TRACK_TRANSACTION_STATE => {
                 Ok(SessionStateChange::UnknownLayout(self.data.clone()))
             }
         }
@@ -466,9 +465,9 @@ impl<'a> OkPacket<'a> {
 
     /// Value of the info field of an Ok packet as a string (lossy converted).
     pub fn info_str<'x>(&'x self) -> Option<Cow<'x, str>> {
-        self.info.as_ref().map(
-            |x| String::from_utf8_lossy(x.as_ref()),
-        )
+        self.info
+            .as_ref()
+            .map(|x| String::from_utf8_lossy(x.as_ref()))
     }
 
     pub fn session_state_info(&self) -> Option<&SessionStateInfo> {
@@ -492,7 +491,12 @@ impl<'a> ProgressReport<'a> {
         progress: u32,
         stage_info: &'x [u8],
     ) -> ProgressReport<'x> {
-        ProgressReport { stage, max_stage, progress, stage_info: stage_info.into() }
+        ProgressReport {
+            stage,
+            max_stage,
+            progress,
+            stage_info: stage_info.into(),
+        }
     }
 
     /// 1 to max_stage
@@ -520,7 +524,12 @@ impl<'a> ProgressReport<'a> {
     }
 
     pub fn into_owned(self) -> ProgressReport<'static> {
-        let ProgressReport { stage, max_stage, progress, stage_info } = self;
+        let ProgressReport {
+            stage,
+            max_stage,
+            progress,
+            stage_info,
+        } = self;
         ProgressReport {
             stage,
             max_stage,
@@ -592,14 +601,12 @@ impl<'a> ErrPacket<'a> {
                         unsafe { ptr::read(state.as_ptr().offset(1) as *const [u8; 5]) },
                         msg.into(),
                     ))
-                },
-                _ => {
-                    Ok(ErrPacket::Error(
-                        code,
-                        [b'H', b'Y', b'0', b'0', b'0'],
-                        payload.into(),
-                    ))
                 }
+                _ => Ok(ErrPacket::Error(
+                    code,
+                    [b'H', b'Y', b'0', b'0', b'0'],
+                    payload.into(),
+                )),
             }
         }
     }
@@ -680,15 +687,13 @@ impl<'a> ErrPacket<'a> {
 impl<'a> fmt::Display for ErrPacket<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            ErrPacket::Error(..) => {
-                write!(
-                    f,
-                    "ERROR {} ({}): {}",
-                    self.error_code(),
-                    self.sql_state_str(),
-                    self.message_str()
-                )
-            }
+            ErrPacket::Error(..) => write!(
+                f,
+                "ERROR {} ({}): {}",
+                self.error_code(),
+                self.sql_state_str(),
+                self.message_str()
+            ),
             ErrPacket::Progress(ref progress_report) => write!(f, "{}", progress_report),
         }
     }
@@ -714,7 +719,9 @@ impl<'a> LocalInfilePacket<'a> {
             ));
         }
 
-        Ok(LocalInfilePacket { file_name: payload.into() })
+        Ok(LocalInfilePacket {
+            file_name: payload.into(),
+        })
     }
 
     /// Value of the file_name field of a local infile packet as a byte slice.
@@ -728,7 +735,9 @@ impl<'a> LocalInfilePacket<'a> {
     }
 
     pub fn into_owned(self) -> LocalInfilePacket<'static> {
-        LocalInfilePacket { file_name: self.file_name.into_owned().into() }
+        LocalInfilePacket {
+            file_name: self.file_name.into_owned().into(),
+        }
     }
 }
 
@@ -794,7 +803,6 @@ impl<'a> HandshakePacket<'a> {
             } else {
                 Some(payload)
             }
-
         } else {
             None
         };
@@ -845,30 +853,30 @@ impl<'a> HandshakePacket<'a> {
     ///
     /// Will parse first \d+.\d+.\d+ of a server version string (if any).
     pub fn server_version_parsed(&self) -> Option<(u16, u16, u16)> {
-        VERSION_RE.captures(self.server_version_ref()).map(
-            |captures| {
+        VERSION_RE
+            .captures(self.server_version_ref())
+            .map(|captures| {
                 // Should not panic because validated with regex
                 (
                     atoi::<u16>(captures.get(1).unwrap().as_bytes()).unwrap(),
                     atoi::<u16>(captures.get(2).unwrap().as_bytes()).unwrap(),
                     atoi::<u16>(captures.get(3).unwrap().as_bytes()).unwrap(),
                 )
-            },
-        )
+            })
     }
 
     /// Parsed mariadb server version.
     pub fn maria_db_server_version_parsed(&self) -> Option<(u16, u16, u16)> {
-        MARIADB_VERSION_RE.captures(self.server_version_ref()).map(
-            |captures| {
+        MARIADB_VERSION_RE
+            .captures(self.server_version_ref())
+            .map(|captures| {
                 // Should not panic because validated with regex
                 (
                     atoi::<u16>(captures.get(1).unwrap().as_bytes()).unwrap(),
                     atoi::<u16>(captures.get(2).unwrap().as_bytes()).unwrap(),
                     atoi::<u16>(captures.get(3).unwrap().as_bytes()).unwrap(),
                 )
-            },
-        )
+            })
     }
 
     /// Value of the connection_id field of an initial handshake packet.
@@ -1055,9 +1063,11 @@ impl StmtPacket {
 
 #[cfg(test)]
 mod test {
-    use constants::{UTF8_GENERAL_CI, CapabilityFlags, ColumnFlags, ColumnType, StatusFlags};
-    use super::{column_from_payload, parse_err_packet, parse_handshake_packet,
-                parse_local_infile_packet, parse_ok_packet, parse_stmt_packet, SessionStateChange};
+    use super::{
+        column_from_payload, parse_err_packet, parse_handshake_packet, parse_local_infile_packet,
+        parse_ok_packet, parse_stmt_packet, SessionStateChange,
+    };
+    use constants::{CapabilityFlags, ColumnFlags, ColumnType, StatusFlags, UTF8_GENERAL_CI};
 
     #[test]
     fn should_parse_local_infile_packet() {
@@ -1168,8 +1178,7 @@ mod test {
 
     #[test]
     fn should_parse_column_packet() {
-        const COLUMN_PACKET: &[u8] =
-            b"\x03def\x06schema\x05table\x09org_table\x04name\
+        const COLUMN_PACKET: &[u8] = b"\x03def\x06schema\x05table\x09org_table\x04name\
               \x08org_name\x0c\x21\x00\x0F\x00\x00\x00\x00\x01\x00\x08\x00\x00";
         let column = column_from_payload(COLUMN_PACKET.into()).unwrap();
         assert_eq!(column.schema_str(), "schema");
@@ -1238,8 +1247,8 @@ mod test {
             SessionStateChange::Schema((&b"test"[..]).into())
         );
 
-        let ok_packet = parse_ok_packet(SESS_STATE_TRACK_OK, CapabilityFlags::CLIENT_SESSION_TRACK)
-            .unwrap();
+        let ok_packet =
+            parse_ok_packet(SESS_STATE_TRACK_OK, CapabilityFlags::CLIENT_SESSION_TRACK).unwrap();
         assert_eq!(ok_packet.affected_rows(), 0);
         assert_eq!(ok_packet.last_insert_id(), None);
         assert_eq!(

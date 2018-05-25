@@ -7,14 +7,14 @@
 // modified, or distributed except according to those terms.
 
 use smallvec::SmallVec;
-use std::collections::HashMap;
 use std::collections::hash_map::Entry::Occupied;
+use std::collections::HashMap;
 use std::error::Error;
 use std::fmt;
 use std::hash::BuildHasherDefault;
 use twox_hash::XxHash;
-use value::Value;
 use value::convert::ToValue;
+use value::Value;
 
 /// `FromValue` conversion error.
 #[derive(Debug, Eq, PartialEq, Clone)]
