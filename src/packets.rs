@@ -589,7 +589,7 @@ impl<'a> ErrPacket<'a> {
                         split_at_or_err!(payload, 6, "EOF while reading error state")?;
                     Ok(ErrPacket::Error(
                         code,
-                        unsafe { ptr::read(state.as_ptr() as *const [u8; 5]) },
+                        unsafe { ptr::read(state.as_ptr().offset(1) as *const [u8; 5]) },
                         msg.into(),
                     ))
                 },
@@ -1146,6 +1146,7 @@ mod test {
         let err_packet = parse_err_packet(ERR_PACKET, CapabilityFlags::empty()).unwrap();
         assert!(err_packet.is_error());
         assert_eq!(err_packet.error_code(), 1096);
+        assert_eq!(err_packet.sql_state_str(), "HY000");
         assert_eq!(err_packet.message_str(), "No tables used");
 
         let err_packet =
