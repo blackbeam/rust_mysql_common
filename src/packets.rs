@@ -745,6 +745,7 @@ const MYSQL_NATIVE_PASSWORD_PLUGIN_NAME: &[u8] = b"mysql_native_password";
 const CACHING_SHA2_PASSWORD_PLUGIN_NAME: &[u8] = b"caching_sha2_password";
 
 /// Authentication plugin
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub enum AuthPlugin<'a> {
     /// Legacy authentication plugin
     MysqlNativePassword,
@@ -754,7 +755,7 @@ pub enum AuthPlugin<'a> {
 }
 
 impl<'a> AuthPlugin<'a> {
-    fn from_bytes(name: &'a [u8]) -> AuthPlugin<'a> {
+    pub fn from_bytes(name: &'a [u8]) -> AuthPlugin<'a> {
         match name {
             CACHING_SHA2_PASSWORD_PLUGIN_NAME => AuthPlugin::CachingSha2Password,
             MYSQL_NATIVE_PASSWORD_PLUGIN_NAME => AuthPlugin::MysqlNativePassword,
@@ -762,7 +763,7 @@ impl<'a> AuthPlugin<'a> {
         }
     }
 
-    fn as_bytes(&self) -> &[u8] {
+    pub fn as_bytes(&self) -> &[u8] {
         match self {
             AuthPlugin::MysqlNativePassword => MYSQL_NATIVE_PASSWORD_PLUGIN_NAME,
             AuthPlugin::CachingSha2Password => CACHING_SHA2_PASSWORD_PLUGIN_NAME,
@@ -770,7 +771,7 @@ impl<'a> AuthPlugin<'a> {
         }
     }
 
-    fn into_owned(self) -> AuthPlugin<'static> {
+    pub fn into_owned(self) -> AuthPlugin<'static> {
         match self {
             AuthPlugin::CachingSha2Password => AuthPlugin::CachingSha2Password,
             AuthPlugin::MysqlNativePassword => AuthPlugin::MysqlNativePassword,
@@ -780,6 +781,7 @@ impl<'a> AuthPlugin<'a> {
 }
 
 /// Represents MySql's initial handshake packet.
+#[derive(Debug)]
 pub struct HandshakePacket<'a> {
     protocol_version: u8,
     server_version: Cow<'a, [u8]>,
@@ -956,6 +958,11 @@ impl<'a> HandshakePacket<'a> {
     /// (lossy converted).
     pub fn auth_plugin_name_str(&self) -> Option<Cow<str>> {
         self.auth_plugin.as_ref().map(AuthPlugin::as_bytes).map(String::from_utf8_lossy)
+    }
+
+    /// Auth plugin of a handshake packet
+    pub fn auth_plugin(&self) -> Option<&AuthPlugin> {
+        self.auth_plugin.as_ref()
     }
 }
 
