@@ -759,7 +759,7 @@ impl<'a> AuthPlugin<'a> {
         match name {
             CACHING_SHA2_PASSWORD_PLUGIN_NAME => AuthPlugin::CachingSha2Password,
             MYSQL_NATIVE_PASSWORD_PLUGIN_NAME => AuthPlugin::MysqlNativePassword,
-            name => AuthPlugin::Other(name.into())
+            name => AuthPlugin::Other(name.into()),
         }
     }
 
@@ -957,7 +957,10 @@ impl<'a> HandshakePacket<'a> {
     /// Value of the auth_plugin_name field of an initial handshake packet as a string
     /// (lossy converted).
     pub fn auth_plugin_name_str(&self) -> Option<Cow<str>> {
-        self.auth_plugin.as_ref().map(AuthPlugin::as_bytes).map(String::from_utf8_lossy)
+        self.auth_plugin
+            .as_ref()
+            .map(AuthPlugin::as_bytes)
+            .map(String::from_utf8_lossy)
     }
 
     /// Auth plugin of a handshake packet

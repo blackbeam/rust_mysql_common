@@ -1,6 +1,6 @@
-use regex::bytes::Regex;
 use base64::*;
 use num_bigint::BigUint;
+use regex::bytes::Regex;
 use std::mem::size_of;
 
 /// Type of a der-encoded public key.
@@ -14,19 +14,21 @@ pub enum PubKeyFileType {
 pub fn pem_to_der(pem: impl AsRef<[u8]>) -> (Vec<u8>, PubKeyFileType) {
     let pkcs1_re = Regex::new(
         "-----BEGIN RSA PUBLIC KEY-----\
-    ([^-]*)\
-    -----END RSA PUBLIC KEY-----"
+         ([^-]*)\
+         -----END RSA PUBLIC KEY-----",
     ).unwrap();
     let pkcs8_re = Regex::new(
         "-----BEGIN PUBLIC KEY-----\
-    ([^-]*)\
-    -----END PUBLIC KEY-----"
+         ([^-]*)\
+         -----END PUBLIC KEY-----",
     ).unwrap();
 
-    let (captures, key_file_type) = pkcs1_re.captures(pem.as_ref())
+    let (captures, key_file_type) = pkcs1_re
+        .captures(pem.as_ref())
         .map(|captures| (captures, PubKeyFileType::Pkcs1))
         .unwrap_or_else(|| {
-            pkcs8_re.captures(pem.as_ref())
+            pkcs8_re
+                .captures(pem.as_ref())
                 .map(|captures| (captures, PubKeyFileType::Pkcs8))
                 .expect("valid PEM is mandatory here")
         });
