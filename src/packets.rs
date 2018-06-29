@@ -741,7 +741,47 @@ impl<'a> LocalInfilePacket<'a> {
     }
 }
 
+const MYSQL_NATIVE_PASSWORD_PLUGIN_NAME: &[u8] = b"mysql_native_password";
+const CACHING_SHA2_PASSWORD_PLUGIN_NAME: &[u8] = b"caching_sha2_password";
+
+/// Authentication plugin
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+pub enum AuthPlugin<'a> {
+    /// Legacy authentication plugin
+    MysqlNativePassword,
+    /// Default since MySql v8.0.4
+    CachingSha2Password,
+    Other(Cow<'a, [u8]>),
+}
+
+impl<'a> AuthPlugin<'a> {
+    pub fn from_bytes(name: &'a [u8]) -> AuthPlugin<'a> {
+        match name {
+            CACHING_SHA2_PASSWORD_PLUGIN_NAME => AuthPlugin::CachingSha2Password,
+            MYSQL_NATIVE_PASSWORD_PLUGIN_NAME => AuthPlugin::MysqlNativePassword,
+            name => AuthPlugin::Other(name.into())
+        }
+    }
+
+    pub fn as_bytes(&self) -> &[u8] {
+        match self {
+            AuthPlugin::MysqlNativePassword => MYSQL_NATIVE_PASSWORD_PLUGIN_NAME,
+            AuthPlugin::CachingSha2Password => CACHING_SHA2_PASSWORD_PLUGIN_NAME,
+            AuthPlugin::Other(name) => &*name,
+        }
+    }
+
+    pub fn into_owned(self) -> AuthPlugin<'static> {
+        match self {
+            AuthPlugin::CachingSha2Password => AuthPlugin::CachingSha2Password,
+            AuthPlugin::MysqlNativePassword => AuthPlugin::MysqlNativePassword,
+            AuthPlugin::Other(name) => AuthPlugin::Other(name.into_owned().into()),
+        }
+    }
+}
+
 /// Represents MySql's initial handshake packet.
+#[derive(Debug)]
 pub struct HandshakePacket<'a> {
     protocol_version: u8,
     server_version: Cow<'a, [u8]>,
@@ -751,7 +791,7 @@ pub struct HandshakePacket<'a> {
     capabilities: CapabilityFlags,
     default_collation: u8,
     status_flags: StatusFlags,
-    auth_plugin_name: Option<Cow<'a, [u8]>>,
+    auth_plugin: Option<AuthPlugin<'a>>,
 }
 
 /// Parses payload as an initial handshake packet.
@@ -815,7 +855,7 @@ impl<'a> HandshakePacket<'a> {
             capabilities,
             default_collation,
             status_flags: StatusFlags::from_bits_truncate(status_flags),
-            auth_plugin_name: auth_plugin_name.map(Into::into),
+            auth_plugin: auth_plugin_name.map(AuthPlugin::from_bytes),
         })
     }
 
@@ -829,7 +869,7 @@ impl<'a> HandshakePacket<'a> {
             capabilities: self.capabilities,
             default_collation: self.default_collation,
             status_flags: self.status_flags,
-            auth_plugin_name: self.auth_plugin_name.map(Cow::into_owned).map(Into::into),
+            auth_plugin: self.auth_plugin.map(AuthPlugin::into_owned),
         }
     }
 
@@ -911,13 +951,18 @@ impl<'a> HandshakePacket<'a> {
 
     /// Value of the auth_plugin_name field of an initial handshake packet as a byte slice.
     pub fn auth_plugin_name_ref(&self) -> Option<&[u8]> {
-        self.auth_plugin_name.as_ref().map(Cow::as_ref)
+        self.auth_plugin.as_ref().map(AuthPlugin::as_bytes)
     }
 
     /// Value of the auth_plugin_name field of an initial handshake packet as a string
     /// (lossy converted).
     pub fn auth_plugin_name_str(&self) -> Option<Cow<str>> {
-        self.auth_plugin_name_ref().map(String::from_utf8_lossy)
+        self.auth_plugin.as_ref().map(AuthPlugin::as_bytes).map(String::from_utf8_lossy)
+    }
+
+    /// Auth plugin of a handshake packet
+    pub fn auth_plugin(&self) -> Option<&AuthPlugin> {
+        self.auth_plugin.as_ref()
     }
 }
 

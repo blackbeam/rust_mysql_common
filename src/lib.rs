@@ -7,6 +7,7 @@
 // modified, or distributed except according to those terms.
 
 extern crate atoi;
+extern crate base64;
 extern crate bit_vec;
 #[macro_use]
 extern crate bitflags;
@@ -14,12 +15,15 @@ extern crate byteorder;
 pub extern crate chrono;
 #[macro_use]
 extern crate lazy_static;
+extern crate num_bigint;
+extern crate rand;
 extern crate regex;
 #[cfg(feature = "rustc_serialize")]
 pub extern crate rustc_serialize;
 pub extern crate serde;
 pub extern crate serde_json;
 extern crate sha1;
+extern crate sha2;
 extern crate smallvec;
 pub extern crate time;
 extern crate twox_hash;
@@ -74,6 +78,7 @@ macro_rules! read_lenenc_str {
 }
 
 pub mod constants;
+pub mod crypto;
 pub mod io;
 pub mod named_params;
 #[macro_use]
