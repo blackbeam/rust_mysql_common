@@ -20,6 +20,7 @@ pub extern crate rustc_serialize;
 pub extern crate serde;
 pub extern crate serde_json;
 extern crate sha1;
+extern crate sha2;
 extern crate smallvec;
 pub extern crate time;
 extern crate twox_hash;
