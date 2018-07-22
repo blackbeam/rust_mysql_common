@@ -986,8 +986,10 @@ impl HandshakeResponse {
         server_version: (u16, u16, u16),
         user: Option<&str>,
         db_name: Option<&str>,
+        auth_plugin: AuthPlugin,
         client_flags: CapabilityFlags,
     ) -> HandshakeResponse {
+        let plugin_auth = client_flags.contains(CapabilityFlags::CLIENT_PLUGIN_AUTH);
         let user_len = user.map(|user| user.len()).unwrap_or(0);
         let database_len = db_name.map(|database| database.len()).unwrap_or(0);
         let scramble_len = scramble_buf
@@ -998,6 +1000,9 @@ impl HandshakeResponse {
         let mut payload_len = 4 + 4 + 1 + 23 + user_len + 1 + 1 + scramble_len;
         if database_len > 0 {
             payload_len += database_len + 1;
+        }
+        if plugin_auth {
+            payload_len += auth_plugin.as_bytes().len() + 1;
         }
 
         let mut data = vec![0u8; payload_len];
@@ -1024,6 +1029,10 @@ impl HandshakeResponse {
                     writer.write_all(database.as_bytes()).unwrap();
                     writer.write_u8(0).unwrap();
                 }
+            }
+            if plugin_auth {
+                writer.write_all(auth_plugin.as_bytes()).unwrap();
+                writer.write_u8(0).unwrap();
             }
         }
 
