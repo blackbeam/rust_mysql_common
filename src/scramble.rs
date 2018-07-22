@@ -9,30 +9,44 @@
 use sha1::Sha1;
 use sha2::{Digest, Sha256};
 
-fn xor(left: impl AsRef<[u8]>, right: impl AsRef<[u8]>) -> Vec<u8> {
-    assert_eq!(left.as_ref().len(), right.as_ref().len());
-    left.as_ref()
-        .iter()
+fn xor<T, U>(mut left: T, right: U) -> T
+where
+    T: AsMut<[u8]>,
+    U: AsRef<[u8]>,
+{
+    left.as_mut()
+        .iter_mut()
         .zip(right.as_ref().iter())
-        .map(|(l, r)| l ^ r)
-        .collect()
+        .map(|(l, r)| *l ^= r)
+        .last();
+    left
+}
+
+fn to_u8_32(bytes: impl AsRef<[u8]>) -> [u8; 32] {
+    let mut out = [0; 32];
+    (&mut out[..]).copy_from_slice(bytes.as_ref());
+    out
 }
 
 /// Scramble algorithm used in mysql_native_password.
 ///
 /// SHA1(password) XOR SHA1(nonce, SHA1(SHA1(password)))
-pub fn scramble_native(nonce: &[u8], password: &[u8]) -> Option<Vec<u8>> {
-    fn sha1_1(bytes: impl AsRef<[u8]>) -> Vec<u8> {
+pub fn scramble_native(nonce: &[u8], password: &[u8]) -> Option<[u8; 20]> {
+    fn sha1_1(bytes: impl AsRef<[u8]>) -> [u8; 20] {
         let mut hasher = Sha1::default();
         hasher.update(bytes.as_ref());
-        Vec::from(&hasher.digest().bytes()[..])
+        hasher.digest().bytes()
     }
 
-    fn sha1_2(bytes1: impl AsRef<[u8]>, bytes2: impl AsRef<[u8]>) -> Vec<u8> {
+    fn sha1_2(bytes1: impl AsRef<[u8]>, bytes2: impl AsRef<[u8]>) -> [u8; 20] {
         let mut hasher = Sha1::default();
         hasher.update(bytes1.as_ref());
         hasher.update(bytes2.as_ref());
-        Vec::from(&hasher.digest().bytes()[..])
+        hasher.digest().bytes()
+    }
+
+    if password.len() == 0 {
+        return None;
     }
 
     Some(xor(
@@ -44,18 +58,18 @@ pub fn scramble_native(nonce: &[u8], password: &[u8]) -> Option<Vec<u8>> {
 /// Scramble algorithm used in cached_sha2_password fast path.
 ///
 /// XOR(SHA256(password), SHA256(SHA256(SHA256(password)), nonce))
-pub fn scramble_sha256(nonce: &[u8], password: &[u8]) -> Option<Vec<u8>> {
-    fn sha256_1(bytes: impl AsRef<[u8]>) -> Vec<u8> {
+pub fn scramble_sha256(nonce: &[u8], password: &[u8]) -> Option<[u8; 32]> {
+    fn sha256_1(bytes: impl AsRef<[u8]>) -> [u8; 32] {
         let mut hasher = Sha256::default();
         hasher.input(bytes.as_ref());
-        Vec::from(&hasher.result()[..])
+        to_u8_32(hasher.result())
     }
 
-    fn sha256_2(bytes1: impl AsRef<[u8]>, bytes2: impl AsRef<[u8]>) -> Vec<u8> {
+    fn sha256_2(bytes1: impl AsRef<[u8]>, bytes2: impl AsRef<[u8]>) -> [u8; 32] {
         let mut hasher = Sha256::default();
         hasher.input(bytes1.as_ref());
         hasher.input(bytes2.as_ref());
-        Vec::from(&hasher.result()[..])
+        to_u8_32(hasher.result())
     }
 
     if password.len() == 0 {
@@ -85,14 +99,14 @@ mod test {
         assert!(output2.is_some());
         assert_eq!(
             output1.unwrap(),
-            vec![
+            [
                 0x09, 0xcf, 0xf8, 0x85, 0x5e, 0x9e, 0x70, 0x53, 0x40, 0xff, 0x22, 0x70, 0xd8, 0xfb,
                 0x9f, 0xad, 0xba, 0x90, 0x6b, 0x70,
             ]
         );
         assert_eq!(
             output2.unwrap(),
-            vec![
+            [
                 0x4f, 0x97, 0xbb, 0xfd, 0x20, 0x24, 0x01, 0xc4, 0x2a, 0x69, 0xde, 0xaa, 0xe5, 0x3b,
                 0xda, 0x07, 0x7e, 0xd7, 0x57, 0x85, 0x63, 0xc1, 0xa8, 0x0e, 0xb8, 0x16, 0xc8, 0x21,
                 0x19, 0xb6, 0x8d, 0x2e,

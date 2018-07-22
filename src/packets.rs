@@ -976,7 +976,7 @@ pub struct HandshakeResponse {
 
 impl HandshakeResponse {
     pub fn new(
-        scramble_buf: &Option<[u8; 20]>,
+        scramble_buf: &Option<impl AsRef<[u8]>>,
         server_version: (u16, u16, u16),
         user: Option<&str>,
         db_name: Option<&str>,
@@ -985,7 +985,8 @@ impl HandshakeResponse {
         let user_len = user.map(|user| user.len()).unwrap_or(0);
         let database_len = db_name.map(|database| database.len()).unwrap_or(0);
         let scramble_len = scramble_buf
-            .map(|scramble_buf| scramble_buf.len())
+            .as_ref()
+            .map(|scramble_buf| scramble_buf.as_ref().len())
             .unwrap_or(0);
 
         let mut payload_len = 4 + 4 + 1 + 23 + user_len + 1 + 1 + scramble_len;
@@ -1010,7 +1011,7 @@ impl HandshakeResponse {
             writer.write_u8(0).unwrap();
             writer.write_u8(scramble_len as u8).unwrap();
             if let Some(ref scramble_buf) = *scramble_buf {
-                writer.write_all(&scramble_buf[..]).unwrap();
+                writer.write_all(scramble_buf.as_ref()).unwrap();
             }
             if let Some(database) = db_name.as_ref() {
                 if database_len > 0 {
