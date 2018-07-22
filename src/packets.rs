@@ -37,6 +37,12 @@ lazy_static! {
 #[derive(Debug, Eq, PartialEq, Clone, Hash)]
 pub struct RawPacket(pub Vec<u8>);
 
+impl AsRef<[u8]> for RawPacket {
+    fn as_ref(&self) -> &[u8] {
+        self.0.as_ref()
+    }
+}
+
 #[derive(Debug)]
 pub enum ParseResult {
     Incomplete(PacketParser, usize),
