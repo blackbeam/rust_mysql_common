@@ -1131,7 +1131,7 @@ pub struct UuidIr {
 impl ConvIr<Uuid> for UuidIr {
     fn new(v: Value) -> Result<UuidIr, FromValueError> {
         match v {
-            Value::Bytes(bytes) => match Uuid::from_bytes(bytes.as_slice()) {
+            Value::Bytes(bytes) => match Uuid::from_slice(bytes.as_slice()) {
                 Ok(val) => Ok(UuidIr {
                     val: val,
                     bytes: bytes,
