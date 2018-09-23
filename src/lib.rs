@@ -12,6 +12,7 @@ extern crate bit_vec;
 #[macro_use]
 extern crate bitflags;
 extern crate byteorder;
+extern crate checked;
 pub extern crate chrono;
 #[macro_use]
 extern crate lazy_static;

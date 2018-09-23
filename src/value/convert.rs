@@ -1,7 +1,3 @@
-use atoi::atoi;
-use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
-use regex::bytes::Regex;
-use std::error::Error;
 // Copyright (c) 2017 Anatoly Ikorsky
 //
 // Licensed under the Apache License, Version 2.0
@@ -10,6 +6,11 @@ use std::error::Error;
 // option. All files in the project carrying such notice may not be copied,
 // modified, or distributed except according to those terms.
 
+use atoi::atoi;
+use checked::Checked;
+use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
+use regex::bytes::Regex;
+use std::error::Error;
 use std::fmt;
 use std::str::{from_utf8, FromStr};
 use std::time::Duration;
@@ -166,11 +167,11 @@ macro_rules! impl_from_value_num {
                         output: x as $t,
                     }),
                     Value::Bytes(bytes) => match atoi(&*bytes) {
-                        Some(x) => Ok(ParseIr {
+                        Some(Checked(Some(x))) => Ok(ParseIr {
                             value: Value::Bytes(bytes),
                             output: x,
                         }),
-                        None => Err(FromValueError(Value::Bytes(bytes))),
+                        _ => Err(FromValueError(Value::Bytes(bytes))),
                     },
                     v => Err(FromValueError(v)),
                 }
@@ -311,11 +312,11 @@ impl ConvIr<i64> for ParseIr<i64> {
                 output: x as i64,
             }),
             Value::Bytes(bytes) => match atoi(&*bytes) {
-                Some(x) => Ok(ParseIr {
+                Some(Checked(Some(x))) => Ok(ParseIr {
                     value: Value::Bytes(bytes),
                     output: x,
                 }),
-                None => Err(FromValueError(Value::Bytes(bytes))),
+                _ => Err(FromValueError(Value::Bytes(bytes))),
             },
             v => Err(FromValueError(v)),
         }
@@ -340,11 +341,11 @@ impl ConvIr<u64> for ParseIr<u64> {
                 output: x,
             }),
             Value::Bytes(bytes) => match atoi(&*bytes) {
-                Some(x) => Ok(ParseIr {
+                Some(Checked(Some(x))) => Ok(ParseIr {
                     value: Value::Bytes(bytes),
                     output: x,
                 }),
-                None => Err(FromValueError(Value::Bytes(bytes))),
+                _ => Err(FromValueError(Value::Bytes(bytes))),
             },
             v => Err(FromValueError(v)),
         }
@@ -1150,4 +1151,17 @@ impl ConvIr<Uuid> for UuidIr {
 
 impl FromValue for Uuid {
     type Intermediate = UuidIr;
+}
+
+#[test]
+fn from_value_should_fail_on_integer_overflow() {
+    let value = Value::Bytes(b"9999999999999999999999999999999999999999999999999999999"[..].into());
+    assert!(from_value_opt::<u8>(value.clone()).is_err());
+    assert!(from_value_opt::<i8>(value.clone()).is_err());
+    assert!(from_value_opt::<u16>(value.clone()).is_err());
+    assert!(from_value_opt::<i16>(value.clone()).is_err());
+    assert!(from_value_opt::<u32>(value.clone()).is_err());
+    assert!(from_value_opt::<i32>(value.clone()).is_err());
+    assert!(from_value_opt::<u64>(value.clone()).is_err());
+    assert!(from_value_opt::<i64>(value.clone()).is_err());
 }
