@@ -786,6 +786,70 @@ impl<'a> AuthPlugin<'a> {
     }
 }
 
+/// Authentication Method Switch Request Packet.
+///
+/// If both server and client support `CLIENT_PLUGIN_AUTH` capability, server can send this packet
+/// to ask client to use another authentication method.
+#[derive(Debug)]
+pub struct AuthSwitchRequest<'a> {
+    auth_plugin: AuthPlugin<'a>,
+    plugin_data: Cow<'a, [u8]>,
+}
+
+impl<'a> AuthSwitchRequest<'a> {
+    fn parse(mut payload: &'a [u8]) -> io::Result<Self> {
+        match payload.read_u8()? {
+            0xfe => {
+                let mut null_offset = 0;
+                for byte in payload.iter() {
+                    if *byte == 0x00 {
+                        break;
+                    }
+                    null_offset += 1;
+                }
+                let (auth_plugin, mut payload) = split_at_or_err!(
+                    payload,
+                    null_offset,
+                    "Invalid AuthSwitchRequest packet"
+                )?;
+                payload.read_u8()?;
+                let plugin_data = if payload[payload.len() - 1] == 0 {
+                    &payload[..payload.len() - 1]
+                } else {
+                    payload
+                };
+                Ok(Self {
+                    auth_plugin: AuthPlugin::from_bytes(auth_plugin),
+                    plugin_data: plugin_data.into(),
+                })
+            },
+            _ => {
+                Err(io::Error::new(io::ErrorKind::InvalidData, "Invalid AuthSwitchRequest header"))
+            }
+        }
+    }
+
+    pub fn auth_plugin(&self) -> &AuthPlugin {
+        &self.auth_plugin
+    }
+
+    pub fn plugin_data(&self) -> &[u8] {
+        &*self.plugin_data
+    }
+
+    pub fn into_owned(self) -> AuthSwitchRequest<'static> {
+        AuthSwitchRequest {
+            auth_plugin: self.auth_plugin.into_owned(),
+            plugin_data: self.plugin_data.into_owned().into(),
+        }
+    }
+}
+
+/// Parses payload as an auth switch request packet.
+pub fn parse_auth_switch_request(payload: &[u8]) -> io::Result<AuthSwitchRequest> {
+    AuthSwitchRequest::parse(payload)
+}
+
 /// Represents MySql's initial handshake packet.
 #[derive(Debug)]
 pub struct HandshakePacket<'a> {
@@ -1128,8 +1192,8 @@ impl StmtPacket {
 #[cfg(test)]
 mod test {
     use super::{
-        column_from_payload, parse_err_packet, parse_handshake_packet, parse_local_infile_packet,
-        parse_ok_packet, parse_stmt_packet, SessionStateChange,
+        column_from_payload, parse_auth_switch_request, parse_err_packet, parse_handshake_packet,
+        parse_local_infile_packet, parse_ok_packet, parse_stmt_packet, SessionStateChange,
     };
     use constants::{CapabilityFlags, ColumnFlags, ColumnType, StatusFlags, UTF8_GENERAL_CI};
 
@@ -1255,6 +1319,22 @@ mod test {
         assert_eq!(column.column_type(), ColumnType::MYSQL_TYPE_DECIMAL);
         assert_eq!(column.flags(), ColumnFlags::NOT_NULL_FLAG);
         assert_eq!(column.decimals(), 8);
+    }
+
+    #[test]
+    fn should_parse_auth_switch_request() {
+        const PAYLOAD: &[u8] = b"\xfe\x6d\x79\x73\x71\x6c\x5f\x6e\x61\x74\x69\x76\x65\x5f\x70\x61\
+                                 \x73\x73\x77\x6f\x72\x64\x00\x7a\x51\x67\x34\x69\x36\x6f\x4e\x79\
+                                 \x36\x3d\x72\x48\x4e\x2f\x3e\x2d\x62\x29\x41\x00";
+        let packet = parse_auth_switch_request(PAYLOAD).unwrap();
+        assert_eq!(
+            packet.auth_plugin().as_bytes(),
+            b"mysql_native_password",
+        );
+        assert_eq!(
+            packet.plugin_data(),
+            b"zQg4i6oNy6=rHN/>-b)A",
+        )
     }
 
     #[test]
