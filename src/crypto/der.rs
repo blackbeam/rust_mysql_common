@@ -1,10 +1,10 @@
-use base64::*;
+use base64::{decode_config, CharacterSet, Config};
 use num_bigint::BigUint;
 use regex::bytes::Regex;
 use std::mem::size_of;
 
 /// Type of a der-encoded public key.
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
 pub enum PubKeyFileType {
     Pkcs1,
     Pkcs8,
@@ -33,9 +33,14 @@ pub fn pem_to_der(pem: impl AsRef<[u8]>) -> (Vec<u8>, PubKeyFileType) {
                 .expect("valid PEM is mandatory here")
         });
     let pem_body = captures.get(1).unwrap().as_bytes();
+    let pem_body = pem_body
+        .into_iter()
+        .filter(|x| !b" \n\t\r\x0b\x0c".contains(x))
+        .cloned()
+        .collect::<Vec<_>>();
 
     let base64_config = Config::new(CharacterSet::Standard, true);
-    let der = decode_config(pem_body, base64_config).expect("valid base64 is mandatory here");
+    let der = decode_config(&*pem_body, base64_config).expect("valid base64 is mandatory here");
 
     (der, key_file_type)
 }
@@ -112,4 +117,21 @@ pub fn parse_pub_key(der: &[u8], file_type: PubKeyFileType) -> (BigUint, BigUint
         PubKeyFileType::Pkcs1 => parse_pub_key_pkcs1(der),
         PubKeyFileType::Pkcs8 => parse_pub_key_pkcs8(der),
     }
+}
+
+#[test]
+fn test_pem_to_der() {
+    const PEM_DATA: &[u8] = br"-----BEGIN PUBLIC KEY-----
+MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAxSKOcxiet8lLMn8ImyUE
+bGGKob5EdRz/4wdiw12ED0GfKKTKhVnodFCfm1mdy7bKOX5QxL9skrvYodpW43eR
+R5bfOzIgy1qIB8RYb6qOXRBw1oA4snBDqtUjDv/lbHLJN+IbzM4oU+e3Lt9rXyLX
+VY289ewONPweXHqSCnTL91w+wkU1peIFV2QhZ+upUCdCtwOn5hnJPNgxtbklFoya
+C8W3Z7Xx7He2QDJsEWAqX197efw0L6j8X8Tyd8Uwb7zUB1tfMGhHfm9EwejPAtzx
+4GztQNtNMtGS2oGZLQBLV9hib4dDL92iiZeckg2LAf4GsJofLLR8mcHCRoqVbQJ1
+YQIDAQAB
+-----END PUBLIC KEY-----";
+
+    let (der, key_type) = pem_to_der(PEM_DATA);
+
+    assert_eq!(key_type, PubKeyFileType::Pkcs8);
 }
