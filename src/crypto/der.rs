@@ -34,7 +34,7 @@ pub fn pem_to_der(pem: impl AsRef<[u8]>) -> (Vec<u8>, PubKeyFileType) {
         });
     let pem_body = captures.get(1).unwrap().as_bytes();
 
-    let base64_config = Config::new(CharacterSet::Standard, true, true, LineWrap::NoWrap);
+    let base64_config = Config::new(CharacterSet::Standard, true);
     let der = decode_config(pem_body, base64_config).expect("valid base64 is mandatory here");
 
     (der, key_file_type)
