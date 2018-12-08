@@ -786,6 +786,42 @@ impl<'a> AuthPlugin<'a> {
     }
 }
 
+/// Extra auth-data beyond the initial challenge.
+#[derive(Debug)]
+pub struct AuthMoreData<'a> {
+    data: Cow<'a, [u8]>,
+}
+
+impl<'a> AuthMoreData<'a> {
+    fn parse(mut payload: &'a [u8]) -> io::Result<Self> {
+        match payload.read_u8()? {
+            0x01 => {
+                Ok(AuthMoreData {
+                    data: payload.into(),
+                })
+            },
+            _ => {
+                Err(io::Error::new(io::ErrorKind::InvalidData, "Invalid AuthMoreData header"))
+            }
+        }
+    }
+
+    pub fn data(&self) -> &[u8] {
+        &*self.data
+    }
+
+    pub fn into_owned(self) -> AuthMoreData<'static> {
+        AuthMoreData {
+            data: self.data.into_owned().into(),
+        }
+    }
+}
+
+/// Parses payload as an auth more data packet.
+pub fn parse_auth_more_data(payload: &[u8]) -> io::Result<AuthMoreData> {
+    AuthMoreData::parse(payload)
+}
+
 /// Authentication Method Switch Request Packet.
 ///
 /// If both server and client support `CLIENT_PLUGIN_AUTH` capability, server can send this packet
@@ -1192,8 +1228,9 @@ impl StmtPacket {
 #[cfg(test)]
 mod test {
     use super::{
-        column_from_payload, parse_auth_switch_request, parse_err_packet, parse_handshake_packet,
-        parse_local_infile_packet, parse_ok_packet, parse_stmt_packet, SessionStateChange,
+        column_from_payload, parse_auth_more_data, parse_auth_switch_request, parse_err_packet,
+        parse_handshake_packet, parse_local_infile_packet, parse_ok_packet, parse_stmt_packet,
+        SessionStateChange,
     };
     use constants::{CapabilityFlags, ColumnFlags, ColumnType, StatusFlags, UTF8_GENERAL_CI};
 
@@ -1335,6 +1372,16 @@ mod test {
             packet.plugin_data(),
             b"zQg4i6oNy6=rHN/>-b)A",
         )
+    }
+
+    #[test]
+    fn should_parse_auth_more_data() {
+        const PAYLOAD: &[u8] = b"\x01\x04";
+        let packet = parse_auth_more_data(PAYLOAD).unwrap();
+        assert_eq!(
+            packet.data(),
+            b"\x04",
+        );
     }
 
     #[test]
