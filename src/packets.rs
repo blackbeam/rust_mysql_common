@@ -784,6 +784,22 @@ impl<'a> AuthPlugin<'a> {
             AuthPlugin::Other(name) => AuthPlugin::Other(name.into_owned().into()),
         }
     }
+
+    /// Generates auth plugin data for this plugin.
+    ///
+    /// It'll generate `None` if password is `None` or empty.
+    pub fn gen_data(&self, pass: Option<&str>, nonce: &[u8]) -> Option<Vec<u8>> {
+        use super::scramble::{scramble_native, scramble_sha256};
+
+        match pass {
+            Some(pass) => match self {
+                AuthPlugin::CachingSha2Password => scramble_sha256(nonce, pass.as_bytes()).map(|x| Vec::from(&x[..])),
+                AuthPlugin::MysqlNativePassword => scramble_native(nonce, pass.as_bytes()).map(|x| Vec::from(&x[..])),
+                AuthPlugin::Other(_) => None,
+            },
+            None => None,
+        }
+    }
 }
 
 /// Extra auth-data beyond the initial challenge.
