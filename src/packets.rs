@@ -1056,6 +1056,13 @@ impl<'a> HandshakePacket<'a> {
         self.scramble_2.as_ref().map(Cow::as_ref)
     }
 
+    /// Returns concatenated auth plugin nonce.
+    pub fn nonce(&self) -> Vec<u8> {
+        let mut out = Vec::from(self.scramble_1_ref());
+        out.extend_from_slice(self.scramble_2_ref().unwrap_or(&[][..]));
+        out
+    }
+
     /// Value of a server capabilities.
     pub fn capabilities(&self) -> CapabilityFlags {
         self.capabilities
