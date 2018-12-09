@@ -131,7 +131,7 @@ C8W3Z7Xx7He2QDJsEWAqX197efw0L6j8X8Tyd8Uwb7zUB1tfMGhHfm9EwejPAtzx
 YQIDAQAB
 -----END PUBLIC KEY-----";
 
-    let (der, key_type) = pem_to_der(PEM_DATA);
+    let (_der, key_type) = pem_to_der(PEM_DATA);
 
     assert_eq!(key_type, PubKeyFileType::Pkcs8);
 }
