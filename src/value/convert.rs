@@ -7,7 +7,6 @@
 // modified, or distributed except according to those terms.
 
 use atoi::atoi;
-use checked::Checked;
 use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 use regex::bytes::Regex;
 use std::error::Error;
@@ -167,7 +166,7 @@ macro_rules! impl_from_value_num {
                         output: x as $t,
                     }),
                     Value::Bytes(bytes) => match atoi(&*bytes) {
-                        Some(Checked(Some(x))) => Ok(ParseIr {
+                        Some(x) => Ok(ParseIr {
                             value: Value::Bytes(bytes),
                             output: x,
                         }),
@@ -312,7 +311,7 @@ impl ConvIr<i64> for ParseIr<i64> {
                 output: x as i64,
             }),
             Value::Bytes(bytes) => match atoi(&*bytes) {
-                Some(Checked(Some(x))) => Ok(ParseIr {
+                Some(x) => Ok(ParseIr {
                     value: Value::Bytes(bytes),
                     output: x,
                 }),
@@ -341,7 +340,7 @@ impl ConvIr<u64> for ParseIr<u64> {
                 output: x,
             }),
             Value::Bytes(bytes) => match atoi(&*bytes) {
-                Some(Checked(Some(x))) => Ok(ParseIr {
+                Some(x) => Ok(ParseIr {
                     value: Value::Bytes(bytes),
                     output: x,
                 }),
