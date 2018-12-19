@@ -59,6 +59,16 @@ impl Row {
         self.values.len()
     }
 
+    /// Returns columns of this row.
+    pub fn columns_ref(&self) -> &[Column] {
+        &**self.columns
+    }
+
+    /// Returns columns of this row.
+    pub fn columns(&self) -> Arc<Vec<Column>> {
+        self.columns.clone()
+    }
+
     /// Returns reference to the value of a column with index `index` if it exists and wasn't taken
     /// by `Row::take` method.
     ///
