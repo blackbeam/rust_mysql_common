@@ -1,0 +1,14 @@
+language: rust
+cache: cargo
+
+rust:
+  - stable
+  - beta
+  - nightly
+
+env:
+  - RUST_BACKTRACE=full
+
+script:
+  - cargo test --verbose
+  - cargo fmt -- --check
