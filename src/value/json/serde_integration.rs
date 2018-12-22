@@ -11,8 +11,8 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_json::{self, Value as Json};
 use std::str::{from_utf8, from_utf8_unchecked};
-use value::convert::{ConvIr, FromValue, FromValueError};
-use value::Value;
+use crate::value::convert::{ConvIr, FromValue, FromValueError};
+use crate::value::Value;
 
 impl From<Json> for Value {
     fn from(x: Json) -> Value {
