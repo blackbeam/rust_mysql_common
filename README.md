@@ -1,5 +1,7 @@
 # mysql_common
 
+[![Build Status](https://travis-ci.org/blackbeam/rust_mysql_common.svg?branch=master)](https://travis-ci.org/blackbeam/rust_mysql_common)
+
 ## Documentation
 
 On [docs.rs](https://docs.rs/mysql_common).
