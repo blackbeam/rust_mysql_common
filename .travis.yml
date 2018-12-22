@@ -9,6 +9,10 @@ rust:
 env:
   - RUST_BACKTRACE=full
 
+before_script:
+  - export PATH="$PATH:$HOME/.cargo/bin"
+  - rustup component add rustfmt
+
 script:
   - cargo test --verbose
   - cargo fmt -- --check
