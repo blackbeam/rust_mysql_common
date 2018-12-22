@@ -13,15 +13,15 @@ use std::error::Error;
 use std::fmt;
 use std::hash::BuildHasherDefault;
 use twox_hash::XxHash;
-use value::convert::ToValue;
-use value::Value;
+use crate::value::convert::ToValue;
+use crate::value::Value;
 
 /// `FromValue` conversion error.
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub struct MissingNamedParameterError(pub String);
 
 impl fmt::Display for MissingNamedParameterError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Missing named parameter `{}` for statement", self.0)
     }
 }
@@ -115,8 +115,8 @@ where
     }
 }
 
-impl<'a> From<&'a [&'a ToValue]> for Params {
-    fn from(x: &'a [&'a ToValue]) -> Params {
+impl<'a> From<&'a [&'a dyn ToValue]> for Params {
+    fn from(x: &'a [&'a dyn ToValue]) -> Params {
         let mut raw_params: SmallVec<[Value; 12]> = SmallVec::new();
         for v in x.into_iter() {
             raw_params.push(v.to_value());

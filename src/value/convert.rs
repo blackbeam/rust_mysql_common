@@ -15,7 +15,7 @@ use std::str::{from_utf8, FromStr};
 use std::time::Duration;
 use time::{self, at, strptime, Timespec, Tm};
 use uuid::Uuid;
-use value::Value;
+use crate::value::Value;
 
 lazy_static! {
     static ref DATETIME_RE_YMD: Regex = { Regex::new(r"^(\d{4})-(\d{2})-(\d{2})$").unwrap() };
@@ -37,7 +37,7 @@ lazy_static! {
 pub struct FromValueError(pub Value);
 
 impl fmt::Display for FromValueError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
             "Couldn't convert the value `{:?}` to a desired type",

@@ -6,28 +6,28 @@
 // option. All files in the project carrying such notice may not be copied,
 // modified, or distributed except according to those terms.
 
-extern crate atoi;
-extern crate base64;
-extern crate bit_vec;
+
+
+
 #[macro_use]
 extern crate bitflags;
-extern crate byteorder;
-pub extern crate chrono;
+
+pub use chrono;
 #[macro_use]
 extern crate lazy_static;
-extern crate num_bigint;
-extern crate rand;
-extern crate regex;
+
+
+
 #[cfg(feature = "rustc_serialize")]
 pub extern crate rustc_serialize;
-pub extern crate serde;
-pub extern crate serde_json;
-extern crate sha1;
-extern crate sha2;
-extern crate smallvec;
-pub extern crate time;
-extern crate twox_hash;
-pub extern crate uuid;
+pub use serde;
+pub use serde_json;
+
+
+
+pub use time;
+
+pub use uuid;
 
 /// This macro is a convenient way to pass named parameters to a statement.
 ///

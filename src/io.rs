@@ -8,7 +8,7 @@
 
 use byteorder::{LittleEndian as LE, ReadBytesExt, WriteBytesExt};
 use std::io;
-use value::Value;
+use crate::value::Value;
 
 pub trait ReadMysqlExt: ReadBytesExt {
     /// Reads MySql's length-encoded integer.

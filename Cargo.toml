@@ -9,6 +9,7 @@ repository = "https://github.com/blackbeam/rust_mysql_common"
 keywords = ["mysql", "database"]
 categories = ["database"]
 version = "0.14.0"
+edition = "2018"
 
 [dependencies]
 atoi = "0.3"

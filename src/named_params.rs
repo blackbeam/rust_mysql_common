@@ -50,7 +50,7 @@ pub fn parse_named_params<'a>(
                 x => state = InStringLiteral(separator, x),
             },
             MaybeInNamedParam => match c {
-                'a'...'z' | '_' => {
+                'a'..='z' | '_' => {
                     params.push((i - 1, 0, String::with_capacity(16)));
                     params[cur_param].2.push(c);
                     state = InNamedParam;
@@ -58,7 +58,7 @@ pub fn parse_named_params<'a>(
                 _ => rematch = true,
             },
             InNamedParam => match c {
-                'a'...'z' | '0'...'9' | '_' => params[cur_param].2.push(c),
+                'a'..='z' | '0'..='9' | '_' => params[cur_param].2.push(c),
                 _ => {
                     params[cur_param].1 = i;
                     cur_param += 1;
@@ -101,7 +101,7 @@ pub fn parse_named_params<'a>(
 
 #[cfg(test)]
 mod test {
-    use named_params::parse_named_params;
+    use crate::named_params::parse_named_params;
 
     #[test]
     fn should_parse_named_params() {

@@ -8,9 +8,9 @@
 
 use bit_vec::BitVec;
 use byteorder::{LittleEndian as LE, ReadBytesExt};
-use constants::{ColumnFlags, ColumnType, MAX_PAYLOAD_LEN};
-use io::{ReadMysqlExt, WriteMysqlExt};
-use packets::Column;
+use crate::constants::{ColumnFlags, ColumnType, MAX_PAYLOAD_LEN};
+use crate::io::{ReadMysqlExt, WriteMysqlExt};
+use crate::packets::Column;
 use smallvec::SmallVec;
 use std::fmt;
 use std::io;
@@ -365,7 +365,7 @@ impl Value {
 }
 
 impl fmt::Debug for Value {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
             Value::NULL => f.debug_tuple("Null").finish(),
             Value::Bytes(ref bytes) => {

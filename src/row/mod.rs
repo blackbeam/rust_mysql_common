@@ -6,13 +6,13 @@
 // option. All files in the project carrying such notice may not be copied,
 // modified, or distributed except according to those terms.
 
-use packets::Column;
+use crate::packets::Column;
 use smallvec::SmallVec;
 use std::fmt;
 use std::ops::Index;
 use std::sync::Arc;
-use value::convert::{from_value, from_value_opt, FromValue, FromValueError};
-use value::Value;
+use crate::value::convert::{from_value, from_value_opt, FromValue, FromValueError};
+use crate::value::Value;
 
 pub mod convert;
 
@@ -28,7 +28,7 @@ pub struct Row {
 }
 
 impl fmt::Debug for Row {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut debug = f.debug_struct("Row");
         for (val, column) in self.values.iter().zip(self.columns.iter()) {
             match *val {

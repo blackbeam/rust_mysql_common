@@ -6,17 +6,17 @@
 // option. All files in the project carrying such notice may not be copied,
 // modified, or distributed except according to those terms.
 
-use row::Row;
+use crate::row::Row;
 use std::error::Error;
 use std::fmt;
-use value::convert::{ConvIr, FromValue, FromValueError};
+use crate::value::convert::{ConvIr, FromValue, FromValueError};
 
 /// `FromRow` conversion error.
 #[derive(Debug)]
 pub struct FromRowError(pub Row);
 
 impl fmt::Display for FromRowError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
             "Couldn't convert the row `{:?}` to a desired type",

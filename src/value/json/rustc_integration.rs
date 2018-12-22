@@ -10,8 +10,8 @@ use super::{Deserialized, DeserializedIr, Serialized};
 use rustc_serialize::json::{self, Json};
 use rustc_serialize::{Decodable, Encodable};
 use std::str::{from_utf8, from_utf8_unchecked};
-use value::convert::{ConvIr, FromValue, FromValueError};
-use value::Value;
+use crate::value::convert::{ConvIr, FromValue, FromValueError};
+use crate::value::Value;
 
 impl From<Json> for Value {
     fn from(x: Json) -> Value {
