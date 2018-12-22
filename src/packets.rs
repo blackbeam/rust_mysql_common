@@ -6,13 +6,13 @@
 // option. All files in the project carrying such notice may not be copied,
 // modified, or distributed except according to those terms.
 
-use atoi::atoi;
-use byteorder::{LittleEndian as LE, ReadBytesExt, WriteBytesExt};
 use crate::constants::{
-    CapabilityFlags, ColumnFlags, ColumnType, SessionStateType, StatusFlags, UTF8MB4_GENERAL_CI,
-    UTF8_GENERAL_CI, MAX_PAYLOAD_LEN,
+    CapabilityFlags, ColumnFlags, ColumnType, SessionStateType, StatusFlags, MAX_PAYLOAD_LEN,
+    UTF8MB4_GENERAL_CI, UTF8_GENERAL_CI,
 };
 use crate::io::ReadMysqlExt;
+use atoi::atoi;
+use byteorder::{LittleEndian as LE, ReadBytesExt, WriteBytesExt};
 use regex::bytes::Regex;
 use std::borrow::Cow;
 use std::cmp::{max, min};
@@ -569,7 +569,10 @@ pub enum ErrPacket<'a> {
 }
 
 /// Parses error packet from `payload` assuming passed client-server `capabilities`.
-pub fn parse_err_packet(payload: &[u8], capabilities: CapabilityFlags) -> io::Result<ErrPacket<'_>> {
+pub fn parse_err_packet(
+    payload: &[u8],
+    capabilities: CapabilityFlags,
+) -> io::Result<ErrPacket<'_>> {
     ErrPacket::parse(payload, capabilities)
 }
 
@@ -793,8 +796,12 @@ impl<'a> AuthPlugin<'a> {
 
         match pass {
             Some(pass) => match self {
-                AuthPlugin::CachingSha2Password => scramble_sha256(nonce, pass.as_bytes()).map(|x| Vec::from(&x[..])),
-                AuthPlugin::MysqlNativePassword => scramble_native(nonce, pass.as_bytes()).map(|x| Vec::from(&x[..])),
+                AuthPlugin::CachingSha2Password => {
+                    scramble_sha256(nonce, pass.as_bytes()).map(|x| Vec::from(&x[..]))
+                }
+                AuthPlugin::MysqlNativePassword => {
+                    scramble_native(nonce, pass.as_bytes()).map(|x| Vec::from(&x[..]))
+                }
                 AuthPlugin::Other(_) => None,
             },
             None => None,
@@ -811,14 +818,13 @@ pub struct AuthMoreData<'a> {
 impl<'a> AuthMoreData<'a> {
     fn parse(mut payload: &'a [u8]) -> io::Result<Self> {
         match payload.read_u8()? {
-            0x01 => {
-                Ok(AuthMoreData {
-                    data: payload.into(),
-                })
-            },
-            _ => {
-                Err(io::Error::new(io::ErrorKind::InvalidData, "Invalid AuthMoreData header"))
-            }
+            0x01 => Ok(AuthMoreData {
+                data: payload.into(),
+            }),
+            _ => Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Invalid AuthMoreData header",
+            )),
         }
     }
 
@@ -859,11 +865,8 @@ impl<'a> AuthSwitchRequest<'a> {
                     }
                     null_offset += 1;
                 }
-                let (auth_plugin, mut payload) = split_at_or_err!(
-                    payload,
-                    null_offset,
-                    "Invalid AuthSwitchRequest packet"
-                )?;
+                let (auth_plugin, mut payload) =
+                    split_at_or_err!(payload, null_offset, "Invalid AuthSwitchRequest packet")?;
                 payload.read_u8()?;
                 let plugin_data = if payload[payload.len() - 1] == 0 {
                     &payload[..payload.len() - 1]
@@ -874,10 +877,11 @@ impl<'a> AuthSwitchRequest<'a> {
                     auth_plugin: AuthPlugin::from_bytes(auth_plugin),
                     plugin_data: plugin_data.into(),
                 })
-            },
-            _ => {
-                Err(io::Error::new(io::ErrorKind::InvalidData, "Invalid AuthSwitchRequest header"))
             }
+            _ => Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Invalid AuthSwitchRequest header",
+            )),
         }
     }
 
@@ -1255,7 +1259,9 @@ mod test {
         parse_handshake_packet, parse_local_infile_packet, parse_ok_packet, parse_stmt_packet,
         SessionStateChange,
     };
-    use crate::constants::{CapabilityFlags, ColumnFlags, ColumnType, StatusFlags, UTF8_GENERAL_CI};
+    use crate::constants::{
+        CapabilityFlags, ColumnFlags, ColumnType, StatusFlags, UTF8_GENERAL_CI,
+    };
 
     #[test]
     fn should_parse_local_infile_packet() {
@@ -1387,24 +1393,15 @@ mod test {
                                  \x73\x73\x77\x6f\x72\x64\x00\x7a\x51\x67\x34\x69\x36\x6f\x4e\x79\
                                  \x36\x3d\x72\x48\x4e\x2f\x3e\x2d\x62\x29\x41\x00";
         let packet = parse_auth_switch_request(PAYLOAD).unwrap();
-        assert_eq!(
-            packet.auth_plugin().as_bytes(),
-            b"mysql_native_password",
-        );
-        assert_eq!(
-            packet.plugin_data(),
-            b"zQg4i6oNy6=rHN/>-b)A",
-        )
+        assert_eq!(packet.auth_plugin().as_bytes(), b"mysql_native_password",);
+        assert_eq!(packet.plugin_data(), b"zQg4i6oNy6=rHN/>-b)A",)
     }
 
     #[test]
     fn should_parse_auth_more_data() {
         const PAYLOAD: &[u8] = b"\x01\x04";
         let packet = parse_auth_more_data(PAYLOAD).unwrap();
-        assert_eq!(
-            packet.data(),
-            b"\x04",
-        );
+        assert_eq!(packet.data(), b"\x04",);
     }
 
     #[test]

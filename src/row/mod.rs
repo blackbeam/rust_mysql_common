@@ -7,12 +7,12 @@
 // modified, or distributed except according to those terms.
 
 use crate::packets::Column;
+use crate::value::convert::{from_value, from_value_opt, FromValue, FromValueError};
+use crate::value::Value;
 use smallvec::SmallVec;
 use std::fmt;
 use std::ops::Index;
 use std::sync::Arc;
-use crate::value::convert::{from_value, from_value_opt, FromValue, FromValueError};
-use crate::value::Value;
 
 pub mod convert;
 

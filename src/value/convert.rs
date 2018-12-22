@@ -6,6 +6,7 @@
 // option. All files in the project carrying such notice may not be copied,
 // modified, or distributed except according to those terms.
 
+use crate::value::Value;
 use atoi::atoi;
 use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 use regex::bytes::Regex;
@@ -15,7 +16,6 @@ use std::str::{from_utf8, FromStr};
 use std::time::Duration;
 use time::{self, at, strptime, Timespec, Tm};
 use uuid::Uuid;
-use crate::value::Value;
 
 lazy_static! {
     static ref DATETIME_RE_YMD: Regex = { Regex::new(r"^(\d{4})-(\d{2})-(\d{2})$").unwrap() };
@@ -493,7 +493,8 @@ impl ConvIr<Timespec> for ParseIr<Timespec> {
                     tm_wday: 0,
                     tm_yday: 0,
                     tm_isdst: -1,
-                }.to_timespec(),
+                }
+                .to_timespec(),
             }),
             Value::Bytes(bytes) => {
                 let val = from_utf8(&*bytes)

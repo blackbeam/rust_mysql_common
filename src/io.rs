@@ -6,9 +6,9 @@
 // option. All files in the project carrying such notice may not be copied,
 // modified, or distributed except according to those terms.
 
+use crate::value::Value;
 use byteorder::{LittleEndian as LE, ReadBytesExt, WriteBytesExt};
 use std::io;
-use crate::value::Value;
 
 pub trait ReadMysqlExt: ReadBytesExt {
     /// Reads MySql's length-encoded integer.
@@ -131,13 +131,5 @@ pub trait WriteMysqlExt: WriteBytesExt {
     }
 }
 
-impl<T> ReadMysqlExt for T
-where
-    T: ReadBytesExt,
-{
-}
-impl<T> WriteMysqlExt for T
-where
-    T: WriteBytesExt,
-{
-}
+impl<T> ReadMysqlExt for T where T: ReadBytesExt {}
+impl<T> WriteMysqlExt for T where T: WriteBytesExt {}

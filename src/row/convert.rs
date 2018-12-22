@@ -7,9 +7,9 @@
 // modified, or distributed except according to those terms.
 
 use crate::row::Row;
+use crate::value::convert::{ConvIr, FromValue, FromValueError};
 use std::error::Error;
 use std::fmt;
-use crate::value::convert::{ConvIr, FromValue, FromValueError};
 
 /// `FromRow` conversion error.
 #[derive(Debug)]

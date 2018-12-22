@@ -6,9 +6,6 @@
 // option. All files in the project carrying such notice may not be copied,
 // modified, or distributed except according to those terms.
 
-
-
-
 #[macro_use]
 extern crate bitflags;
 
@@ -16,14 +13,10 @@ pub use chrono;
 #[macro_use]
 extern crate lazy_static;
 
-
-
 #[cfg(feature = "rustc_serialize")]
 pub extern crate rustc_serialize;
 pub use serde;
 pub use serde_json;
-
-
 
 pub use time;
 

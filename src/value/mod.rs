@@ -6,11 +6,11 @@
 // option. All files in the project carrying such notice may not be copied,
 // modified, or distributed except according to those terms.
 
-use bit_vec::BitVec;
-use byteorder::{LittleEndian as LE, ReadBytesExt};
 use crate::constants::{ColumnFlags, ColumnType, MAX_PAYLOAD_LEN};
 use crate::io::{ReadMysqlExt, WriteMysqlExt};
 use crate::packets::Column;
+use bit_vec::BitVec;
+use byteorder::{LittleEndian as LE, ReadBytesExt};
 use smallvec::SmallVec;
 use std::fmt;
 use std::io;

@@ -16,12 +16,14 @@ pub fn pem_to_der(pem: impl AsRef<[u8]>) -> (Vec<u8>, PubKeyFileType) {
         "-----BEGIN RSA PUBLIC KEY-----\
          ([^-]*)\
          -----END RSA PUBLIC KEY-----",
-    ).unwrap();
+    )
+    .unwrap();
     let pkcs8_re = Regex::new(
         "-----BEGIN PUBLIC KEY-----\
          ([^-]*)\
          -----END PUBLIC KEY-----",
-    ).unwrap();
+    )
+    .unwrap();
 
     let (captures, key_file_type) = pkcs1_re
         .captures(pem.as_ref())
