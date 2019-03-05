@@ -70,7 +70,19 @@ pub fn from_row_opt<T: FromRow>(row: Row) -> Result<T, FromRowError> {
 /// from_row::<(Vec<u8>, Option<u8>, u16)>(row) // this'll work and return (vec![..], None, 1024u16)
 /// ```
 pub trait FromRow {
-    fn from_row(row: Row) -> Self;
+    #[inline]
+    fn from_row(row: Row) -> Self
+    where
+        Self: Sized,
+    {
+        match FromRow::from_row_opt(row) {
+            Ok(x) => x,
+            Err(FromRowError(row)) => panic!(
+                "Couldn't convert {:?} to type T. (see FromRow documentation)",
+                row
+            ),
+        }
+    }
     fn from_row_opt(row: Row) -> Result<Self, FromRowError>
     where
         Self: Sized;
