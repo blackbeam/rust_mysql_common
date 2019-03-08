@@ -8,7 +8,6 @@
 
 use crate::value::convert::ToValue;
 use crate::value::Value;
-use smallvec::SmallVec;
 use std::collections::hash_map::Entry::Occupied;
 use std::collections::HashMap;
 use std::error::Error;
@@ -37,7 +36,7 @@ impl Error for MissingNamedParameterError {
 pub enum Params {
     Empty,
     Named(HashMap<String, Value, BuildHasherDefault<XxHash>>),
-    Positional(SmallVec<[Value; 12]>),
+    Positional(Vec<Value>),
 }
 
 impl Params {
@@ -49,7 +48,7 @@ impl Params {
     ) -> Result<Params, MissingNamedParameterError> {
         match self {
             Params::Named(mut map) => {
-                let mut params: SmallVec<[Value; 12]> = SmallVec::new();
+                let mut params: Vec<Value> = Vec::new();
                 'params: for (i, name) in named_params.clone().into_iter().enumerate() {
                     match map.entry(name.clone()) {
                         Occupied(entry) => {
@@ -84,7 +83,7 @@ where
     Value: From<T>,
 {
     fn from(x: Vec<T>) -> Params {
-        let mut raw_params: SmallVec<[Value; 12]> = SmallVec::new();
+        let mut raw_params: Vec<Value> = Vec::new();
         for v in x.into_iter() {
             raw_params.push(Value::from(v));
         }
@@ -117,7 +116,7 @@ where
 
 impl<'a> From<&'a [&'a dyn ToValue]> for Params {
     fn from(x: &'a [&'a dyn ToValue]) -> Params {
-        let mut raw_params: SmallVec<[Value; 12]> = SmallVec::new();
+        let mut raw_params: Vec<Value> = Vec::new();
         for v in x.into_iter() {
             raw_params.push(v.to_value());
         }
@@ -140,7 +139,7 @@ macro_rules! into_params_impl {
         impl<$($A: Into<Value>,)*> From<($($A,)*)> for Params {
             fn from(x: ($($A,)*)) -> Params {
                 let ($($a,)*) = x;
-                let mut params = SmallVec::<[Value; 12]>::new();
+                let mut params = Vec::new();
                 $(params.push($a.into());)*
                 Params::Positional(params)
             }

@@ -11,7 +11,6 @@ use crate::io::{ReadMysqlExt, WriteMysqlExt};
 use crate::packets::Column;
 use bit_vec::BitVec;
 use byteorder::{LittleEndian as LE, ReadBytesExt};
-use smallvec::SmallVec;
 use std::fmt;
 use std::io;
 use std::str::from_utf8;
@@ -43,7 +42,7 @@ pub fn read_text_value(input: &mut &[u8]) -> io::Result<Value> {
 }
 
 /// Reads multiple values in text format.
-pub fn read_text_values(input: &[u8], count: usize) -> io::Result<SmallVec<[Value; 12]>> {
+pub fn read_text_values(input: &[u8], count: usize) -> io::Result<Vec<Value>> {
     Value::read_text_many(input, count)
 }
 
@@ -57,7 +56,7 @@ pub fn read_bin_value(
 }
 
 /// Reads multiple values in binary format.
-pub fn read_bin_values(input: &[u8], columns: &[Column]) -> io::Result<SmallVec<[Value; 12]>> {
+pub fn read_bin_values(input: &[u8], columns: &[Column]) -> io::Result<Vec<Value>> {
     Value::read_bin_many(input, columns)
 }
 
@@ -168,8 +167,8 @@ impl Value {
         }
     }
 
-    fn read_text_many(mut input: &[u8], count: usize) -> io::Result<SmallVec<[Value; 12]>> {
-        let mut output = SmallVec::<[Value; 12]>::new();
+    fn read_text_many(mut input: &[u8], count: usize) -> io::Result<Vec<Value>> {
+        let mut output = Vec::<Value>::new();
         loop {
             if input.len() == 0 {
                 if output.len() != count {
@@ -290,7 +289,7 @@ impl Value {
         }
     }
 
-    fn read_bin_many(mut input: &[u8], columns: &[Column]) -> io::Result<SmallVec<[Value; 12]>> {
+    fn read_bin_many(mut input: &[u8], columns: &[Column]) -> io::Result<Vec<Value>> {
         input.read_u8()?;
 
         static BIT_OFFSET: usize = 2; // http://dev.mysql.com/doc/internals/en/null-bitmap.html
@@ -301,7 +300,7 @@ impl Value {
             bitmap.push(input[(i + BIT_OFFSET) / 8] & (1 << ((i + BIT_OFFSET) % 8)) > 0)
         }
 
-        let mut values = SmallVec::<[Value; 12]>::new();
+        let mut values = Vec::<Value>::new();
 
         input = &input[bitmap_len..];
 
