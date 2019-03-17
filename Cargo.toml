@@ -36,4 +36,5 @@ optional= true
 
 [features]
 default = []
+nightly = []
 rustc_serialize = ["rustc-serialize"]

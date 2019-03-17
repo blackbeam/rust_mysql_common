@@ -18,18 +18,17 @@ use time::{self, at, strptime, Timespec, Tm};
 use uuid::Uuid;
 
 lazy_static! {
-    static ref DATETIME_RE_YMD: Regex = { Regex::new(r"^(\d{4})-(\d{2})-(\d{2})$").unwrap() };
+    static ref DATETIME_RE_YMD: Regex = { Regex::new(r"^\d{4}-\d{2}-\d{2}$").unwrap() };
     static ref DATETIME_RE_YMD_HMS: Regex =
-        { Regex::new(r"^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})$").unwrap() };
+        { Regex::new(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$").unwrap() };
     static ref DATETIME_RE_YMD_HMS_NS: Regex =
-        { Regex::new(r"^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})\.(\d{1,6})$").unwrap() };
-    static ref TIME_RE_HH_MM_SS: Regex = { Regex::new(r"^(\d{2}):([0-5]\d):([0-5]\d)$").unwrap() };
+        { Regex::new(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{1,6}$").unwrap() };
+    static ref TIME_RE_HH_MM_SS: Regex = { Regex::new(r"^\d{2}:[0-5]\d:[0-5]\d$").unwrap() };
     static ref TIME_RE_HH_MM_SS_MS: Regex =
-        { Regex::new(r"^(\d{2}):([0-5]\d):([0-5]\d)\.(\d{1,6})$").unwrap() };
-    static ref TIME_RE_HHH_MM_SS: Regex =
-        { Regex::new(r"^([0-8]\d\d):([0-5]\d):([0-5]\d)$").unwrap() };
+        { Regex::new(r"^\d{2}:[0-5]\d:[0-5]\d\.\d{1,6}$").unwrap() };
+    static ref TIME_RE_HHH_MM_SS: Regex = { Regex::new(r"^[0-8]\d\d:[0-5]\d:[0-5]\d$").unwrap() };
     static ref TIME_RE_HHH_MM_SS_MS: Regex =
-        { Regex::new(r"^([0-8]\d\d):([0-5]\d):([0-5]\d)\.(\d{1,6})$").unwrap() };
+        { Regex::new(r"^[0-8]\d\d:[0-5]\d:[0-5]\d\.\d{1,6}$").unwrap() };
 }
 
 /// `FromValue` conversion error.
@@ -552,7 +551,7 @@ impl ConvIr<NaiveDateTime> for ParseIr<NaiveDateTime> {
 
         if date.is_some() && time.is_some() {
             Ok(ParseIr {
-                value: value,
+                value,
                 output: NaiveDateTime::new(date.unwrap(), time.unwrap()),
             })
         } else {
@@ -604,98 +603,128 @@ impl ConvIr<NaiveDate> for ParseIr<NaiveDate> {
     }
 }
 
+#[inline]
+fn parse_micros(micros_bytes: &[u8]) -> u32 {
+    let mut micros = atoi(micros_bytes).unwrap();
+
+    let mut pad_zero_cnt = 0;
+    for b in micros_bytes.iter() {
+        if *b == b'0' {
+            pad_zero_cnt += 1;
+        } else {
+            break;
+        }
+    }
+
+    for _ in 0..(6 - pad_zero_cnt - (micros_bytes.len() - pad_zero_cnt)) {
+        micros *= 10;
+    }
+    micros
+}
+
 /// Returns (year, month, day, hour, minute, second, micros)
 fn parse_mysql_datetime_string(bytes: &[u8]) -> Option<(u32, u32, u32, u32, u32, u32, u32)> {
-    if bytes.len() == 0 {
-        return None;
+    let len = bytes.len();
+
+    #[derive(PartialEq, Eq, PartialOrd, Ord)]
+    #[repr(u8)]
+    enum DateTimeKind {
+        Ymd = 0,
+        YmdHms,
+        YmdHmsMs,
     }
-    DATETIME_RE_YMD_HMS
-        .captures(bytes)
-        .or_else(|| DATETIME_RE_YMD.captures(bytes))
-        .or_else(|| DATETIME_RE_YMD_HMS_NS.captures(bytes))
-        .map(|cts| {
-            // shouldn't panic because content is validated by regex
-            let year = atoi(cts.get(1).unwrap().as_bytes()).unwrap();
-            let month = atoi(cts.get(2).unwrap().as_bytes()).unwrap();
-            let day = atoi(cts.get(3).unwrap().as_bytes()).unwrap();
 
-            let (hour, minute, second, micros) = if cts.len() > 4 {
-                // shouldn't panic because content is validated by regex
-                let hour = atoi(cts.get(4).unwrap().as_bytes()).unwrap();
-                let minute = atoi(cts.get(5).unwrap().as_bytes()).unwrap();
-                let second = atoi(cts.get(6).unwrap().as_bytes()).unwrap();
-                let micros = if cts.len() == 8 {
-                    // shouldn't panic because content is validated by regex
-                    let micros_bytes = cts.get(7).unwrap().as_bytes();
-                    let mut micros = atoi(micros_bytes).unwrap();
+    let kind = if len == 10 && DATETIME_RE_YMD.is_match(bytes) {
+        DateTimeKind::Ymd
+    } else if len == 19 && DATETIME_RE_YMD_HMS.is_match(bytes) {
+        DateTimeKind::YmdHms
+    } else if 20 < len && len < 27 && DATETIME_RE_YMD_HMS_NS.is_match(bytes) {
+        DateTimeKind::YmdHmsMs
+    } else {
+        return None;
+    };
 
-                    let mut pad_zero_cnt = 0;
-                    for b in micros_bytes.iter() {
-                        if *b == b'0' {
-                            pad_zero_cnt += 1;
-                        } else {
-                            break;
-                        }
-                    }
+    let (year, month, day, hour, minute, second, micros) = match kind {
+        DateTimeKind::Ymd => (..4, 5..7, 8..10, None, None, None, None),
+        DateTimeKind::YmdHms => (
+            ..4,
+            5..7,
+            8..10,
+            Some(11..13),
+            Some(14..16),
+            Some(17..19),
+            None,
+        ),
+        DateTimeKind::YmdHmsMs => (
+            ..4,
+            5..7,
+            8..10,
+            Some(11..13),
+            Some(14..16),
+            Some(17..19),
+            Some(20..),
+        ),
+    };
 
-                    for _ in 0..(6 - pad_zero_cnt - (micros_bytes.len() - pad_zero_cnt)) {
-                        micros *= 10;
-                    }
-                    micros
-                } else {
-                    0
-                };
-                (hour, minute, second, micros)
-            } else {
-                (0, 0, 0, 0)
-            };
-            (year, month, day, hour, minute, second, micros)
-        })
+    Some((
+        atoi(&bytes[year]).unwrap(),
+        atoi(&bytes[month]).unwrap(),
+        atoi(&bytes[day]).unwrap(),
+        hour.map(|pos| atoi(&bytes[pos]).unwrap()).unwrap_or(0),
+        minute.map(|pos| atoi(&bytes[pos]).unwrap()).unwrap_or(0),
+        second.map(|pos| atoi(&bytes[pos]).unwrap()).unwrap_or(0),
+        micros.map(|pos| parse_micros(&bytes[pos])).unwrap_or(0),
+    ))
 }
 
 /// Returns (is_neg, hours, minutes, seconds, microseconds)
 fn parse_mysql_time_string(mut bytes: &[u8]) -> Option<(bool, u32, u32, u32, u32)> {
-    if bytes.len() == 0 {
+    #[derive(PartialEq, Eq, PartialOrd, Ord)]
+    #[repr(u8)]
+    enum TimeKind {
+        HhMmSs = 0,
+        HhhMmSs,
+        HhMmSsMs,
+        HhhMmSsMs,
+    }
+
+    if bytes.len() < 8 {
         return None;
     }
+
     let is_neg = bytes[0] == b'-';
     if is_neg {
         bytes = &bytes[1..];
     }
-    TIME_RE_HHH_MM_SS
-        .captures(bytes)
-        .or_else(|| TIME_RE_HHH_MM_SS_MS.captures(bytes))
-        .or_else(|| TIME_RE_HH_MM_SS.captures(bytes))
-        .or_else(|| TIME_RE_HH_MM_SS_MS.captures(bytes))
-        .map(|cts| {
-            // shouldn't panic because content is validated by regex
-            let hours = atoi(cts.get(1).unwrap().as_bytes()).unwrap();
-            let minutes = atoi(cts.get(2).unwrap().as_bytes()).unwrap();
-            let seconds = atoi(cts.get(3).unwrap().as_bytes()).unwrap();
 
-            let microseconds = if cts.len() == 5 {
-                // shouldn't panic because content is validated by regex
-                let micros_bytes = cts.get(4).unwrap().as_bytes();
-                let mut micros = atoi(micros_bytes).unwrap();
+    let len = bytes.len();
 
-                let mut pad_zero_cnt = 0;
-                for b in micros_bytes.iter() {
-                    if *b == b'0' {
-                        pad_zero_cnt += 1;
-                    } else {
-                        break;
-                    }
-                }
+    let kind = if len == 8 && TIME_RE_HH_MM_SS.is_match(bytes) {
+        TimeKind::HhMmSs
+    } else if len == 9 && TIME_RE_HHH_MM_SS.is_match(bytes) {
+        TimeKind::HhhMmSs
+    } else if TIME_RE_HH_MM_SS_MS.is_match(bytes) {
+        TimeKind::HhMmSsMs
+    } else if TIME_RE_HHH_MM_SS_MS.is_match(bytes) {
+        TimeKind::HhhMmSsMs
+    } else {
+        return None;
+    };
 
-                for _ in 0..(6 - pad_zero_cnt - (micros_bytes.len() - pad_zero_cnt)) {
-                    micros *= 10;
-                }
-                micros
-            } else {
-                0
-            };
-            (is_neg, hours, minutes, seconds, microseconds)
-        })
+    let (hour_pos, min_pos, sec_pos, micros_pos) = match kind {
+        TimeKind::HhMmSs => (..2, 3..5, 6..8, None),
+        TimeKind::HhMmSsMs => (..2, 3..5, 6..8, Some(9..)),
+        TimeKind::HhhMmSs => (..3, 4..6, 7..9, None),
+        TimeKind::HhhMmSsMs => (..3, 4..6, 7..9, Some(10..)),
+    };
+
+    Some((
+        is_neg,
+        atoi(&bytes[hour_pos]).unwrap(),
+        atoi(&bytes[min_pos]).unwrap(),
+        atoi(&bytes[sec_pos]).unwrap(),
+        micros_pos.map(|pos| parse_micros(&bytes[pos])).unwrap_or(0),
+    ))
 }
 
 impl ConvIr<NaiveTime> for ParseIr<NaiveTime> {
@@ -1164,4 +1193,106 @@ fn from_value_should_fail_on_integer_overflow() {
     assert!(from_value_opt::<i32>(value.clone()).is_err());
     assert!(from_value_opt::<u64>(value.clone()).is_err());
     assert!(from_value_opt::<i64>(value.clone()).is_err());
+}
+
+#[test]
+fn test_parse_mysql_time_string() {
+    let pairs = vec![
+        ("-012:34:56.0123456", None),
+        ("-012:34:56.012345", Some((true, 12, 34, 56, 12345))),
+        ("-012:34:56.01234", Some((true, 12, 34, 56, 12340))),
+        ("-012:34:56.0123", Some((true, 12, 34, 56, 12300))),
+        ("-012:34:56.012", Some((true, 12, 34, 56, 12000))),
+        ("-012:34:56.01", Some((true, 12, 34, 56, 10000))),
+        ("-012:34:56.0", Some((true, 12, 34, 56, 0))),
+        ("-012:34:56.", None),
+        ("-012:34:56", Some((true, 12, 34, 56, 0))),
+        ("012:34:56", Some((false, 12, 34, 56, 0))),
+        ("12:34:56", Some((false, 12, 34, 56, 0))),
+        ("12:34:5", None),
+        ("12:34:", None),
+        ("12:34", None),
+        ("12:3", None),
+        ("12:", None),
+        ("12", None),
+        ("1", None),
+        ("", None),
+    ];
+
+    for (input, output) in pairs {
+        assert_eq!(parse_mysql_time_string(input.as_bytes()), output);
+    }
+}
+
+#[test]
+fn test_parse_mysql_datetime_string() {
+    let pairs = vec![
+        ("1234-56-78 90:12:34.0123456", None),
+        (
+            "1234-56-78 90:12:34.012345",
+            Some((1234, 56, 78, 90, 12, 34, 12345)),
+        ),
+        (
+            "1234-56-78 90:12:34.01234",
+            Some((1234, 56, 78, 90, 12, 34, 12340)),
+        ),
+        (
+            "1234-56-78 90:12:34.0123",
+            Some((1234, 56, 78, 90, 12, 34, 12300)),
+        ),
+        (
+            "1234-56-78 90:12:34.012",
+            Some((1234, 56, 78, 90, 12, 34, 12000)),
+        ),
+        (
+            "1234-56-78 90:12:34.01",
+            Some((1234, 56, 78, 90, 12, 34, 10000)),
+        ),
+        ("1234-56-78 90:12:34.0", Some((1234, 56, 78, 90, 12, 34, 0))),
+        ("1234-56-78 90:12:34.", None),
+        ("1234-56-78 90:12:34", Some((1234, 56, 78, 90, 12, 34, 0))),
+        ("1234-56-78 90:12:3", None),
+        ("1234-56-78 90:12:", None),
+        ("1234-56-78 90:12", None),
+        ("1234-56-78 90:1", None),
+        ("1234-56-78 90:", None),
+        ("1234-56-78 90", None),
+        ("1234-56-78 9", None),
+        ("1234-56-78 ", None),
+        ("1234-56-78", Some((1234, 56, 78, 0, 0, 0, 0))),
+        ("1234-56-7", None),
+        ("1234-56-", None),
+        ("1234-56", None),
+        ("1234-5", None),
+        ("1234-", None),
+        ("1234", None),
+        ("123", None),
+        ("12", None),
+        ("1", None),
+        ("", None),
+    ];
+
+    for (input, output) in pairs {
+        assert_eq!(parse_mysql_datetime_string(input.as_bytes()), output);
+    }
+}
+
+#[cfg(feature = "nightly")]
+#[bench]
+fn bench_parse_mysql_datetime_string(bencher: &mut test::Bencher) {
+    let text = "1234-12-12 12:12:12.123456";
+    bencher.bytes = text.len() as u64;
+    bencher.iter(|| {
+        parse_mysql_datetime_string(text.as_bytes()).unwrap();
+    });
+}
+
+#[cfg(feature = "nightly")]
+#[bench]
+fn bench_parse_mysql_time_string(bencher: &mut test::Bencher) {
+    let text = "-012:34:56.012345";
+    bencher.bytes = text.len() as u64;
+    bencher.iter(|| {
+        parse_mysql_time_string(text.as_bytes()).unwrap();
+    });
 }
