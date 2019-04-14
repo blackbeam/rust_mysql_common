@@ -1165,3 +1165,14 @@ fn from_value_should_fail_on_integer_overflow() {
     assert!(from_value_opt::<u64>(value.clone()).is_err());
     assert!(from_value_opt::<i64>(value.clone()).is_err());
 }
+
+
+#[test]
+fn negative_numbers() {
+    let value = Value::Bytes(b"-3"[..].into());
+
+    assert!(from_value_opt::<i8>(value.clone()).is_ok());
+    assert!(from_value_opt::<i16>(value.clone()).is_ok());
+    assert!(from_value_opt::<i32>(value.clone()).is_ok());
+    assert!(from_value_opt::<i64>(value.clone()).is_ok());
+}
