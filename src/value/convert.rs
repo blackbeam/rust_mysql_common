@@ -310,8 +310,8 @@ impl ConvIr<i64> for ParseIr<i64> {
                 value: Value::UInt(x),
                 output: x as i64,
             }),
-            Value::Bytes(bytes) => match atoi(&*bytes) {
-                Some(x) => Ok(ParseIr {
+            Value::Bytes(bytes) => match try_parse(&*bytes) {
+                Ok(x) => Ok(ParseIr {
                     value: Value::Bytes(bytes),
                     output: x,
                 }),
@@ -339,8 +339,8 @@ impl ConvIr<u64> for ParseIr<u64> {
                 value: Value::UInt(x),
                 output: x,
             }),
-            Value::Bytes(bytes) => match atoi(&*bytes) {
-                Some(x) => Ok(ParseIr {
+            Value::Bytes(bytes) => match try_parse(&*bytes) {
+                Ok(x) => Ok(ParseIr {
                     value: Value::Bytes(bytes),
                     output: x,
                 }),
