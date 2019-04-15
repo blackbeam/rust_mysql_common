@@ -11,8 +11,8 @@ use crate::constants::{
     UTF8MB4_GENERAL_CI, UTF8_GENERAL_CI,
 };
 use crate::io::ReadMysqlExt;
-use atoi::atoi;
 use byteorder::{LittleEndian as LE, ReadBytesExt, WriteBytesExt};
+use lexical::parse;
 use regex::bytes::Regex;
 use std::borrow::Cow;
 use std::cmp::{max, min};
@@ -1024,9 +1024,9 @@ impl<'a> HandshakePacket<'a> {
             .map(|captures| {
                 // Should not panic because validated with regex
                 (
-                    atoi::<u16>(captures.get(1).unwrap().as_bytes()).unwrap(),
-                    atoi::<u16>(captures.get(2).unwrap().as_bytes()).unwrap(),
-                    atoi::<u16>(captures.get(3).unwrap().as_bytes()).unwrap(),
+                    parse::<u16, _>(captures.get(1).unwrap().as_bytes()),
+                    parse::<u16, _>(captures.get(2).unwrap().as_bytes()),
+                    parse::<u16, _>(captures.get(3).unwrap().as_bytes()),
                 )
             })
     }
@@ -1038,9 +1038,9 @@ impl<'a> HandshakePacket<'a> {
             .map(|captures| {
                 // Should not panic because validated with regex
                 (
-                    atoi::<u16>(captures.get(1).unwrap().as_bytes()).unwrap(),
-                    atoi::<u16>(captures.get(2).unwrap().as_bytes()).unwrap(),
-                    atoi::<u16>(captures.get(3).unwrap().as_bytes()).unwrap(),
+                    parse::<u16, _>(captures.get(1).unwrap().as_bytes()),
+                    parse::<u16, _>(captures.get(2).unwrap().as_bytes()),
+                    parse::<u16, _>(captures.get(3).unwrap().as_bytes()),
                 )
             })
     }

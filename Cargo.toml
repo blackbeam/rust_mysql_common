@@ -12,7 +12,6 @@ version = "0.16.0"
 edition = "2018"
 
 [dependencies]
-atoi = "0.3"
 base64 = "0.10"
 bitflags = "1"
 bit-vec = "0.5"
