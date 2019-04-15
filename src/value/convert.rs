@@ -1168,7 +1168,8 @@ fn from_value_should_fail_on_integer_overflow() {
 
 #[test]
 fn from_value_should_fail_on_integer_underflow() {
-    let value = Value::Bytes(b"-9999999999999999999999999999999999999999999999999999999"[..].into());
+    let value =
+        Value::Bytes(b"-9999999999999999999999999999999999999999999999999999999"[..].into());
     assert!(from_value_opt::<u8>(value.clone()).is_err());
     assert!(from_value_opt::<i8>(value.clone()).is_err());
     assert!(from_value_opt::<u16>(value.clone()).is_err());
