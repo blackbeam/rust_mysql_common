@@ -1182,141 +1182,140 @@ impl FromValue for Uuid {
     type Intermediate = UuidIr;
 }
 
-#[test]
-fn from_value_should_fail_on_integer_overflow() {
-    let value = Value::Bytes(b"9999999999999999999999999999999999999999999999999999999"[..].into());
-    assert!(from_value_opt::<u8>(value.clone()).is_err());
-    assert!(from_value_opt::<i8>(value.clone()).is_err());
-    assert!(from_value_opt::<u16>(value.clone()).is_err());
-    assert!(from_value_opt::<i16>(value.clone()).is_err());
-    assert!(from_value_opt::<u32>(value.clone()).is_err());
-    assert!(from_value_opt::<i32>(value.clone()).is_err());
-    assert!(from_value_opt::<u64>(value.clone()).is_err());
-    assert!(from_value_opt::<i64>(value.clone()).is_err());
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use proptest::prelude::*;
 
-#[test]
-fn test_parse_mysql_time_string() {
-    let pairs = vec![
-        ("-012:34:56.0123456", None),
-        ("-012:34:56.012345", Some((true, 12, 34, 56, 12345))),
-        ("-012:34:56.01234", Some((true, 12, 34, 56, 12340))),
-        ("-012:34:56.0123", Some((true, 12, 34, 56, 12300))),
-        ("-012:34:56.012", Some((true, 12, 34, 56, 12000))),
-        ("-012:34:56.01", Some((true, 12, 34, 56, 10000))),
-        ("-012:34:56.0", Some((true, 12, 34, 56, 0))),
-        ("-012:34:56.", None),
-        ("-012:34:56", Some((true, 12, 34, 56, 0))),
-        ("012:34:56", Some((false, 12, 34, 56, 0))),
-        ("12:34:56", Some((false, 12, 34, 56, 0))),
-        ("12:34:5", None),
-        ("12:34:", None),
-        ("12:34", None),
-        ("12:3", None),
-        ("12:", None),
-        ("12", None),
-        ("1", None),
-        ("", None),
-    ];
+    proptest! {
+        #[test]
+        fn parse_mysql_time_string_doesnt_crash(s in r"\PC*") {
+            parse_mysql_time_string(s.as_bytes());
+        }
 
-    for (input, output) in pairs {
-        assert_eq!(parse_mysql_time_string(input.as_bytes()), output);
+        #[test]
+        fn parse_mysql_time_string_parses_valid_time(
+            s in r"-?[0-8][0-9][0-9]:[0-5][0-9]:[0-5][0-9](\.[0-9]{1,6})?"
+        ) {
+            parse_mysql_time_string(s.as_bytes()).unwrap();
+        }
+
+        #[test]
+        fn parse_mysql_time_string_parses_correctly(
+            sign in 0..2,
+            h in 0u32..900,
+            m in 0u32..59,
+            s in 0u32..59,
+            have_us in 0..2,
+            us in 0u32..1000000,
+        ) {
+            let time_string = format!(
+                "{}{:02}:{:02}:{:02}{}",
+                if sign == 1 { "-" } else { "" },
+                h, m, s,
+                if have_us == 1 {
+                    format!(".{:06}", us)
+                } else {
+                    "".into()
+                }
+            );
+            let time = parse_mysql_time_string(time_string.as_bytes()).unwrap();
+            assert_eq!(time, (sign == 1, h, m, s, if have_us == 1 { us } else { 0 }));
+        }
+
+        #[test]
+        fn parse_mysql_datetime_string_doesnt_crash(s in "\\PC*") {
+            parse_mysql_datetime_string(s.as_bytes());
+        }
+
+        #[test]
+        fn parse_mysql_datetime_string_parses_valid_time(
+            s in r"[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]{1,6})?"
+        ) {
+            parse_mysql_datetime_string(s.as_bytes()).unwrap();
+        }
+
+        #[test]
+        fn parse_mysql_datetime_string_parses_correctly(
+            y in 0u32..10000,
+            m in 1u32..13,
+            d in 1u32..32,
+            h in 0u32..60,
+            i in 0u32..60,
+            s in 0u32..60,
+            have_us in 0..2,
+            us in 0u32..1000000,
+        ) {
+            let time_string = format!(
+                "{:04}-{:02}-{:02} {:02}:{:02}:{:02}{}",
+                y, m, d, h, i, s,
+                if have_us == 1 {
+                    format!(".{:06}", us)
+                } else {
+                    "".into()
+                }
+            );
+            let datetime = parse_mysql_datetime_string(time_string.as_bytes()).unwrap();
+            assert_eq!(datetime, (y, m, d, h, i, s, if have_us == 1 { us } else { 0 }));
+        }
     }
-}
 
-#[test]
-fn test_parse_mysql_datetime_string() {
-    let pairs = vec![
-        ("1234-56-78 90:12:34.0123456", None),
-        (
-            "1234-56-78 90:12:34.012345",
-            Some((1234, 56, 78, 90, 12, 34, 12345)),
-        ),
-        (
-            "1234-56-78 90:12:34.01234",
-            Some((1234, 56, 78, 90, 12, 34, 12340)),
-        ),
-        (
-            "1234-56-78 90:12:34.0123",
-            Some((1234, 56, 78, 90, 12, 34, 12300)),
-        ),
-        (
-            "1234-56-78 90:12:34.012",
-            Some((1234, 56, 78, 90, 12, 34, 12000)),
-        ),
-        (
-            "1234-56-78 90:12:34.01",
-            Some((1234, 56, 78, 90, 12, 34, 10000)),
-        ),
-        ("1234-56-78 90:12:34.0", Some((1234, 56, 78, 90, 12, 34, 0))),
-        ("1234-56-78 90:12:34.", None),
-        ("1234-56-78 90:12:34", Some((1234, 56, 78, 90, 12, 34, 0))),
-        ("1234-56-78 90:12:3", None),
-        ("1234-56-78 90:12:", None),
-        ("1234-56-78 90:12", None),
-        ("1234-56-78 90:1", None),
-        ("1234-56-78 90:", None),
-        ("1234-56-78 90", None),
-        ("1234-56-78 9", None),
-        ("1234-56-78 ", None),
-        ("1234-56-78", Some((1234, 56, 78, 0, 0, 0, 0))),
-        ("1234-56-7", None),
-        ("1234-56-", None),
-        ("1234-56", None),
-        ("1234-5", None),
-        ("1234-", None),
-        ("1234", None),
-        ("123", None),
-        ("12", None),
-        ("1", None),
-        ("", None),
-    ];
-
-    for (input, output) in pairs {
-        assert_eq!(parse_mysql_datetime_string(input.as_bytes()), output);
+    #[test]
+    fn from_value_should_fail_on_integer_overflow() {
+        let value = Value::Bytes(b"18446744073709551616"[..].into());
+        assert!(from_value_opt::<u8>(value.clone()).is_err());
+        assert!(from_value_opt::<i8>(value.clone()).is_err());
+        assert!(from_value_opt::<u16>(value.clone()).is_err());
+        assert!(from_value_opt::<i16>(value.clone()).is_err());
+        assert!(from_value_opt::<u32>(value.clone()).is_err());
+        assert!(from_value_opt::<i32>(value.clone()).is_err());
+        assert!(from_value_opt::<u64>(value.clone()).is_err());
+        assert!(from_value_opt::<i64>(value.clone()).is_err());
     }
-}
 
-#[test]
-fn from_value_should_fail_on_integer_underflow() {
-    let value =
-        Value::Bytes(b"-9999999999999999999999999999999999999999999999999999999"[..].into());
-    assert!(from_value_opt::<u8>(value.clone()).is_err());
-    assert!(from_value_opt::<i8>(value.clone()).is_err());
-    assert!(from_value_opt::<u16>(value.clone()).is_err());
-    assert!(from_value_opt::<i16>(value.clone()).is_err());
-    assert!(from_value_opt::<u32>(value.clone()).is_err());
-    assert!(from_value_opt::<i32>(value.clone()).is_err());
-    assert!(from_value_opt::<u64>(value.clone()).is_err());
-    assert!(from_value_opt::<i64>(value.clone()).is_err());
-}
+    #[test]
+    fn from_value_should_fail_on_integer_underflow() {
+        let value =
+            Value::Bytes(b"-18446744073709551616"[..].into());
+        assert!(from_value_opt::<u8>(value.clone()).is_err());
+        assert!(from_value_opt::<i8>(value.clone()).is_err());
+        assert!(from_value_opt::<u16>(value.clone()).is_err());
+        assert!(from_value_opt::<i16>(value.clone()).is_err());
+        assert!(from_value_opt::<u32>(value.clone()).is_err());
+        assert!(from_value_opt::<i32>(value.clone()).is_err());
+        assert!(from_value_opt::<u64>(value.clone()).is_err());
+        assert!(from_value_opt::<i64>(value.clone()).is_err());
+    }
 
-#[test]
-fn negative_numbers() {
-    let value = Value::Bytes(b"-3"[..].into());
+    #[test]
+    fn negative_numbers() {
+        let value = Value::Bytes(b"-3"[..].into());
 
-    assert!(from_value_opt::<i8>(value.clone()).is_ok());
-    assert!(from_value_opt::<i16>(value.clone()).is_ok());
-    assert!(from_value_opt::<i32>(value.clone()).is_ok());
-    assert!(from_value_opt::<i64>(value.clone()).is_ok());
-}
+        assert!(from_value_opt::<i8>(value.clone()).is_ok());
+        assert!(from_value_opt::<i16>(value.clone()).is_ok());
+        assert!(from_value_opt::<i32>(value.clone()).is_ok());
+        assert!(from_value_opt::<i64>(value.clone()).is_ok());
+        assert!(from_value_opt::<f32>(value.clone()).is_ok());
+        assert!(from_value_opt::<f64>(value.clone()).is_ok());
+    }
 
-#[cfg(feature = "nightly")]
-#[bench]
-fn bench_parse_mysql_datetime_string(bencher: &mut test::Bencher) {
-    let text = "1234-12-12 12:12:12.123456";
-    bencher.bytes = text.len() as u64;
-    bencher.iter(|| {
-        parse_mysql_datetime_string(text.as_bytes()).unwrap();
-    });
-}
+    #[cfg(feature = "nightly")]
+    #[bench]
+    fn bench_parse_mysql_datetime_string(bencher: &mut test::Bencher) {
+        let text = "1234-12-12 12:12:12.123456";
+        bencher.bytes = text.len() as u64;
+        bencher.iter(|| {
+            parse_mysql_datetime_string(text.as_bytes()).unwrap();
+        });
+    }
 
-#[cfg(feature = "nightly")]
-#[bench]
-fn bench_parse_mysql_time_string(bencher: &mut test::Bencher) {
-    let text = "-012:34:56.012345";
-    bencher.bytes = text.len() as u64;
-    bencher.iter(|| {
-        parse_mysql_time_string(text.as_bytes()).unwrap();
-    });
+    #[cfg(feature = "nightly")]
+    #[bench]
+    fn bench_parse_mysql_time_string(bencher: &mut test::Bencher) {
+        let text = "-012:34:56.012345";
+        bencher.bytes = text.len() as u64;
+        bencher.iter(|| {
+            parse_mysql_time_string(text.as_bytes()).unwrap();
+        });
+    }
 }
