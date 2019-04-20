@@ -7,12 +7,12 @@
 // modified, or distributed except according to those terms.
 
 use crate::value::Value;
-use atoi::atoi;
 use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
+use lexical::{parse, try_parse};
 use regex::bytes::Regex;
 use std::error::Error;
 use std::fmt;
-use std::str::{from_utf8, FromStr};
+use std::str::from_utf8;
 use std::time::Duration;
 use time::{self, at, strptime, Timespec, Tm};
 use uuid::Uuid;
@@ -165,8 +165,8 @@ macro_rules! impl_from_value_num {
                         value: Value::UInt(x),
                         output: x as $t,
                     }),
-                    Value::Bytes(bytes) => match atoi(&*bytes) {
-                        Some(x) => Ok(ParseIr {
+                    Value::Bytes(bytes) => match try_parse(&*bytes) {
+                        Ok(x) => Ok(ParseIr {
                             value: Value::Bytes(bytes),
                             output: x,
                         }),
@@ -310,8 +310,8 @@ impl ConvIr<i64> for ParseIr<i64> {
                 value: Value::UInt(x),
                 output: x as i64,
             }),
-            Value::Bytes(bytes) => match atoi(&*bytes) {
-                Some(x) => Ok(ParseIr {
+            Value::Bytes(bytes) => match try_parse(&*bytes) {
+                Ok(x) => Ok(ParseIr {
                     value: Value::Bytes(bytes),
                     output: x,
                 }),
@@ -339,8 +339,8 @@ impl ConvIr<u64> for ParseIr<u64> {
                 value: Value::UInt(x),
                 output: x,
             }),
-            Value::Bytes(bytes) => match atoi(&*bytes) {
-                Some(x) => Ok(ParseIr {
+            Value::Bytes(bytes) => match try_parse(&*bytes) {
+                Ok(x) => Ok(ParseIr {
                     value: Value::Bytes(bytes),
                     output: x,
                 }),
@@ -367,7 +367,7 @@ impl ConvIr<f32> for ParseIr<f32> {
                 })
             }
             Value::Bytes(bytes) => {
-                let val = from_utf8(&*bytes).ok().and_then(|x| f32::from_str(x).ok());
+                let val = try_parse(&*bytes).ok();
                 match val {
                     Some(x) => Ok(ParseIr {
                         value: Value::Bytes(bytes),
@@ -395,7 +395,7 @@ impl ConvIr<f64> for ParseIr<f64> {
                 output: x,
             }),
             Value::Bytes(bytes) => {
-                let val = from_utf8(&*bytes).ok().and_then(|x| f64::from_str(x).ok());
+                let val = try_parse(&*bytes).ok();
                 match val {
                     Some(x) => Ok(ParseIr {
                         value: Value::Bytes(bytes),
@@ -615,19 +615,19 @@ fn parse_mysql_datetime_string(bytes: &[u8]) -> Option<(u32, u32, u32, u32, u32,
         .or_else(|| DATETIME_RE_YMD_HMS_NS.captures(bytes))
         .map(|cts| {
             // shouldn't panic because content is validated by regex
-            let year = atoi(cts.get(1).unwrap().as_bytes()).unwrap();
-            let month = atoi(cts.get(2).unwrap().as_bytes()).unwrap();
-            let day = atoi(cts.get(3).unwrap().as_bytes()).unwrap();
+            let year = parse(cts.get(1).unwrap().as_bytes());
+            let month = parse(cts.get(2).unwrap().as_bytes());
+            let day = parse(cts.get(3).unwrap().as_bytes());
 
             let (hour, minute, second, micros) = if cts.len() > 4 {
                 // shouldn't panic because content is validated by regex
-                let hour = atoi(cts.get(4).unwrap().as_bytes()).unwrap();
-                let minute = atoi(cts.get(5).unwrap().as_bytes()).unwrap();
-                let second = atoi(cts.get(6).unwrap().as_bytes()).unwrap();
+                let hour = parse(cts.get(4).unwrap().as_bytes());
+                let minute = parse(cts.get(5).unwrap().as_bytes());
+                let second = parse(cts.get(6).unwrap().as_bytes());
                 let micros = if cts.len() == 8 {
                     // shouldn't panic because content is validated by regex
                     let micros_bytes = cts.get(7).unwrap().as_bytes();
-                    let mut micros = atoi(micros_bytes).unwrap();
+                    let mut micros = parse(micros_bytes);
 
                     let mut pad_zero_cnt = 0;
                     for b in micros_bytes.iter() {
@@ -669,14 +669,14 @@ fn parse_mysql_time_string(mut bytes: &[u8]) -> Option<(bool, u32, u32, u32, u32
         .or_else(|| TIME_RE_HH_MM_SS_MS.captures(bytes))
         .map(|cts| {
             // shouldn't panic because content is validated by regex
-            let hours = atoi(cts.get(1).unwrap().as_bytes()).unwrap();
-            let minutes = atoi(cts.get(2).unwrap().as_bytes()).unwrap();
-            let seconds = atoi(cts.get(3).unwrap().as_bytes()).unwrap();
+            let hours = parse(cts.get(1).unwrap().as_bytes());
+            let minutes = parse(cts.get(2).unwrap().as_bytes());
+            let seconds = parse(cts.get(3).unwrap().as_bytes());
 
             let microseconds = if cts.len() == 5 {
                 // shouldn't panic because content is validated by regex
                 let micros_bytes = cts.get(4).unwrap().as_bytes();
-                let mut micros = atoi(micros_bytes).unwrap();
+                let mut micros = parse(micros_bytes);
 
                 let mut pad_zero_cnt = 0;
                 for b in micros_bytes.iter() {
@@ -1164,4 +1164,28 @@ fn from_value_should_fail_on_integer_overflow() {
     assert!(from_value_opt::<i32>(value.clone()).is_err());
     assert!(from_value_opt::<u64>(value.clone()).is_err());
     assert!(from_value_opt::<i64>(value.clone()).is_err());
+}
+
+#[test]
+fn from_value_should_fail_on_integer_underflow() {
+    let value =
+        Value::Bytes(b"-9999999999999999999999999999999999999999999999999999999"[..].into());
+    assert!(from_value_opt::<u8>(value.clone()).is_err());
+    assert!(from_value_opt::<i8>(value.clone()).is_err());
+    assert!(from_value_opt::<u16>(value.clone()).is_err());
+    assert!(from_value_opt::<i16>(value.clone()).is_err());
+    assert!(from_value_opt::<u32>(value.clone()).is_err());
+    assert!(from_value_opt::<i32>(value.clone()).is_err());
+    assert!(from_value_opt::<u64>(value.clone()).is_err());
+    assert!(from_value_opt::<i64>(value.clone()).is_err());
+}
+
+#[test]
+fn negative_numbers() {
+    let value = Value::Bytes(b"-3"[..].into());
+
+    assert!(from_value_opt::<i8>(value.clone()).is_ok());
+    assert!(from_value_opt::<i16>(value.clone()).is_ok());
+    assert!(from_value_opt::<i32>(value.clone()).is_ok());
+    assert!(from_value_opt::<i64>(value.clone()).is_ok());
 }
