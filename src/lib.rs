@@ -6,6 +6,10 @@
 // option. All files in the project carrying such notice may not be copied,
 // modified, or distributed except according to those terms.
 
+#![cfg_attr(feature = "nightly", feature(test, const_fn))]
+#[cfg(feature = "nightly")]
+extern crate test;
+
 #[macro_use]
 extern crate bitflags;
 

@@ -34,6 +34,10 @@ serde_json = "1"
 version = "0.3"
 optional= true
 
+[dev-dependencies]
+proptest = "0.9.2"
+
 [features]
 default = []
+nightly = []
 rustc_serialize = ["rustc-serialize"]
