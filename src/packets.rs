@@ -964,8 +964,8 @@ impl<'a> HandshakePacket<'a> {
                 (None, payload)
             };
         let auth_plugin_name = if capabilities.contains(CapabilityFlags::CLIENT_PLUGIN_AUTH) {
-            if payload[payload.len() - 1] == 0x00 {
-                Some(&payload[..payload.len() - 1])
+            if let Some(pos) = payload.iter().position(|&x| x == 0x00) {
+                Some(&payload[..pos])
             } else {
                 Some(payload)
             }
