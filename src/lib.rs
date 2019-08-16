@@ -7,23 +7,22 @@
 // modified, or distributed except according to those terms.
 
 #![cfg_attr(feature = "nightly", feature(test, const_fn))]
-#[cfg(feature = "nightly")]
-extern crate test;
 
 #[macro_use]
 extern crate bitflags;
-
-pub use chrono;
 #[macro_use]
 extern crate lazy_static;
+#[cfg(feature = "nightly")]
+extern crate test;
 
 #[cfg(feature = "rustc_serialize")]
 pub extern crate rustc_serialize;
+
+pub use chrono;
+pub use rust_decimal;
 pub use serde;
 pub use serde_json;
-
 pub use time;
-
 pub use uuid;
 
 /// This macro is a convenient way to pass named parameters to a statement.

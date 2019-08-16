@@ -6,16 +6,20 @@
 // option. All files in the project carrying such notice may not be copied,
 // modified, or distributed except according to those terms.
 
-use crate::value::Value;
 use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 use lexical::{parse, try_parse};
 use regex::bytes::Regex;
+use time::{self, at, strptime, Timespec, Tm};
+use uuid::Uuid;
+
 use std::error::Error;
 use std::fmt;
 use std::str::from_utf8;
 use std::time::Duration;
-use time::{self, at, strptime, Timespec, Tm};
-use uuid::Uuid;
+
+use crate::value::Value;
+
+mod decimal;
 
 lazy_static! {
     static ref DATETIME_RE_YMD: Regex = { Regex::new(r"^\d{4}-\d{2}-\d{2}$").unwrap() };
@@ -1144,9 +1148,9 @@ from_array_impl!(30);
 from_array_impl!(31);
 from_array_impl!(32);
 
-impl Into<Value> for Uuid {
-    fn into(self) -> Value {
-        Value::Bytes(self.as_bytes().to_vec())
+impl From<Uuid> for Value {
+    fn from(uuid: Uuid) -> Value {
+        Value::Bytes(uuid.as_bytes().to_vec())
     }
 }
 
