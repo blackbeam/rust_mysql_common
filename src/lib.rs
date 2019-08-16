@@ -15,9 +15,6 @@ extern crate lazy_static;
 #[cfg(feature = "nightly")]
 extern crate test;
 
-#[cfg(feature = "rustc_serialize")]
-pub extern crate rustc_serialize;
-
 pub use chrono;
 pub use rust_decimal;
 pub use serde;
