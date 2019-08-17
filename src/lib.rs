@@ -28,7 +28,7 @@
 //!
 //! | Type                            | Notes                                                     |
 //! | ------------------------------- | -------------------------------------------------------   |
-//! | `{i,u}8..{i,u}128`, `{i,u}size` | MySql int/uint will be converted, bytes will be parsed    |
+//! | `{i,u}8..{i,u}128`, `{i,u}size` | MySql int/uint will be converted, bytes will be parsed.<br>⚠️ Note that range of `{i,u}128` is greater than supported by MySql integer types but it'll be serialized anyway (as decimal bytes string). |
 //! | `bool`                          | MySql int {`0`, `1`} or bytes {`"0x30"`, `"0x31"`}        |
 //! | `Vec<u8>`                       | MySql bytes                                               |
 //! | `String`                        | MySql bytes parsed as utf8                                |
@@ -41,9 +41,9 @@
 //! | `serde_json::Value`             | MySql bytes parsed using `serde_json::from_str`           |
 //! | `mysql_common::Deserialized<T : DeserializeOwned>` | MySql bytes parsed using `serde_json::from_str` |
 //! | `Option<T: FromValue>`          | Must be used for nullable columns to avoid errors         |
-//! | `decimal::Decimal`              | MySql int, uint or bytes parsed using `Decimal::from_str`.<br>Note that this type doesn't support full range of MySql `DECIMAL` type. |
-//! | `bigdecimal::BigDecimal`        | MySql int, uint, floats or bytes parsed using `BigDecimal::parse_bytes` |
-//! | `num_bigint::{BigInt, BigUint}  | MySql int, uint or bytes parsed using `_::parse_bytes` |
+//! | `decimal::Decimal`              | MySql int, uint or bytes parsed using `Decimal::from_str`.<br>⚠️ Note that this type doesn't support full range of MySql `DECIMAL` type. |
+//! | `bigdecimal::BigDecimal`        | MySql int, uint, floats or bytes parsed using `BigDecimal::parse_bytes`.<br>⚠️ Note that range of this type is greater than supported by MySql `DECIMAL` type but it'll be serialized anyway. |
+//! | `num_bigint::{BigInt, BigUint}  | MySql int, uint or bytes parsed using `_::parse_bytes`.<br>⚠️ Note that range of this type is greater than supported by MySql integer types but it'll be serialized anyway (as decimal bytes string). |
 //!
 //! [1]: https://dev.mysql.com/doc/internals/en/binary-protocol-value.html
 #![cfg_attr(feature = "nightly", feature(test, const_fn))]

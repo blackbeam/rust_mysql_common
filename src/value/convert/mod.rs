@@ -8,6 +8,7 @@
 
 use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 use lexical::{parse, try_parse};
+use num_traits::{FromPrimitive, ToPrimitive};
 use regex::bytes::Regex;
 use time::{self, at, strptime, Timespec, Tm};
 use uuid::Uuid;
@@ -152,24 +153,25 @@ macro_rules! impl_from_value_num {
             fn new(v: Value) -> Result<ParseIr<$t>, FromValueError> {
                 match v {
                     Value::Int(x) => {
-                        let min = ::std::$t::MIN as i64;
-                        let mut max = ::std::$t::MAX as i64;
-                        if max < 0 {
-                            max = ::std::i64::MAX;
-                        }
-                        if min <= x && x <= max {
+                        if let Some(output) = $t::from_i64(x) {
                             Ok(ParseIr {
                                 value: Value::Int(x),
-                                output: x as $t,
+                                output,
                             })
                         } else {
                             Err(FromValueError(Value::Int(x)))
                         }
                     }
-                    Value::UInt(x) if x <= ::std::$t::MAX as u64 => Ok(ParseIr {
-                        value: Value::UInt(x),
-                        output: x as $t,
-                    }),
+                    Value::UInt(x) => {
+                        if let Some(output) = $t::from_u64(x) {
+                            Ok(ParseIr {
+                                value: Value::UInt(x),
+                                output,
+                            })
+                        } else {
+                            Err(FromValueError(Value::UInt(x)))
+                        }
+                    }
                     Value::Bytes(bytes) => match try_parse(&*bytes) {
                         Ok(x) => Ok(ParseIr {
                             value: Value::Bytes(bytes),
@@ -899,6 +901,8 @@ impl_from_value_num!(i32, "Could not retrieve i32 from Value");
 impl_from_value_num!(u32, "Could not retrieve u32 from Value");
 impl_from_value_num!(isize, "Could not retrieve isize from Value");
 impl_from_value_num!(usize, "Could not retrieve usize from Value");
+impl_from_value_num!(i128, "Could not retrieve i128 from Value");
+impl_from_value_num!(u128, "Could not retrieve u128 from Value");
 
 pub trait ToValue {
     fn to_value(&self) -> Value;
@@ -965,6 +969,28 @@ impl From<usize> for Value {
             Value::Int(x as i64)
         } else {
             Value::UInt(x as u64)
+        }
+    }
+}
+
+impl From<i128> for Value {
+    fn from(x: i128) -> Value {
+        if let Some(x) = x.to_i64() {
+            Value::Int(x)
+        } else if let Some(x) = x.to_u64() {
+            Value::UInt(x)
+        } else {
+            Value::Bytes(x.to_string().into())
+        }
+    }
+}
+
+impl From<u128> for Value {
+    fn from(x: u128) -> Value {
+        if let Some(x) = x.to_u64() {
+            Value::UInt(x)
+        } else {
+            Value::Bytes(x.to_string().into())
         }
     }
 }
@@ -1263,6 +1289,39 @@ mod tests {
             );
             let datetime = parse_mysql_datetime_string(time_string.as_bytes()).unwrap();
             assert_eq!(datetime, (y, m, d, h, i, s, if have_us == 1 { us } else { 0 }));
+        }
+
+        #[test]
+        fn i128_roundtrip(
+            bytes_pos in r"16[0-9]{37}",
+            bytes_neg in r"-16[0-9]{37}",
+            uint in (i64::max_value() as u64 + 1)..u64::max_value(),
+            int: i64,
+        ) {
+            let val_bytes_pos = Value::Bytes(bytes_pos.as_bytes().into());
+            let val_bytes_neg = Value::Bytes(bytes_neg.as_bytes().into());
+            let val_uint = Value::UInt(uint);
+            let val_int = Value::Int(int);
+
+            assert_eq!(Value::from(from_value::<i128>(val_bytes_pos.clone())), val_bytes_pos);
+            assert_eq!(Value::from(from_value::<i128>(val_bytes_neg.clone())), val_bytes_neg);
+            assert_eq!(Value::from(from_value::<i128>(val_uint.clone())), val_uint);
+            assert_eq!(Value::from(from_value::<i128>(val_int.clone())), val_int);
+        }
+
+        #[test]
+        fn u128_roundtrip(
+            bytes in r"16[0-9]{37}",
+            uint: u64,
+            int in 0i64..i64::max_value(),
+        ) {
+            let val_bytes = Value::Bytes(bytes.as_bytes().into());
+            let val_uint = Value::UInt(uint);
+            let val_int = Value::Int(int);
+
+            assert_eq!(Value::from(from_value::<u128>(val_bytes.clone())), val_bytes);
+            assert_eq!(Value::from(from_value::<u128>(val_uint.clone())), val_uint);
+            assert_eq!(Value::from(from_value::<u128>(val_int.clone())), Value::UInt(int as u64));
         }
     }
 
