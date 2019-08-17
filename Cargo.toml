@@ -11,6 +11,9 @@ categories = ["database"]
 version = "0.17.1"
 edition = "2018"
 
+[badges]
+travis-ci = { repository = "blackbeam/rust_mysql_common" }
+
 [dependencies]
 base64 = "0.10"
 bigdecimal = { version = "0.1", features = ["serde"] }
