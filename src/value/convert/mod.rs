@@ -930,48 +930,32 @@ impl<T: Into<Value>> From<Option<T>> for Value {
 }
 
 macro_rules! into_value_impl (
-    (u64) => (
-        impl From<u64> for Value {
-            fn from(x: u64) -> Value {
-                Value::UInt(x)
-            }
-        }
-    );
-    (i64) => (
-        impl From<i64> for Value {
-            fn from(x: i64) -> Value {
-                Value::Int(x)
-            }
-        }
-    );
-    ($t:ty) => (
+    (signed $t:ty) => (
         impl From<$t> for Value {
             fn from(x: $t) -> Value {
                 Value::Int(x as i64)
             }
         }
     );
+    (unsigned $t:ty) => (
+        impl From<$t> for Value {
+            fn from(x: $t) -> Value {
+                Value::UInt(x as u64)
+            }
+        }
+    );
 );
 
-into_value_impl!(i8);
-into_value_impl!(u8);
-into_value_impl!(i16);
-into_value_impl!(u16);
-into_value_impl!(i32);
-into_value_impl!(u32);
-into_value_impl!(i64);
-into_value_impl!(u64);
-into_value_impl!(isize);
-
-impl From<usize> for Value {
-    fn from(x: usize) -> Value {
-        if x as u64 <= ::std::i64::MAX as u64 {
-            Value::Int(x as i64)
-        } else {
-            Value::UInt(x as u64)
-        }
-    }
-}
+into_value_impl!(signed i8);
+into_value_impl!(signed i16);
+into_value_impl!(signed i32);
+into_value_impl!(signed i64);
+into_value_impl!(signed isize);
+into_value_impl!(unsigned u8);
+into_value_impl!(unsigned u16);
+into_value_impl!(unsigned u32);
+into_value_impl!(unsigned u64);
+into_value_impl!(unsigned usize);
 
 impl From<i128> for Value {
     fn from(x: i128) -> Value {
@@ -1219,6 +1203,42 @@ mod tests {
     use super::*;
     use proptest::prelude::*;
 
+    macro_rules! signed_primitive_roundtrip {
+        ($t:ty, $name:ident) => {
+            proptest! {
+                #[test]
+                fn $name(n: $t) {
+                    let val = Value::Int(n as i64);
+                    let val_bytes = Value::Bytes(n.to_string().into());
+                    assert_eq!(Value::from(from_value::<$t>(val.clone())), val);
+                    assert_eq!(Value::from(from_value::<$t>(val_bytes.clone())), val);
+                    if n >= 0 {
+                        let val_uint = Value::UInt(n as u64);
+                        assert_eq!(Value::from(from_value::<$t>(val_uint.clone())), val);
+                    }
+                }
+            }
+        };
+    }
+
+    macro_rules! unsigned_primitive_roundtrip {
+        ($t:ty, $name:ident) => {
+            proptest! {
+                #[test]
+                fn $name(n: $t) {
+                    let val = Value::UInt(n as u64);
+                    let val_bytes = Value::Bytes(n.to_string().into());
+                    assert_eq!(Value::from(from_value::<$t>(val.clone())), val);
+                    assert_eq!(Value::from(from_value::<$t>(val_bytes.clone())), val);
+                    if n as u64 <= i64::max_value() as u64 {
+                        let val_int = Value::Int(n as i64);
+                        assert_eq!(Value::from(from_value::<$t>(val_int.clone())), val);
+                    }
+                }
+            }
+        };
+    }
+
     proptest! {
         #[test]
         fn parse_mysql_time_string_doesnt_crash(s in r"\PC*") {
@@ -1323,11 +1343,37 @@ mod tests {
             assert_eq!(Value::from(from_value::<u128>(val_uint.clone())), val_uint);
             assert_eq!(Value::from(from_value::<u128>(val_int.clone())), Value::UInt(int as u64));
         }
+
+        #[test]
+        fn f32_roundtrip(n: f32) {
+            let val = Value::Float(n as f64);
+            let val_bytes = Value::Bytes(n.to_string().into());
+            assert_eq!(Value::from(from_value::<f32>(val.clone())), val);
+            assert_eq!(Value::from(from_value::<f32>(val_bytes.clone())), val);
+        }
+
+        #[test]
+        fn f64_roundtrip(n: f64) {
+            let val = Value::Float(n);
+            let val_bytes = Value::Bytes(n.to_string().into());
+            assert_eq!(Value::from(from_value::<f64>(val.clone())), val);
+            assert_eq!(Value::from(from_value::<f64>(val_bytes.clone())), val);
+        }
     }
+
+    signed_primitive_roundtrip!(i8, i8_roundtrip);
+    signed_primitive_roundtrip!(i16, i16_roundtrip);
+    signed_primitive_roundtrip!(i32, i32_roundtrip);
+    signed_primitive_roundtrip!(i64, i64_roundtrip);
+
+    unsigned_primitive_roundtrip!(u8, u8_roundtrip);
+    unsigned_primitive_roundtrip!(u16, u16_roundtrip);
+    unsigned_primitive_roundtrip!(u32, u32_roundtrip);
+    unsigned_primitive_roundtrip!(u64, u64_roundtrip);
 
     #[test]
     fn from_value_should_fail_on_integer_overflow() {
-        let value = Value::Bytes(b"18446744073709551616"[..].into());
+        let value = Value::Bytes(b"340282366920938463463374607431768211456"[..].into());
         assert!(from_value_opt::<u8>(value.clone()).is_err());
         assert!(from_value_opt::<i8>(value.clone()).is_err());
         assert!(from_value_opt::<u16>(value.clone()).is_err());
@@ -1336,11 +1382,13 @@ mod tests {
         assert!(from_value_opt::<i32>(value.clone()).is_err());
         assert!(from_value_opt::<u64>(value.clone()).is_err());
         assert!(from_value_opt::<i64>(value.clone()).is_err());
+        assert!(from_value_opt::<u128>(value.clone()).is_err());
+        assert!(from_value_opt::<i128>(value.clone()).is_err());
     }
 
     #[test]
     fn from_value_should_fail_on_integer_underflow() {
-        let value = Value::Bytes(b"-18446744073709551616"[..].into());
+        let value = Value::Bytes(b"-170141183460469231731687303715884105729"[..].into());
         assert!(from_value_opt::<u8>(value.clone()).is_err());
         assert!(from_value_opt::<i8>(value.clone()).is_err());
         assert!(from_value_opt::<u16>(value.clone()).is_err());
@@ -1349,18 +1397,8 @@ mod tests {
         assert!(from_value_opt::<i32>(value.clone()).is_err());
         assert!(from_value_opt::<u64>(value.clone()).is_err());
         assert!(from_value_opt::<i64>(value.clone()).is_err());
-    }
-
-    #[test]
-    fn negative_numbers() {
-        let value = Value::Bytes(b"-3"[..].into());
-
-        assert!(from_value_opt::<i8>(value.clone()).is_ok());
-        assert!(from_value_opt::<i16>(value.clone()).is_ok());
-        assert!(from_value_opt::<i32>(value.clone()).is_ok());
-        assert!(from_value_opt::<i64>(value.clone()).is_ok());
-        assert!(from_value_opt::<f32>(value.clone()).is_ok());
-        assert!(from_value_opt::<f64>(value.clone()).is_ok());
+        assert!(from_value_opt::<u128>(value.clone()).is_err());
+        assert!(from_value_opt::<i128>(value.clone()).is_err());
     }
 
     #[cfg(feature = "nightly")]
