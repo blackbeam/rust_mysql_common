@@ -79,6 +79,11 @@ mod tests {
                 "" => "0",
                 m => m,
             };
+            let sign = if m == "0" && d.chars().all(|b| b == '0') {
+                String::new()
+            } else {
+                sign
+            };
             let d = if d.is_empty() {
                 String::new()
             } else {
