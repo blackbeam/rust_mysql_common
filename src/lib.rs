@@ -15,7 +15,9 @@ extern crate lazy_static;
 #[cfg(feature = "nightly")]
 extern crate test;
 
+pub use bigdecimal;
 pub use chrono;
+pub use num_bigint;
 pub use rust_decimal;
 pub use serde;
 pub use serde_json;

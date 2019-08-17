@@ -13,13 +13,14 @@ edition = "2018"
 
 [dependencies]
 base64 = "0.10"
+bigdecimal = { version = "0.1", features = ["serde"] }
 bitflags = "1"
 bit-vec = "0.6"
 byteorder = "1"
 chrono = "0.4"
 lazy_static = "1"
 lexical = "2.1"
-num-bigint = "0.2"
+num-bigint = { version = "0.2", features = ["i128"] }
 rand = "0.7"
 regex = "1"
 rust_decimal = "1.0"

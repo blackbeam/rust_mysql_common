@@ -19,6 +19,7 @@ use std::time::Duration;
 
 use crate::value::Value;
 
+mod bigdecimal;
 mod decimal;
 
 lazy_static! {
