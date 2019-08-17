@@ -61,9 +61,10 @@ impl From<Decimal> for Value {
 
 #[cfg(test)]
 mod tests {
-    use super::super::*;
     use proptest::prelude::*;
     use rust_decimal::Decimal;
+
+    use super::super::*;
 
     proptest! {
         #[test]

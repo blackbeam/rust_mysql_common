@@ -60,10 +60,11 @@ impl From<BigDecimal> for Value {
 
 #[cfg(test)]
 mod tests {
-    use crate::value::Value;
-    use crate::value::convert::from_value;
     use proptest::prelude::*;
     use bigdecimal::BigDecimal;
+
+    use crate::value::Value;
+    use crate::value::convert::from_value;
 
     proptest! {
         #[test]
