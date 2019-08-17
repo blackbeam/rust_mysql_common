@@ -10,7 +10,7 @@
 
 use bigdecimal::BigDecimal;
 
-use super::{ConvIr, ParseIr, Value, FromValue, FromValueError};
+use super::{ConvIr, FromValue, FromValueError, ParseIr, Value};
 
 impl ConvIr<BigDecimal> for ParseIr<BigDecimal> {
     fn new(v: Value) -> Result<Self, FromValueError> {
@@ -48,7 +48,9 @@ impl ConvIr<BigDecimal> for ParseIr<BigDecimal> {
 impl FromValue for BigDecimal {
     type Intermediate = ParseIr<BigDecimal>;
     fn from_value(v: Value) -> BigDecimal {
-        <_>::from_value_opt(v).ok().expect("Could not retrieve BigDecimal from Value")
+        <_>::from_value_opt(v)
+            .ok()
+            .expect("Could not retrieve BigDecimal from Value")
     }
 }
 
@@ -60,11 +62,11 @@ impl From<BigDecimal> for Value {
 
 #[cfg(test)]
 mod tests {
-    use proptest::prelude::*;
     use bigdecimal::BigDecimal;
+    use proptest::prelude::*;
 
-    use crate::value::Value;
     use crate::value::convert::from_value;
+    use crate::value::Value;
 
     proptest! {
         #[test]

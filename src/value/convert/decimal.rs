@@ -12,7 +12,7 @@ use rust_decimal::Decimal;
 
 use std::str::{from_utf8, FromStr};
 
-use super::{ConvIr, ParseIr, Value, FromValue, FromValueError};
+use super::{ConvIr, FromValue, FromValueError, ParseIr, Value};
 
 impl ConvIr<Decimal> for ParseIr<Decimal> {
     fn new(v: Value) -> Result<Self, FromValueError> {
@@ -49,7 +49,9 @@ impl ConvIr<Decimal> for ParseIr<Decimal> {
 impl FromValue for Decimal {
     type Intermediate = ParseIr<Decimal>;
     fn from_value(v: Value) -> Decimal {
-        <_>::from_value_opt(v).ok().expect("Could not retrieve Decimal from Value")
+        <_>::from_value_opt(v)
+            .ok()
+            .expect("Could not retrieve Decimal from Value")
     }
 }
 

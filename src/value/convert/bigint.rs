@@ -11,7 +11,7 @@
 use num_bigint::{BigInt, BigUint};
 use num_traits::{FromPrimitive, ToPrimitive};
 
-use super::{ConvIr, ParseIr, Value, FromValue, FromValueError};
+use super::{ConvIr, FromValue, FromValueError, ParseIr, Value};
 
 impl ConvIr<BigInt> for ParseIr<BigInt> {
     fn new(v: Value) -> Result<Self, FromValueError> {
@@ -45,7 +45,9 @@ impl ConvIr<BigInt> for ParseIr<BigInt> {
 impl FromValue for BigInt {
     type Intermediate = ParseIr<BigInt>;
     fn from_value(v: Value) -> BigInt {
-        <_>::from_value_opt(v).ok().expect("Could not retrieve BigInt from Value")
+        <_>::from_value_opt(v)
+            .ok()
+            .expect("Could not retrieve BigInt from Value")
     }
 }
 
@@ -64,14 +66,16 @@ impl From<BigInt> for Value {
 impl ConvIr<BigUint> for ParseIr<BigUint> {
     fn new(v: Value) -> Result<Self, FromValueError> {
         match v {
-            Value::Int(x) => if let Some(parsed) = <_>::from_i64(x) {
-                Ok(ParseIr {
-                    value: Value::Int(x),
-                    output: parsed,
-                })
-            } else {
-                Err(FromValueError(Value::Int(x)))
-            },
+            Value::Int(x) => {
+                if let Some(parsed) = <_>::from_i64(x) {
+                    Ok(ParseIr {
+                        value: Value::Int(x),
+                        output: parsed,
+                    })
+                } else {
+                    Err(FromValueError(Value::Int(x)))
+                }
+            }
             Value::UInt(x) => Ok(ParseIr {
                 value: Value::UInt(x),
                 output: x.into(),
@@ -97,7 +101,9 @@ impl ConvIr<BigUint> for ParseIr<BigUint> {
 impl FromValue for BigUint {
     type Intermediate = ParseIr<BigUint>;
     fn from_value(v: Value) -> BigUint {
-        <_>::from_value_opt(v).ok().expect("Could not retrieve BigUint from Value")
+        <_>::from_value_opt(v)
+            .ok()
+            .expect("Could not retrieve BigUint from Value")
     }
 }
 
@@ -111,14 +117,13 @@ impl From<BigUint> for Value {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
-    use proptest::prelude::*;
     use num_bigint::{BigInt, BigUint};
+    use proptest::prelude::*;
 
-    use crate::value::Value;
     use crate::value::convert::from_value;
+    use crate::value::Value;
 
     proptest! {
         #[test]
