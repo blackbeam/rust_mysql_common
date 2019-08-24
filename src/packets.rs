@@ -1024,9 +1024,9 @@ impl<'a> HandshakePacket<'a> {
             .map(|captures| {
                 // Should not panic because validated with regex
                 (
-                    parse::<u16, _>(captures.get(1).unwrap().as_bytes()),
-                    parse::<u16, _>(captures.get(2).unwrap().as_bytes()),
-                    parse::<u16, _>(captures.get(3).unwrap().as_bytes()),
+                    parse::<u16, _>(captures.get(1).unwrap().as_bytes()).unwrap(),
+                    parse::<u16, _>(captures.get(2).unwrap().as_bytes()).unwrap(),
+                    parse::<u16, _>(captures.get(3).unwrap().as_bytes()).unwrap(),
                 )
             })
     }
@@ -1038,9 +1038,9 @@ impl<'a> HandshakePacket<'a> {
             .map(|captures| {
                 // Should not panic because validated with regex
                 (
-                    parse::<u16, _>(captures.get(1).unwrap().as_bytes()),
-                    parse::<u16, _>(captures.get(2).unwrap().as_bytes()),
-                    parse::<u16, _>(captures.get(3).unwrap().as_bytes()),
+                    parse::<u16, _>(captures.get(1).unwrap().as_bytes()).unwrap(),
+                    parse::<u16, _>(captures.get(2).unwrap().as_bytes()).unwrap(),
+                    parse::<u16, _>(captures.get(3).unwrap().as_bytes()).unwrap(),
                 )
             })
     }

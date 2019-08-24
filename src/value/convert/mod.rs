@@ -7,7 +7,7 @@
 // modified, or distributed except according to those terms.
 
 use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
-use lexical::{parse, try_parse};
+use lexical::{parse};
 use num_traits::{FromPrimitive, ToPrimitive};
 use regex::bytes::Regex;
 use time::{self, at, strptime, Timespec, Tm};
@@ -172,7 +172,7 @@ macro_rules! impl_from_value_num {
                             Err(FromValueError(Value::UInt(x)))
                         }
                     }
-                    Value::Bytes(bytes) => match try_parse(&*bytes) {
+                    Value::Bytes(bytes) => match parse(&*bytes) {
                         Ok(x) => Ok(ParseIr {
                             value: Value::Bytes(bytes),
                             output: x,
@@ -317,7 +317,7 @@ impl ConvIr<i64> for ParseIr<i64> {
                 value: Value::UInt(x),
                 output: x as i64,
             }),
-            Value::Bytes(bytes) => match try_parse(&*bytes) {
+            Value::Bytes(bytes) => match parse(&*bytes) {
                 Ok(x) => Ok(ParseIr {
                     value: Value::Bytes(bytes),
                     output: x,
@@ -346,7 +346,7 @@ impl ConvIr<u64> for ParseIr<u64> {
                 value: Value::UInt(x),
                 output: x,
             }),
-            Value::Bytes(bytes) => match try_parse(&*bytes) {
+            Value::Bytes(bytes) => match parse(&*bytes) {
                 Ok(x) => Ok(ParseIr {
                     value: Value::Bytes(bytes),
                     output: x,
@@ -374,7 +374,7 @@ impl ConvIr<f32> for ParseIr<f32> {
                 })
             }
             Value::Bytes(bytes) => {
-                let val = try_parse(&*bytes).ok();
+                let val = parse(&*bytes).ok();
                 match val {
                     Some(x) => Ok(ParseIr {
                         value: Value::Bytes(bytes),
@@ -402,7 +402,7 @@ impl ConvIr<f64> for ParseIr<f64> {
                 output: x,
             }),
             Value::Bytes(bytes) => {
-                let val = try_parse(&*bytes).ok();
+                let val = parse(&*bytes).ok();
                 match val {
                     Some(x) => Ok(ParseIr {
                         value: Value::Bytes(bytes),
@@ -613,7 +613,7 @@ impl ConvIr<NaiveDate> for ParseIr<NaiveDate> {
 
 #[inline]
 fn parse_micros(micros_bytes: &[u8]) -> u32 {
-    let mut micros = parse(micros_bytes);
+    let mut micros = parse(micros_bytes).unwrap();
 
     let mut pad_zero_cnt = 0;
     for b in micros_bytes.iter() {
@@ -675,12 +675,12 @@ fn parse_mysql_datetime_string(bytes: &[u8]) -> Option<(u32, u32, u32, u32, u32,
     };
 
     Some((
-        parse(&bytes[year]),
-        parse(&bytes[month]),
-        parse(&bytes[day]),
-        hour.map(|pos| parse(&bytes[pos])).unwrap_or(0),
-        minute.map(|pos| parse(&bytes[pos])).unwrap_or(0),
-        second.map(|pos| parse(&bytes[pos])).unwrap_or(0),
+        parse(&bytes[year]).unwrap(),
+        parse(&bytes[month]).unwrap(),
+        parse(&bytes[day]).unwrap(),
+        hour.map(|pos| parse(&bytes[pos]).unwrap()).unwrap_or(0),
+        minute.map(|pos| parse(&bytes[pos]).unwrap()).unwrap_or(0),
+        second.map(|pos| parse(&bytes[pos]).unwrap()).unwrap_or(0),
         micros.map(|pos| parse_micros(&bytes[pos])).unwrap_or(0),
     ))
 }
@@ -728,9 +728,9 @@ fn parse_mysql_time_string(mut bytes: &[u8]) -> Option<(bool, u32, u32, u32, u32
 
     Some((
         is_neg,
-        parse(&bytes[hour_pos]),
-        parse(&bytes[min_pos]),
-        parse(&bytes[sec_pos]),
+        parse(&bytes[hour_pos]).unwrap(),
+        parse(&bytes[min_pos]).unwrap(),
+        parse(&bytes[sec_pos]).unwrap(),
         micros_pos.map(|pos| parse_micros(&bytes[pos])).unwrap_or(0),
     ))
 }

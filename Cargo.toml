@@ -22,7 +22,7 @@ bit-vec = "0.6"
 byteorder = "1"
 chrono = "0.4"
 lazy_static = "1"
-lexical = "2.1"
+lexical = "3.0"
 num-bigint = { version = "0.2", features = ["i128"] }
 num-traits = { version = "0.2", features = ["i128"] }
 rand = "0.7"
