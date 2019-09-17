@@ -152,6 +152,7 @@ macro_rules! read_lenenc_str {
 pub mod constants;
 pub mod crypto;
 pub mod io;
+pub mod misc;
 pub mod named_params;
 #[macro_use]
 pub mod packets;
