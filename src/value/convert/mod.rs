@@ -7,7 +7,7 @@
 // modified, or distributed except according to those terms.
 
 use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
-use lexical::{parse};
+use lexical::parse;
 use num_traits::{FromPrimitive, ToPrimitive};
 use regex::bytes::Regex;
 use time::{self, at, strptime, Timespec, Tm};

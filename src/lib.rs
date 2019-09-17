@@ -156,6 +156,7 @@ pub mod named_params;
 #[macro_use]
 pub mod packets;
 pub mod params;
+pub mod proto;
 pub mod row;
 pub mod scramble;
 pub mod value;
