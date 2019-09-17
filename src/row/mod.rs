@@ -47,7 +47,7 @@ impl fmt::Debug for Row {
 pub fn new_row(values: Vec<Value>, columns: Arc<Vec<Column>>) -> Row {
     assert!(values.len() == columns.len());
     Row {
-        values: values.into_iter().map(|value| Some(value)).collect(),
+        values: values.into_iter().map(Some).collect(),
         columns,
     }
 }
@@ -157,7 +157,7 @@ impl Row {
 impl Index<usize> for Row {
     type Output = Value;
 
-    fn index<'a>(&'a self, index: usize) -> &'a Value {
+    fn index(&self, index: usize) -> &Value {
         self.values[index].as_ref().unwrap()
     }
 }
@@ -177,11 +177,11 @@ impl<'a> Index<&'a str> for Row {
 
 /// Things that may be used as an index of a row column.
 pub trait ColumnIndex {
-    fn idx(&self, columns: &Vec<Column>) -> Option<usize>;
+    fn idx(&self, columns: &[Column]) -> Option<usize>;
 }
 
 impl ColumnIndex for usize {
-    fn idx(&self, columns: &Vec<Column>) -> Option<usize> {
+    fn idx(&self, columns: &[Column]) -> Option<usize> {
         if *self >= columns.len() {
             None
         } else {
@@ -191,7 +191,7 @@ impl ColumnIndex for usize {
 }
 
 impl<'a> ColumnIndex for &'a str {
-    fn idx(&self, columns: &Vec<Column>) -> Option<usize> {
+    fn idx(&self, columns: &[Column]) -> Option<usize> {
         for (i, c) in columns.iter().enumerate() {
             if c.name_ref() == self.as_bytes() {
                 return Some(i);

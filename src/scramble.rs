@@ -45,7 +45,7 @@ pub fn scramble_native(nonce: &[u8], password: &[u8]) -> Option<[u8; 20]> {
         hasher.digest().bytes()
     }
 
-    if password.len() == 0 {
+    if password.is_empty() {
         return None;
     }
 
@@ -72,7 +72,7 @@ pub fn scramble_sha256(nonce: &[u8], password: &[u8]) -> Option<[u8; 32]> {
         to_u8_32(hasher.result())
     }
 
-    if password.len() == 0 {
+    if password.is_empty() {
         return None;
     }
 

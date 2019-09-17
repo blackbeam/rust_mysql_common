@@ -45,7 +45,7 @@ impl<T: DeserializeOwned> ConvIr<Deserialized<T>> for DeserializedIr<T> {
             (output, bytes)
         };
         Ok(DeserializedIr {
-            bytes: bytes,
+            bytes,
             output: Deserialized(output),
         })
     }
@@ -88,10 +88,7 @@ impl ConvIr<Json> for JsonIr {
             };
             (output, bytes)
         };
-        Ok(JsonIr {
-            bytes: bytes,
-            output: output,
-        })
+        Ok(JsonIr { bytes, output })
     }
 
     fn commit(self) -> Json {

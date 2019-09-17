@@ -49,9 +49,7 @@ impl ConvIr<Decimal> for ParseIr<Decimal> {
 impl FromValue for Decimal {
     type Intermediate = ParseIr<Decimal>;
     fn from_value(v: Value) -> Decimal {
-        <_>::from_value_opt(v)
-            .ok()
-            .expect("Could not retrieve Decimal from Value")
+        <_>::from_value_opt(v).expect("Could not retrieve Decimal from Value")
     }
 }
 

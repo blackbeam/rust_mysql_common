@@ -14,7 +14,7 @@ pub trait ReadMysqlExt: ReadBytesExt {
     /// Reads MySql's length-encoded integer.
     fn read_lenenc_int(&mut self) -> io::Result<u64> {
         match self.read_u8()? {
-            x if x < 0xfc => Ok(x as u64),
+            x if x < 0xfc => Ok(x.into()),
             0xfc => self.read_uint::<LE>(2),
             0xfd => self.read_uint::<LE>(3),
             0xfe => self.read_uint::<LE>(8),

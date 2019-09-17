@@ -84,7 +84,6 @@ impl<T> Pkcs1OaepPadding<T> {
         }
 
         let output = (0..ceil_div(len, Self::HASH_LEN))
-            .into_iter()
             .map(|c| {
                 let cs = &mut [0u8; 4];
                 BigEndian::write_u32(cs, c as u32);
@@ -116,10 +115,7 @@ impl<T: Rng> Padding for Pkcs1OaepPadding<T> {
         //    data block DB as: DB = pHash || PS || 01 || M
         let db = [&*p_hash, &*ps, input].concat();
         // 6. Generate a random octet string seed of length hLen.
-        let seed: Vec<_> = (0..Self::HASH_LEN)
-            .into_iter()
-            .map(|_| self.rng.gen())
-            .collect();
+        let seed: Vec<_> = (0..Self::HASH_LEN).map(|_| self.rng.gen()).collect();
         // 7. Let dbMask = MGF(seed, emLen-hLen).
         let db_mask = Self::mgf1(&*seed, k - Self::HASH_LEN);
         // 8. Let maskedDB = DB \xor dbMask.

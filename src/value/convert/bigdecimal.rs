@@ -48,9 +48,7 @@ impl ConvIr<BigDecimal> for ParseIr<BigDecimal> {
 impl FromValue for BigDecimal {
     type Intermediate = ParseIr<BigDecimal>;
     fn from_value(v: Value) -> BigDecimal {
-        <_>::from_value_opt(v)
-            .ok()
-            .expect("Could not retrieve BigDecimal from Value")
+        <_>::from_value_opt(v).expect("Could not retrieve BigDecimal from Value")
     }
 }
 

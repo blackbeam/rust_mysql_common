@@ -126,16 +126,16 @@ impl Value {
             ),
             Value::Time(neg, d, h, i, s, 0) => {
                 if neg {
-                    format!("'-{:03}:{:02}:{:02}'", d * 24 + h as u32, i, s)
+                    format!("'-{:03}:{:02}:{:02}'", d * 24 + u32::from(h), i, s)
                 } else {
-                    format!("'{:03}:{:02}:{:02}'", d * 24 + h as u32, i, s)
+                    format!("'{:03}:{:02}:{:02}'", d * 24 + u32::from(h), i, s)
                 }
             }
             Value::Time(neg, d, h, i, s, u) => {
                 if neg {
-                    format!("'-{:03}:{:02}:{:02}.{:06}'", d * 24 + h as u32, i, s, u)
+                    format!("'-{:03}:{:02}:{:02}.{:06}'", d * 24 + u32::from(h), i, s, u)
                 } else {
-                    format!("'{:03}:{:02}:{:02}.{:06}'", d * 24 + h as u32, i, s, u)
+                    format!("'{:03}:{:02}:{:02}.{:06}'", d * 24 + u32::from(h), i, s, u)
                 }
             }
             Value::Bytes(ref bytes) => match from_utf8(&*bytes) {
@@ -152,25 +152,23 @@ impl Value {
     }
 
     fn read_text(input: &mut &[u8]) -> io::Result<Value> {
-        if input.len() == 0 {
+        if input.is_empty() {
             Err(io::Error::new(
                 io::ErrorKind::UnexpectedEof,
                 "Unexpected EOF while reading Value",
             ))
+        } else if input[0] == 0xfb {
+            let _ = input.read_u8();
+            Ok(Value::NULL)
         } else {
-            if input[0] == 0xfb {
-                let _ = input.read_u8();
-                Ok(Value::NULL)
-            } else {
-                Ok(Value::Bytes(read_lenenc_str!(input)?.into()))
-            }
+            Ok(Value::Bytes(read_lenenc_str!(input)?.into()))
         }
     }
 
     fn read_text_many(mut input: &[u8], count: usize) -> io::Result<Vec<Value>> {
         let mut output = Vec::<Value>::new();
         loop {
-            if input.len() == 0 {
+            if input.is_empty() {
                 if output.len() != count {
                     return Err(io::Error::new(
                         io::ErrorKind::UnexpectedEof,
@@ -204,23 +202,23 @@ impl Value {
             | ColumnType::MYSQL_TYPE_JSON => Ok(Bytes(read_lenenc_str!(input)?.into())),
             ColumnType::MYSQL_TYPE_TINY => {
                 if unsigned {
-                    Ok(Int(input.read_u8()? as i64))
+                    Ok(Int(input.read_u8()?.into()))
                 } else {
-                    Ok(Int(input.read_i8()? as i64))
+                    Ok(Int(input.read_i8()?.into()))
                 }
             }
             ColumnType::MYSQL_TYPE_SHORT | ColumnType::MYSQL_TYPE_YEAR => {
                 if unsigned {
-                    Ok(Int(input.read_u16::<LE>()? as i64))
+                    Ok(Int(input.read_u16::<LE>()?.into()))
                 } else {
-                    Ok(Int(input.read_i16::<LE>()? as i64))
+                    Ok(Int(input.read_i16::<LE>()?.into()))
                 }
             }
             ColumnType::MYSQL_TYPE_LONG | ColumnType::MYSQL_TYPE_INT24 => {
                 if unsigned {
-                    Ok(Int(input.read_u32::<LE>()? as i64))
+                    Ok(Int(input.read_u32::<LE>()?.into()))
                 } else {
-                    Ok(Int(input.read_i32::<LE>()? as i64))
+                    Ok(Int(input.read_i32::<LE>()?.into()))
                 }
             }
             ColumnType::MYSQL_TYPE_LONGLONG => {
@@ -230,7 +228,7 @@ impl Value {
                     Ok(Int(input.read_i64::<LE>()?))
                 }
             }
-            ColumnType::MYSQL_TYPE_FLOAT => Ok(Float(input.read_f32::<LE>()? as f64)),
+            ColumnType::MYSQL_TYPE_FLOAT => Ok(Float(input.read_f32::<LE>()?.into())),
             ColumnType::MYSQL_TYPE_DOUBLE => Ok(Float(input.read_f64::<LE>()?)),
             ColumnType::MYSQL_TYPE_TIMESTAMP
             | ColumnType::MYSQL_TYPE_DATE
@@ -343,7 +341,7 @@ impl Value {
                     null_bitmap.push(true);
                     large_bitmap.push(false);
                 }
-                Value::Bytes(ref bytes) if bytes.len() > 0 => {
+                Value::Bytes(ref bytes) if !bytes.is_empty() => {
                     null_bitmap.push(false);
                     large_bitmap.push(true);
                 }
@@ -398,17 +396,17 @@ impl fmt::Debug for Value {
             }
             Value::Time(neg, d, h, i, s, 0) => {
                 let format = if neg {
-                    format!("'-{:03}:{:02}:{:02}'", d * 24 + h as u32, i, s)
+                    format!("'-{:03}:{:02}:{:02}'", d * 24 + u32::from(h), i, s)
                 } else {
-                    format!("'{:03}:{:02}:{:02}'", d * 24 + h as u32, i, s)
+                    format!("'{:03}:{:02}:{:02}'", d * 24 + u32::from(h), i, s)
                 };
                 f.debug_tuple("Time").field(&format).finish()
             }
             Value::Time(neg, d, h, i, s, u) => {
                 let format = if neg {
-                    format!("'-{:03}:{:02}:{:02}.{:06}'", d * 24 + h as u32, i, s, u)
+                    format!("'-{:03}:{:02}:{:02}.{:06}'", d * 24 + u32::from(h), i, s, u)
                 } else {
-                    format!("'{:03}:{:02}:{:02}.{:06}'", d * 24 + h as u32, i, s, u)
+                    format!("'{:03}:{:02}:{:02}.{:06}'", d * 24 + u32::from(h), i, s, u)
                 };
                 f.debug_tuple("Time").field(&format).finish()
             }

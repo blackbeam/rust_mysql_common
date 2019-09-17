@@ -8,6 +8,7 @@
 
 use crate::value::convert::ToValue;
 use crate::value::Value;
+use std::collections::hash_map::Entry;
 use std::collections::hash_map::Entry::Occupied;
 use std::collections::HashMap;
 use std::error::Error;
@@ -44,17 +45,17 @@ impl Params {
     /// attribute.
     pub fn into_positional(
         self,
-        named_params: &Vec<String>,
+        named_params: &[String],
     ) -> Result<Params, MissingNamedParameterError> {
         match self {
             Params::Named(mut map) => {
                 let mut params: Vec<Value> = Vec::new();
-                'params: for (i, name) in named_params.clone().into_iter().enumerate() {
+                'params: for (i, name) in named_params.iter().enumerate() {
                     match map.entry(name.clone()) {
                         Occupied(entry) => {
                             let mut x = named_params.len() - 1;
                             while x > i {
-                                if name == named_params[x] {
+                                if *name == named_params[x] {
                                     params.push(entry.get().clone());
                                     continue 'params;
                                 }
@@ -87,7 +88,7 @@ where
         for v in x.into_iter() {
             raw_params.push(Value::from(v));
         }
-        if raw_params.len() == 0 {
+        if raw_params.is_empty() {
             Params::Empty
         } else {
             Params::Positional(raw_params)
@@ -104,11 +105,12 @@ where
         let mut map = HashMap::default();
         for (name, value) in x.into_iter() {
             let name = String::from(name);
-            if map.contains_key(&name) {
-                panic!("Redefinition of named parameter `{}'", name);
-            } else {
-                map.insert(name, Value::from(value));
-            }
+            match map.entry(name) {
+                Entry::Vacant(entry) => entry.insert(Value::from(value)),
+                Entry::Occupied(entry) => {
+                    panic!("Redefinition of named parameter `{}'", entry.key());
+                }
+            };
         }
         Params::Named(map)
     }
@@ -117,10 +119,10 @@ where
 impl<'a> From<&'a [&'a dyn ToValue]> for Params {
     fn from(x: &'a [&'a dyn ToValue]) -> Params {
         let mut raw_params: Vec<Value> = Vec::new();
-        for v in x.into_iter() {
+        for v in x {
             raw_params.push(v.to_value());
         }
-        if raw_params.len() == 0 {
+        if raw_params.is_empty() {
             Params::Empty
         } else {
             Params::Positional(raw_params)

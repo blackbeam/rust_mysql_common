@@ -59,7 +59,7 @@ pub fn compress(
     src: &mut BytesMut,
     dst: &mut BytesMut,
 ) -> Result<u8, PacketCodecError> {
-    if src.len() == 0 {
+    if src.is_empty() {
         return Ok(0);
     }
 
@@ -112,8 +112,8 @@ pub enum ChunkInfo {
 }
 
 impl ChunkInfo {
-    fn seq_id(&self) -> u8 {
-        match *self {
+    fn seq_id(self) -> u8 {
+        match self {
             ChunkInfo::Middle(x) | ChunkInfo::Last(x) => x,
         }
     }
@@ -574,13 +574,12 @@ impl CompPacketCodec {
         dst: &mut Vec<u8>,
         max_allowed_packet: usize,
     ) -> Result<bool, PacketCodecError> {
-        if !self.in_buf.is_empty() {
-            if self
+        if !self.in_buf.is_empty()
+            && self
                 .plain_codec
                 .decode(&mut self.in_buf, dst, max_allowed_packet)?
-            {
-                return Ok(true);
-            }
+        {
+            return Ok(true);
         }
 
         match self

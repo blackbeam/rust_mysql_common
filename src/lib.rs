@@ -136,17 +136,18 @@ macro_rules! split_at_or_err {
 /// Reads MySql's length-encoded string
 #[macro_export]
 macro_rules! read_lenenc_str {
-    ($reader:expr) => {
-        $reader.read_lenenc_int().and_then(|len| {
+    ($reader:expr) => {{
+        let reader = $reader;
+        reader.read_lenenc_int().and_then(|len| {
             let (value, rest) = split_at_or_err!(
-                $reader,
+                reader,
                 len as usize,
                 "EOF while reading length-encoded string"
             )?;
-            *$reader = rest;
+            *reader = rest;
             Ok(value)
         })
-    };
+    }};
 }
 
 pub mod constants;

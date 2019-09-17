@@ -75,11 +75,10 @@ pub fn parse_named_params<'a>(
             }
         }
     }
-    match state {
-        InNamedParam => params[cur_param].1 = query.len(),
-        _ => (),
+    if let InNamedParam = state {
+        params[cur_param].1 = query.len();
     }
-    if params.len() > 0 {
+    if !params.is_empty() {
         if have_positional {
             return Err(MixedParamsError);
         }

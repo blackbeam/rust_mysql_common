@@ -36,7 +36,7 @@ pub fn pem_to_der(pem: impl AsRef<[u8]>) -> (Vec<u8>, PubKeyFileType) {
         });
     let pem_body = captures.get(1).unwrap().as_bytes();
     let pem_body = pem_body
-        .into_iter()
+        .iter()
         .filter(|x| !b" \n\t\r\x0b\x0c".contains(x))
         .cloned()
         .collect::<Vec<_>>();
@@ -60,7 +60,7 @@ fn big_uint_to_usize(x: BigUint) -> usize {
 fn parse_len(der: &[u8]) -> (BigUint, &[u8]) {
     if der[0] & 0x80 > 0 {
         let len = (der[0] & (!0x80)) as usize;
-        (BigUint::from_bytes_be(&der[1..len + 1]), &der[len + 1..])
+        (BigUint::from_bytes_be(&der[1..=len]), &der[len + 1..])
     } else {
         (BigUint::from(der[0]), &der[1..])
     }

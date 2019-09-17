@@ -45,9 +45,7 @@ impl ConvIr<BigInt> for ParseIr<BigInt> {
 impl FromValue for BigInt {
     type Intermediate = ParseIr<BigInt>;
     fn from_value(v: Value) -> BigInt {
-        <_>::from_value_opt(v)
-            .ok()
-            .expect("Could not retrieve BigInt from Value")
+        <_>::from_value_opt(v).expect("Could not retrieve BigInt from Value")
     }
 }
 
@@ -101,9 +99,7 @@ impl ConvIr<BigUint> for ParseIr<BigUint> {
 impl FromValue for BigUint {
     type Intermediate = ParseIr<BigUint>;
     fn from_value(v: Value) -> BigUint {
-        <_>::from_value_opt(v)
-            .ok()
-            .expect("Could not retrieve BigUint from Value")
+        <_>::from_value_opt(v).expect("Could not retrieve BigUint from Value")
     }
 }
 

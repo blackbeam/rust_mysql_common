@@ -99,13 +99,11 @@ impl PacketParser {
                     self.header_len = 0;
                     self.parse()
                 }
+            } else if last_packet_part == self.part_length as usize {
+                ParseResult::Done(RawPacket(self.data), self.last_seq_id)
             } else {
-                if last_packet_part == self.part_length as usize {
-                    ParseResult::Done(RawPacket(self.data), self.last_seq_id)
-                } else {
-                    let part_length = self.part_length;
-                    ParseResult::Incomplete(self, part_length as usize - last_packet_part)
-                }
+                let part_length = self.part_length;
+                ParseResult::Incomplete(self, part_length as usize - last_packet_part)
             }
         }
     }
@@ -168,7 +166,7 @@ impl Column {
             org_table,
             name,
             org_name,
-            payload: payload,
+            payload,
             column_length,
             character_set,
             flags: ColumnFlags::from_bits_truncate(flags),
@@ -374,8 +372,7 @@ impl<'a> OkPacket<'a> {
                         let info = read_lenenc_str!(&mut payload)?;
                         let session_state_info =
                             if status_flags.contains(StatusFlags::SERVER_SESSION_STATE_CHANGED) {
-                                let session_state_info = read_lenenc_str!(&mut payload)?;
-                                session_state_info
+                                read_lenenc_str!(&mut payload)?
                             } else {
                                 &[][..]
                             };
@@ -412,12 +409,12 @@ impl<'a> OkPacket<'a> {
             },
             status_flags,
             warnings,
-            info: if info.len() > 0 {
+            info: if !info.is_empty() {
                 Some(info.into())
             } else {
                 None
             },
-            session_state_info: if session_state_info.len() > 0 {
+            session_state_info: if !session_state_info.is_empty() {
                 Some(SessionStateInfo::parse(session_state_info)?)
             } else {
                 None
@@ -470,7 +467,7 @@ impl<'a> OkPacket<'a> {
     }
 
     /// Value of the info field of an Ok packet as a string (lossy converted).
-    pub fn info_str<'x>(&'x self) -> Option<Cow<'x, str>> {
+    pub fn info_str(&self) -> Option<Cow<str>> {
         self.info
             .as_ref()
             .map(|x| String::from_utf8_lossy(x.as_ref()))
@@ -491,12 +488,7 @@ pub struct ProgressReport<'a> {
 }
 
 impl<'a> ProgressReport<'a> {
-    fn new<'x>(
-        stage: u8,
-        max_stage: u8,
-        progress: u32,
-        stage_info: &'x [u8],
-    ) -> ProgressReport<'x> {
+    fn new(stage: u8, max_stage: u8, progress: u32, stage_info: &[u8]) -> ProgressReport {
         ProgressReport {
             stage,
             max_stage,
@@ -947,7 +939,7 @@ impl<'a> HandshakePacket<'a> {
         let status_flags = payload.read_u16::<LE>()?;
         let capabilities_2 = payload.read_u16::<LE>()?;
         let capabilities = CapabilityFlags::from_bits_truncate(
-            capabilities_1 as u32 | ((capabilities_2 as u32) << 16),
+            u32::from(capabilities_1) | (u32::from(capabilities_2) << 16),
         );
         let scramble_len = payload.read_u8()?;
         let (_, payload) = split_at_or_err!(payload, 10, "Invalid handshake packet")?;
@@ -1137,10 +1129,11 @@ impl HandshakeResponse {
             let mut writer = &mut *data;
             writer.write_u32::<LE>(client_flags.bits()).unwrap();
             writer.write_all(&[0u8; 4]).unwrap();
-            let mut collation = UTF8_GENERAL_CI;
-            if server_version >= (5, 5, 3) {
-                collation = UTF8MB4_GENERAL_CI;
-            }
+            let collation = if server_version >= (5, 5, 3) {
+                UTF8MB4_GENERAL_CI
+            } else {
+                UTF8_GENERAL_CI
+            };
             writer.write_u8(collation as u8).unwrap();
             writer.write_all(&[0u8; 23]).unwrap();
             if let Some(user) = user.as_ref() {
@@ -1165,8 +1158,10 @@ impl HandshakeResponse {
 
         HandshakeResponse { data }
     }
+}
 
-    pub fn as_ref(&self) -> &[u8] {
+impl AsRef<[u8]> for HandshakeResponse {
+    fn as_ref(&self) -> &[u8] {
         &self.data[..]
     }
 }
@@ -1188,9 +1183,11 @@ impl SslRequest {
         }
         SslRequest { data }
     }
+}
 
-    pub fn as_ref(&self) -> &[u8] {
-        &*self.data
+impl AsRef<[u8]> for SslRequest {
+    fn as_ref(&self) -> &[u8] {
+        &self.data[..]
     }
 }
 

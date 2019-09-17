@@ -107,9 +107,7 @@ pub trait FromValue: Sized {
 
     /// Will panic if could not convert `v` to `Self`.
     fn from_value(v: Value) -> Self {
-        Self::from_value_opt(v)
-            .ok()
-            .expect("Could not retrieve Self from Value")
+        Self::from_value_opt(v).expect("Could not retrieve Self from Value")
     }
 
     /// Will return `Err(Error::FromValueError(v))` if could not convert `v` to `Self`.
@@ -245,9 +243,7 @@ where
 {
     type Intermediate = OptionIr<T::Intermediate>;
     fn from_value(v: Value) -> Option<T> {
-        <Self as FromValue>::from_value_opt(v)
-            .ok()
-            .expect("Could not retrieve Option<T> from Value")
+        <Self as FromValue>::from_value_opt(v).expect("Could not retrieve Option<T> from Value")
     }
 }
 
@@ -285,7 +281,7 @@ impl ConvIr<String> for StringIr {
     fn new(v: Value) -> Result<StringIr, FromValueError> {
         match v {
             Value::Bytes(bytes) => match from_utf8(&*bytes) {
-                Ok(_) => Ok(StringIr { bytes: bytes }),
+                Ok(_) => Ok(StringIr { bytes }),
                 Err(_) => Err(FromValueError(Value::Bytes(bytes))),
             },
             v => Err(FromValueError(v)),
@@ -367,7 +363,9 @@ impl ConvIr<u64> for ParseIr<u64> {
 impl ConvIr<f32> for ParseIr<f32> {
     fn new(v: Value) -> Result<ParseIr<f32>, FromValueError> {
         match v {
-            Value::Float(x) if x >= ::std::f32::MIN as f64 && x <= ::std::f32::MAX as f64 => {
+            Value::Float(x)
+                if x >= f64::from(::std::f32::MIN) && x <= f64::from(::std::f32::MAX) =>
+            {
                 Ok(ParseIr {
                     value: Value::Float(x),
                     output: x as f32,
@@ -470,7 +468,7 @@ pub struct BytesIr {
 impl ConvIr<Vec<u8>> for BytesIr {
     fn new(v: Value) -> Result<BytesIr, FromValueError> {
         match v {
-            Value::Bytes(bytes) => Ok(BytesIr { bytes: bytes }),
+            Value::Bytes(bytes) => Ok(BytesIr { bytes }),
             v => Err(FromValueError(v)),
         }
     }
@@ -483,20 +481,20 @@ impl ConvIr<Vec<u8>> for BytesIr {
 }
 
 impl ConvIr<Timespec> for ParseIr<Timespec> {
-    fn new(v: Value) -> Result<ParseIr<Timespec>, FromValueError> {
+    fn new(value: Value) -> Result<ParseIr<Timespec>, FromValueError> {
         let tm_utcoff = at(Timespec::new(0, 0)).tm_utcoff;
-        match v {
+        match value {
             Value::Date(y, m, d, h, i, s, u) => Ok(ParseIr {
                 value: Value::Date(y, m, d, h, i, s, u),
                 output: Tm {
-                    tm_year: y as i32 - 1_900,
-                    tm_mon: m as i32 - 1,
-                    tm_mday: d as i32,
-                    tm_hour: h as i32,
-                    tm_min: i as i32,
-                    tm_sec: s as i32,
+                    tm_year: i32::from(y) - 1_900,
+                    tm_mon: i32::from(m) - 1,
+                    tm_mday: d.into(),
+                    tm_hour: h.into(),
+                    tm_min: i.into(),
+                    tm_sec: s.into(),
                     tm_nsec: u as i32 * 1_000,
-                    tm_utcoff: tm_utcoff,
+                    tm_utcoff,
                     tm_wday: 0,
                     tm_yday: 0,
                     tm_isdst: -1,
@@ -508,7 +506,7 @@ impl ConvIr<Timespec> for ParseIr<Timespec> {
                     .ok()
                     .and_then(|s| {
                         strptime(s, "%Y-%m-%d %H:%M:%S")
-                            .or(strptime(s, "%Y-%m-%d"))
+                            .or_else(|_| strptime(s, "%Y-%m-%d"))
                             .ok()
                     })
                     .map(|mut tm| {
@@ -536,11 +534,11 @@ impl ConvIr<Timespec> for ParseIr<Timespec> {
 }
 
 impl ConvIr<NaiveDateTime> for ParseIr<NaiveDateTime> {
-    fn new(v: Value) -> Result<ParseIr<NaiveDateTime>, FromValueError> {
-        let result = match v {
+    fn new(value: Value) -> Result<ParseIr<NaiveDateTime>, FromValueError> {
+        let result = match value {
             Value::Date(y, m, d, h, i, s, u) => {
-                let date = NaiveDate::from_ymd_opt(y as i32, m as u32, d as u32);
-                let time = NaiveTime::from_hms_micro_opt(h as u32, i as u32, s as u32, u);
+                let date = NaiveDate::from_ymd_opt(y.into(), m.into(), d.into());
+                let time = NaiveTime::from_hms_micro_opt(h.into(), i.into(), s.into(), u);
                 Ok((date, time, Value::Date(y, m, d, h, i, s, u)))
             }
             Value::Bytes(bytes) => {
@@ -575,10 +573,10 @@ impl ConvIr<NaiveDateTime> for ParseIr<NaiveDateTime> {
 }
 
 impl ConvIr<NaiveDate> for ParseIr<NaiveDate> {
-    fn new(v: Value) -> Result<ParseIr<NaiveDate>, FromValueError> {
-        let result = match v {
+    fn new(value: Value) -> Result<ParseIr<NaiveDate>, FromValueError> {
+        let result = match value {
             Value::Date(y, m, d, h, i, s, u) => {
-                let date = NaiveDate::from_ymd_opt(y as i32, m as u32, d as u32);
+                let date = NaiveDate::from_ymd_opt(y.into(), m.into(), d.into());
                 Ok((date, Value::Date(y, m, d, h, i, s, u)))
             }
             Value::Bytes(bytes) => {
@@ -596,7 +594,7 @@ impl ConvIr<NaiveDate> for ParseIr<NaiveDate> {
 
         if date.is_some() {
             Ok(ParseIr {
-                value: value,
+                value,
                 output: date.unwrap(),
             })
         } else {
@@ -736,10 +734,10 @@ fn parse_mysql_time_string(mut bytes: &[u8]) -> Option<(bool, u32, u32, u32, u32
 }
 
 impl ConvIr<NaiveTime> for ParseIr<NaiveTime> {
-    fn new(v: Value) -> Result<ParseIr<NaiveTime>, FromValueError> {
-        let result = match v {
+    fn new(value: Value) -> Result<ParseIr<NaiveTime>, FromValueError> {
+        let result = match value {
             Value::Time(false, 0, h, m, s, u) => {
-                let time = NaiveTime::from_hms_micro_opt(h as u32, m as u32, s as u32, u);
+                let time = NaiveTime::from_hms_micro_opt(h.into(), m.into(), s.into(), u);
                 Ok((time, Value::Time(false, 0, h, m, s, u)))
             }
             Value::Bytes(bytes) => {
@@ -757,7 +755,7 @@ impl ConvIr<NaiveTime> for ParseIr<NaiveTime> {
 
         if time.is_some() {
             Ok(ParseIr {
-                value: value,
+                value,
                 output: time.unwrap(),
             })
         } else {
@@ -777,10 +775,10 @@ impl ConvIr<Duration> for ParseIr<Duration> {
         match v {
             Value::Time(false, days, hours, minutes, seconds, microseconds) => {
                 let nanos = (microseconds as u32) * 1000;
-                let secs = seconds as u64
-                    + minutes as u64 * 60
-                    + hours as u64 * 60 * 60
-                    + days as u64 * 60 * 60 * 24;
+                let secs = u64::from(seconds)
+                    + u64::from(minutes) * 60
+                    + u64::from(hours) * 60 * 60
+                    + u64::from(days) * 60 * 60 * 24;
                 Ok(ParseIr {
                     value: Value::Time(false, days, hours, minutes, seconds, microseconds),
                     output: Duration::new(secs, nanos),
@@ -790,7 +788,9 @@ impl ConvIr<Duration> for ParseIr<Duration> {
                 let duration = match parse_mysql_time_string(&*val_bytes) {
                     Some((false, hours, minutes, seconds, microseconds)) => {
                         let nanos = microseconds * 1000;
-                        let secs = seconds as u64 + minutes as u64 * 60 + hours as u64 * 60 * 60;
+                        let secs = u64::from(seconds)
+                            + u64::from(minutes) * 60
+                            + u64::from(hours) * 60 * 60;
                         Duration::new(secs, nanos)
                     }
                     _ => return Err(FromValueError(Value::Bytes(val_bytes))),
@@ -815,11 +815,11 @@ impl ConvIr<time::Duration> for ParseIr<time::Duration> {
     fn new(v: Value) -> Result<ParseIr<time::Duration>, FromValueError> {
         match v {
             Value::Time(is_neg, days, hours, minutes, seconds, microseconds) => {
-                let duration = time::Duration::days(days as i64)
-                    + time::Duration::hours(hours as i64)
-                    + time::Duration::minutes(minutes as i64)
-                    + time::Duration::seconds(seconds as i64)
-                    + time::Duration::microseconds(microseconds as i64);
+                let duration = time::Duration::days(days.into())
+                    + time::Duration::hours(hours.into())
+                    + time::Duration::minutes(minutes.into())
+                    + time::Duration::seconds(seconds.into())
+                    + time::Duration::microseconds(microseconds.into());
                 Ok(ParseIr {
                     value: Value::Time(is_neg, days, hours, minutes, seconds, microseconds),
                     output: if is_neg { -duration } else { duration },
@@ -828,10 +828,10 @@ impl ConvIr<time::Duration> for ParseIr<time::Duration> {
             Value::Bytes(val_bytes) => {
                 let duration = match parse_mysql_time_string(&*val_bytes) {
                     Some((is_neg, hours, minutes, seconds, microseconds)) => {
-                        let duration = time::Duration::hours(hours as i64)
-                            + time::Duration::minutes(minutes as i64)
-                            + time::Duration::seconds(seconds as i64)
-                            + time::Duration::microseconds(microseconds as i64);
+                        let duration = time::Duration::hours(hours.into())
+                            + time::Duration::minutes(minutes.into())
+                            + time::Duration::seconds(seconds.into())
+                            + time::Duration::microseconds(microseconds.into());
                         if is_neg {
                             -duration
                         } else {
@@ -981,7 +981,7 @@ impl From<u128> for Value {
 
 impl From<f32> for Value {
     fn from(x: f32) -> Value {
-        Value::Float(x as f64)
+        Value::Float(x.into())
     }
 }
 
@@ -1079,13 +1079,13 @@ impl From<Timespec> for Value {
 impl From<Duration> for Value {
     fn from(x: Duration) -> Value {
         let mut secs_total = x.as_secs();
-        let micros = (x.subsec_nanos() as f64 / 1000_f64).round() as u32;
+        let micros = (f64::from(x.subsec_nanos()) / 1000_f64).round() as u32;
         let seconds = (secs_total % 60) as u8;
-        secs_total -= seconds as u64;
+        secs_total -= u64::from(seconds);
         let minutes = ((secs_total % (60 * 60)) / 60) as u8;
-        secs_total -= (minutes as u64) * 60;
+        secs_total -= u64::from(minutes) * 60;
         let hours = ((secs_total % (60 * 60 * 24)) / (60 * 60)) as u8;
-        secs_total -= (hours as u64) * 60 * 60;
+        secs_total -= u64::from(hours) * 60 * 60;
         Value::Time(
             false,
             (secs_total / (60 * 60 * 24)) as u32,
@@ -1177,10 +1177,7 @@ impl ConvIr<Uuid> for UuidIr {
     fn new(v: Value) -> Result<UuidIr, FromValueError> {
         match v {
             Value::Bytes(bytes) => match Uuid::from_slice(bytes.as_slice()) {
-                Ok(val) => Ok(UuidIr {
-                    val: val,
-                    bytes: bytes,
-                }),
+                Ok(val) => Ok(UuidIr { val, bytes }),
                 Err(_) => Err(FromValueError(Value::Bytes(bytes))),
             },
             v => Err(FromValueError(v)),
