@@ -14,7 +14,7 @@ use byteorder::{ByteOrder, LittleEndian};
 use bytes::{BufMut, BytesMut};
 use flate2::read::{ZlibDecoder, ZlibEncoder};
 
-use std::cmp::max;
+use std::cmp::{max, min};
 use std::io::Read;
 use std::mem;
 use std::num::NonZeroUsize;
@@ -63,8 +63,9 @@ pub fn compress(
         return Ok(0);
     }
 
-    for chunk in src.chunks(max(MAX_PAYLOAD_LEN, max_allowed_packet)) {
+    for chunk in src.chunks(min(MAX_PAYLOAD_LEN, max_allowed_packet)) {
         dst.reserve(7 + chunk.len());
+
         if compression != Compression::none() && chunk.len() >= MIN_COMPRESS_LENGTH {
             unsafe {
                 let mut encoder = ZlibEncoder::new(chunk, compression);
@@ -87,7 +88,7 @@ pub fn compress(
             dst.put_uint_le(chunk.len() as u64, 3);
             dst.put_u8(seq_id);
             dst.put_uint_le(0, 3);
-            dst.put_slice(&*src);
+            dst.put_slice(chunk);
         }
 
         seq_id = seq_id.wrapping_add(1);
