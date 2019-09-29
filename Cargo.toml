@@ -25,7 +25,7 @@ chrono = "0.4"
 failure = "0.1.5"
 flate2 = { version = "1.0", default-features = false }
 lazy_static = "1"
-lexical = "3.0"
+lexical = "4.0"
 num-bigint = { version = "0.2", features = ["i128"] }
 num-traits = { version = "0.2", features = ["i128"] }
 rand = "0.7"
