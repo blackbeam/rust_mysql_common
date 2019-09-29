@@ -6,19 +6,21 @@
 // option. All files in the project carrying such notice may not be copied,
 // modified, or distributed except according to those terms.
 
-use crate::constants::{
-    CapabilityFlags, ColumnFlags, ColumnType, SessionStateType, StatusFlags, MAX_PAYLOAD_LEN,
-    UTF8MB4_GENERAL_CI, UTF8_GENERAL_CI,
-};
-use crate::io::ReadMysqlExt;
 use byteorder::{LittleEndian as LE, ReadBytesExt, WriteBytesExt};
 use lexical::parse;
 use regex::bytes::Regex;
+
 use std::borrow::Cow;
-use std::cmp::{max, min};
+use std::cmp::max;
 use std::fmt;
 use std::io::{self, Write};
 use std::ptr;
+
+use crate::constants::{
+    CapabilityFlags, ColumnFlags, ColumnType, SessionStateType, StatusFlags, UTF8MB4_GENERAL_CI,
+    UTF8_GENERAL_CI,
+};
+use crate::io::ReadMysqlExt;
 
 macro_rules! get_offset_and_len {
     ($buffer:expr, $slice:expr) => {{
@@ -31,82 +33,6 @@ lazy_static! {
     static ref MARIADB_VERSION_RE: Regex =
         { Regex::new(r"^5.5.5-(\d{1,2})\.(\d{1,2})\.(\d{1,3})-MariaDB").unwrap() };
     static ref VERSION_RE: Regex = { Regex::new(r"^(\d{1,2})\.(\d{1,2})\.(\d{1,3})(.*)").unwrap() };
-}
-
-/// Raw mysql packet
-#[derive(Debug, Eq, PartialEq, Clone, Hash)]
-pub struct RawPacket(pub Vec<u8>);
-
-impl AsRef<[u8]> for RawPacket {
-    fn as_ref(&self) -> &[u8] {
-        self.0.as_ref()
-    }
-}
-
-#[derive(Debug)]
-pub enum ParseResult {
-    Incomplete(PacketParser, usize),
-    /// (<raw packet payload>, <sequence id>)
-    Done(RawPacket, u8),
-}
-
-#[derive(Debug)]
-/// Incremental packet parser.
-pub struct PacketParser {
-    data: Vec<u8>,
-    part_length: u64,
-    header: [u8; 4],
-    header_len: usize,
-    last_seq_id: u8,
-    num_parts: usize,
-}
-
-impl PacketParser {
-    pub fn empty() -> PacketParser {
-        PacketParser {
-            data: Vec::new(),
-            part_length: 0,
-            header: [0u8; 4],
-            header_len: 0,
-            last_seq_id: 0,
-            num_parts: 0,
-        }
-    }
-
-    /// `src.len()` should be equal to the length specified in the latest `ParseResult::Incomplete`.
-    pub fn extend_from_slice(&mut self, src: &[u8]) {
-        let (header, data) = src.split_at(min(4 - self.header_len, src.len()));
-        self.header[..header.len()].copy_from_slice(header);
-        self.header_len += header.len();
-        self.data.extend_from_slice(data);
-    }
-
-    pub fn parse(mut self) -> ParseResult {
-        if self.header_len != 4 {
-            let needed = 4 - self.header_len;
-            ParseResult::Incomplete(self, needed)
-        } else {
-            let last_packet_part = self.data.len() % MAX_PAYLOAD_LEN;
-
-            if last_packet_part == 0 {
-                if (self.data.len() / MAX_PAYLOAD_LEN) == self.num_parts {
-                    let part_length = (&self.header[..]).read_uint::<LE>(3).unwrap();
-                    self.last_seq_id = self.header[3];
-                    self.part_length = part_length;
-                    ParseResult::Incomplete(self, part_length as usize)
-                } else {
-                    self.num_parts += 1;
-                    self.header_len = 0;
-                    self.parse()
-                }
-            } else if last_packet_part == self.part_length as usize {
-                ParseResult::Done(RawPacket(self.data), self.last_seq_id)
-            } else {
-                let part_length = self.part_length;
-                ParseResult::Incomplete(self, part_length as usize - last_packet_part)
-            }
-        }
-    }
 }
 
 /// Represents MySql Column (column packet).
