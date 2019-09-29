@@ -7,29 +7,32 @@
 // modified, or distributed except according to those terms.
 
 use bytes::{BufMut, BytesMut};
-use tokio_codec::{Decoder, Encoder};
 
 use crate::constants::DEFAULT_MAX_ALLOWED_PACKET;
-use std::io::{self, Read, Write};
+use crate::proto::codec::error::PacketCodecError;
+use crate::proto::codec::PacketCodec;
+use std::io::{Error, ErrorKind::Other, Read, Write};
 
-/// This type provides synchronous alternative to the `tokio_codec::Framed`.
+/// Synchronous framed stream for MySql protocol.
+///
+/// This type is a synchronous alternative to `tokio_codec::Framed`.
 #[derive(Debug)]
-pub struct SyncFramed<T, U> {
+pub struct MySyncFramed<T> {
     eof: bool,
     in_buf: BytesMut,
     out_buf: BytesMut,
-    codec: U,
+    codec: PacketCodec,
     stream: T,
 }
 
-impl<T, U> SyncFramed<T, U> {
-    /// Creates new instance with given `stream` and `codec`.
-    pub fn new(stream: T, codec: U) -> Self {
-        SyncFramed {
+impl<T> MySyncFramed<T> {
+    /// Creates new instance with given `stream`.
+    pub fn new(stream: T) -> Self {
+        MySyncFramed {
             eof: false,
             in_buf: BytesMut::with_capacity(DEFAULT_MAX_ALLOWED_PACKET),
             out_buf: BytesMut::with_capacity(DEFAULT_MAX_ALLOWED_PACKET),
-            codec,
+            codec: PacketCodec::default(),
             stream,
         }
     }
@@ -45,22 +48,22 @@ impl<T, U> SyncFramed<T, U> {
     }
 
     /// Returns reference to a codec.
-    pub fn codec(&self) -> &U {
+    pub fn codec(&self) -> &PacketCodec {
         &self.codec
     }
 
     /// Returns mutable reference to a codec.
-    pub fn codec_mut(&mut self) -> &mut U {
+    pub fn codec_mut(&mut self) -> &mut PacketCodec {
         &mut self.codec
     }
 
     /// Consumes self and returns wrapped buffers, codec and stream.
-    pub fn destruct(self) -> (BytesMut, BytesMut, U, T) {
+    pub fn destruct(self) -> (BytesMut, BytesMut, PacketCodec, T) {
         (self.in_buf, self.out_buf, self.codec, self.stream)
     }
 
     /// Creates new instance from given buffers, `codec` and `stream`.
-    pub fn construct(in_buf: BytesMut, out_buf: BytesMut, codec: U, stream: T) -> Self {
+    pub fn construct(in_buf: BytesMut, out_buf: BytesMut, codec: PacketCodec, stream: T) -> Self {
         Self {
             eof: false,
             in_buf,
@@ -71,14 +74,12 @@ impl<T, U> SyncFramed<T, U> {
     }
 }
 
-impl<T, U> SyncFramed<T, U>
+impl<T> MySyncFramed<T>
 where
     T: Write,
-    U: Encoder,
-    U::Error: From<io::Error>,
 {
-    /// Will write item into the stream. Stream may not be flushed.
-    pub fn write(&mut self, item: U::Item) -> Result<(), U::Error> {
+    /// Will write packets into the stream. Stream may not be flushed.
+    pub fn write(&mut self, item: Vec<Vec<u8>>) -> Result<(), PacketCodecError> {
         self.codec.encode(item, &mut self.out_buf)?;
         self.stream.write_all(&*self.out_buf)?;
         self.out_buf.clear();
@@ -86,30 +87,37 @@ where
     }
 
     /// Will flush wrapped stream.
-    pub fn flush(&mut self) -> Result<(), U::Error> {
+    pub fn flush(&mut self) -> Result<(), PacketCodecError> {
         self.stream.flush()?;
         Ok(())
     }
 
-    /// Will send `item` into the stream. Stream will be flushed.
-    pub fn send(&mut self, item: U::Item) -> Result<(), U::Error> {
+    /// Will send packets into the stream. Stream will be flushed.
+    pub fn send(&mut self, item: Vec<Vec<u8>>) -> Result<(), PacketCodecError> {
         self.write(item)?;
         self.flush()
     }
 }
 
-impl<T, U> Iterator for SyncFramed<T, U>
+impl<T> Iterator for MySyncFramed<T>
 where
     T: Read,
-    U: Decoder,
-    U::Error: From<io::Error>,
 {
-    type Item = Result<U::Item, U::Error>;
+    type Item = Result<Vec<u8>, PacketCodecError>;
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
             if self.eof {
-                return self.codec.decode_eof(&mut self.in_buf).transpose();
+                return match self.codec.decode(&mut self.in_buf).transpose() {
+                    Some(frame) => Some(frame),
+                    None => {
+                        if self.in_buf.is_empty() {
+                            None
+                        } else {
+                            Some(Err(Error::new(Other, "bytes remaining on stream").into()))
+                        }
+                    }
+                };
             } else {
                 match self.codec.decode(&mut self.in_buf).transpose() {
                     Some(item) => return Some(item),
@@ -133,24 +141,21 @@ where
 #[cfg(test)]
 mod tests {
     use crate::constants::MAX_PAYLOAD_LEN;
-    use crate::proto::codec::PacketCodec;
-    use crate::proto::sync_framed::SyncFramed;
+    use crate::proto::sync_framed::MySyncFramed;
 
     #[test]
     fn iter_packets() {
         let mut buf = Vec::new();
         {
-            let mut codec = PacketCodec::default();
-            codec.max_allowed_packet = MAX_PAYLOAD_LEN;
-            let mut framed = SyncFramed::new(&mut buf, codec);
+            let mut framed = MySyncFramed::new(&mut buf);
+            framed.codec_mut().max_allowed_packet = MAX_PAYLOAD_LEN;
             framed.send(vec![vec![0_u8; 0]]).unwrap();
             framed.send(vec![vec![0_u8; 1]]).unwrap();
             framed.send(vec![vec![0_u8; MAX_PAYLOAD_LEN]]).unwrap();
         }
-        let mut codec = PacketCodec::default();
-        codec.max_allowed_packet = MAX_PAYLOAD_LEN;
         let mut buf = &buf[..];
-        let mut framed = SyncFramed::new(&mut buf, codec);
+        let mut framed = MySyncFramed::new(&mut buf);
+        framed.codec_mut().max_allowed_packet = MAX_PAYLOAD_LEN;
         assert_eq!(framed.next().unwrap().unwrap(), vec![0_u8; 0]);
         assert_eq!(framed.next().unwrap().unwrap(), vec![0_u8; 1]);
         assert_eq!(framed.next().unwrap().unwrap(), vec![0_u8; MAX_PAYLOAD_LEN]);
@@ -162,8 +167,7 @@ mod tests {
     fn incomplete_packet() {
         let buf = vec![2, 0, 0, 0];
         let mut buf = &buf[..];
-        let codec = PacketCodec::default();
-        let mut framed = SyncFramed::new(&mut buf, codec);
+        let mut framed = MySyncFramed::new(&mut buf);
         framed.next().unwrap().unwrap();
     }
 }

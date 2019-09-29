@@ -356,23 +356,9 @@ impl PacketCodec {
     pub fn compress(&mut self, level: Compression) {
         self.inner.compress(level);
     }
-}
 
-impl Default for PacketCodec {
-    fn default() -> Self {
-        Self {
-            max_allowed_packet: DEFAULT_MAX_ALLOWED_PACKET,
-            buffer: vec![],
-            inner: Default::default(),
-        }
-    }
-}
-
-impl tokio_codec::Decoder for PacketCodec {
-    type Item = Vec<u8>;
-    type Error = PacketCodecError;
-
-    fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
+    /// Will try to decode packet from `src`.
+    pub fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Vec<u8>>, PacketCodecError> {
         if self
             .inner
             .decode(src, &mut self.buffer, self.max_allowed_packet)?
@@ -382,14 +368,24 @@ impl tokio_codec::Decoder for PacketCodec {
             Ok(None)
         }
     }
+
+    /// Will encode packets into `dst`.
+    pub fn encode(
+        &mut self,
+        item: Vec<Vec<u8>>,
+        dst: &mut BytesMut,
+    ) -> Result<(), PacketCodecError> {
+        self.inner.encode(item, dst, self.max_allowed_packet)
+    }
 }
 
-impl tokio_codec::Encoder for PacketCodec {
-    type Item = Vec<Vec<u8>>;
-    type Error = PacketCodecError;
-
-    fn encode(&mut self, item: Self::Item, dst: &mut BytesMut) -> Result<(), Self::Error> {
-        self.inner.encode(item, dst, self.max_allowed_packet)
+impl Default for PacketCodec {
+    fn default() -> Self {
+        Self {
+            max_allowed_packet: DEFAULT_MAX_ALLOWED_PACKET,
+            buffer: vec![],
+            inner: Default::default(),
+        }
     }
 }
 
@@ -625,7 +621,6 @@ impl CompPacketCodec {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tokio_codec::{Decoder, Encoder};
 
     const COMPRESSED: &[u8] = &[
         0x22, 0x00, 0x00, 0x00, 0x32, 0x00, 0x00, 0x78, 0x9c, 0xd3, 0x63, 0x60, 0x60, 0x60, 0x2e,
