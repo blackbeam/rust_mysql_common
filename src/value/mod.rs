@@ -6,19 +6,223 @@
 // option. All files in the project carrying such notice may not be copied,
 // modified, or distributed except according to those terms.
 
-use crate::constants::{ColumnFlags, ColumnType, MAX_PAYLOAD_LEN};
-use crate::io::{ReadMysqlExt, WriteMysqlExt};
-use crate::packets::Column;
-use bit_vec::BitVec;
-use byteorder::{LittleEndian as LE, ReadBytesExt};
+use byteorder::{ByteOrder, LittleEndian as LE, ReadBytesExt};
+
 use std::fmt;
 use std::io;
+use std::marker::PhantomData;
 use std::str::from_utf8;
 
-use self::Value::*;
+use crate::constants::{ColumnFlags, ColumnType, Command, MAX_PAYLOAD_LEN};
+use crate::io::{ReadMysqlExt, WriteMysqlExt};
+use crate::misc::lenenc_int_len;
+use crate::packets::Column;
+use crate::value::Value::*;
 
 pub mod convert;
 pub mod json;
+
+/// Side of MySql value serialization.
+pub trait SerializationSide {
+    /// Null-bitmap offset of this side.
+    const BIT_OFFSET: usize;
+}
+
+/// Server side serialization. Null-bitmap bit offset: `2`.
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub struct ServerSide;
+
+impl SerializationSide for ServerSide {
+    const BIT_OFFSET: usize = 2;
+}
+
+/// Client side serialization. Null-bitmap bit offset: `0`.
+pub struct ClientSide;
+
+impl SerializationSide for ClientSide {
+    const BIT_OFFSET: usize = 0;
+}
+
+/// Null-bitmap.
+///
+/// http://dev.mysql.com/doc/internals/en/null-bitmap.html
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct NullBitmap<T, U: AsRef<[u8]> = Vec<u8>>(U, PhantomData<T>);
+
+impl<T: SerializationSide> NullBitmap<T, Vec<u8>> {
+    /// Creates new null-bitmap for a given number of columns.
+    pub fn new(num_columns: usize) -> Self {
+        Self::from_bytes(vec![0; Self::bitmap_len(num_columns)])
+    }
+
+    /// Will read null-bitmap for a given number of columns from `input`.
+    pub fn read(input: &mut &[u8], num_columns: usize) -> Self {
+        let bitmap_len = Self::bitmap_len(num_columns);
+        assert!(input.len() >= bitmap_len);
+
+        let bitmap = Self::from_bytes(input[..bitmap_len].to_vec());
+        *input = &input[bitmap_len..];
+
+        bitmap
+    }
+}
+
+impl<T: SerializationSide, U: AsRef<[u8]>> NullBitmap<T, U> {
+    fn bitmap_len(num_columns: usize) -> usize {
+        (num_columns + 7 + T::BIT_OFFSET) / 8
+    }
+
+    fn byte_and_bit(&self, column_index: usize) -> (usize, u8) {
+        let offset = column_index + T::BIT_OFFSET;
+        let byte = offset / 8;
+        let bit = 1 << (offset % 8) as u8;
+
+        assert!(byte < self.0.as_ref().len());
+
+        (byte, bit)
+    }
+
+    /// Creates new null-bitmap from given bytes.
+    pub fn from_bytes(bytes: U) -> Self {
+        Self(bytes, PhantomData)
+    }
+
+    /// Returns `true` if given column is `NULL` in this `NullBitmap`.
+    pub fn is_null(&self, column_index: usize) -> bool {
+        let (byte, bit) = self.byte_and_bit(column_index);
+        self.0.as_ref()[byte] & bit > 0
+    }
+}
+
+impl<T: SerializationSide, U: AsRef<[u8]> + AsMut<[u8]>> NullBitmap<T, U> {
+    /// Sets flag value for given column.
+    pub fn set(&mut self, column_index: usize, is_null: bool) {
+        let (byte, bit) = self.byte_and_bit(column_index);
+        if is_null {
+            self.0.as_mut()[byte] |= bit
+        } else {
+            self.0.as_mut()[byte] &= !bit
+        }
+    }
+}
+
+impl<T, U: AsRef<[u8]>> AsRef<[u8]> for NullBitmap<T, U> {
+    fn as_ref(&self) -> &[u8] {
+        self.0.as_ref()
+    }
+}
+
+pub struct ComStmtExecuteRequestBuilder {
+    body: Vec<u8>,
+    bitmap_len: usize,
+    params_added: u16,
+}
+
+impl ComStmtExecuteRequestBuilder {
+    const NULL_BITMAP_OFFSET: usize = 10;
+
+    pub fn new(stmt_id: u32) -> Self {
+        let mut body = Vec::with_capacity(1024);
+        body.resize(10, 0);
+        // command
+        body[0] = Command::COM_STMT_EXECUTE as u8;
+        // stmt-id
+        LE::write_u32(&mut body[1..5], stmt_id);
+        // iteration-count
+        body[6] = 1;
+
+        Self {
+            body,
+            bitmap_len: 0,
+            params_added: 0,
+        }
+    }
+
+    pub fn build(mut self, params: &[Value]) -> (Vec<u8>, bool) {
+        if params.len() > 0 {
+            self.bitmap_len = NullBitmap::<ClientSide>::bitmap_len(params.len());
+            let meta_len = params.len() * 2;
+            let data_len: usize = params.iter().map(Value::bin_len).sum();
+
+            let total_len = self.body.len() + self.bitmap_len + 1 + meta_len + data_len;
+            let as_long_data = total_len > MAX_PAYLOAD_LEN;
+
+            self.body
+                .resize(self.body.len() + self.bitmap_len + 1 + meta_len, 0);
+            self.body[Self::NULL_BITMAP_OFFSET + self.bitmap_len] = 1;
+
+            for value in params {
+                self.add_param(value, as_long_data);
+            }
+
+            (self.body, as_long_data)
+        } else {
+            (self.body, false)
+        }
+    }
+
+    fn add_param(&mut self, value: &Value, as_long_data: bool) -> u64 {
+        let param_index = self.params_added as usize;
+        self.params_added += 1;
+
+        let mut write = true;
+
+        match value {
+            Value::NULL => {
+                self.set_null_flag(param_index);
+                self.set_type(param_index, ColumnType::MYSQL_TYPE_NULL);
+                write = false;
+            }
+            Bytes(_) => {
+                self.set_type(param_index, ColumnType::MYSQL_TYPE_VAR_STRING);
+                write = !as_long_data;
+            }
+            Int(_) => {
+                self.set_type(param_index, ColumnType::MYSQL_TYPE_LONGLONG);
+            }
+            UInt(_) => {
+                self.set_type(param_index, ColumnType::MYSQL_TYPE_LONGLONG);
+                self.set_unsigned(param_index);
+            }
+            Float(_) => {
+                self.set_type(param_index, ColumnType::MYSQL_TYPE_DOUBLE);
+            }
+            Date(..) => {
+                self.set_type(param_index, ColumnType::MYSQL_TYPE_DATETIME);
+            }
+            Time(..) => {
+                self.set_type(param_index, ColumnType::MYSQL_TYPE_TIME);
+            }
+        }
+
+        if write {
+            self.body.write_bin_value(value).expect("out of memory")
+        } else {
+            0
+        }
+    }
+
+    fn set_type(&mut self, param_index: usize, param_type: ColumnType) {
+        let param_meta_offset = self.param_meta_index_offset(param_index);
+        self.body[param_meta_offset] = param_type as u8;
+    }
+
+    fn set_unsigned(&mut self, param_index: usize) {
+        let param_meta_offset = self.param_meta_index_offset(param_index);
+        self.body[param_meta_offset + 1] = 0x80;
+    }
+
+    fn set_null_flag(&mut self, param_index: usize) {
+        let end = Self::NULL_BITMAP_OFFSET + self.bitmap_len;
+        let bitmap_bytes = &mut self.body[Self::NULL_BITMAP_OFFSET..end];
+
+        NullBitmap::<ClientSide, _>::from_bytes(bitmap_bytes).set(param_index, true);
+    }
+
+    fn param_meta_index_offset(&self, param_index: usize) -> usize {
+        Self::NULL_BITMAP_OFFSET + self.bitmap_len + 1 + 2 * param_index
+    }
+}
 
 /// Client side representation of a value of MySql column.
 ///
@@ -56,18 +260,11 @@ pub fn read_bin_value(
 }
 
 /// Reads multiple values in binary format.
-pub fn read_bin_values(input: &[u8], columns: &[Column]) -> io::Result<Vec<Value>> {
-    Value::read_bin_many(input, columns)
-}
-
-/// Will serialize multiple `values` in binary format as `params` using passed
-/// `max_allowed_packet` value.
-/// Returns `(<output>, <null_bitmap>, <large_bitmap>)`
-pub fn serialize_bin_many(
-    params: &[Column],
-    values: &[Value],
-) -> io::Result<(Vec<u8>, BitVec<u8>, BitVec<u8>)> {
-    Value::serialize_bin_many(params, values)
+pub fn read_bin_values<T: SerializationSide>(
+    input: &[u8],
+    columns: &[Column],
+) -> io::Result<Vec<Value>> {
+    Value::read_bin_many::<T>(input, columns)
 }
 
 /// Will escape string for SQL depending on `no_backslash_escape` flag.
@@ -110,6 +307,25 @@ fn escaped(input: &str, no_backslash_escape: bool) -> String {
 }
 
 impl Value {
+    /// Returns length in binary serialized form.
+    #[inline]
+    pub fn bin_len(&self) -> usize {
+        match self {
+            Value::NULL => 0,
+            Value::Bytes(x) => lenenc_int_len(x.len()) + x.len(),
+            Value::Int(_) => 8,
+            Value::UInt(_) => 8,
+            Value::Float(_) => 8,
+            Value::Date(0u16, 0u8, 0u8, 0u8, 0u8, 0u8, 0u32) => 1,
+            Value::Date(_, _, _, 0u8, 0u8, 0u8, 0u32) => 5,
+            Value::Date(_, _, _, _, _, _, 0u32) => 8,
+            Value::Date(_, _, _, _, _, _, _) => 12,
+            Value::Time(_, 0u32, 0u8, 0u8, 0u8, 0u32) => 1,
+            Value::Time(_, _, _, _, _, 0u32) => 9,
+            Value::Time(_, _, _, _, _, _) => 13,
+        }
+    }
+
     pub fn as_sql(&self, no_backslash_escape: bool) -> String {
         match *self {
             Value::NULL => "NULL".into(),
@@ -283,28 +499,22 @@ impl Value {
                     micro_seconds,
                 ))
             }
-            _ => Ok(NULL),
+            ColumnType::MYSQL_TYPE_NULL => Ok(NULL),
+            x => unimplemented!("Unsupported column type {:?}", x),
         }
     }
 
-    fn read_bin_many(mut input: &[u8], columns: &[Column]) -> io::Result<Vec<Value>> {
+    fn read_bin_many<T: SerializationSide>(
+        mut input: &[u8],
+        columns: &[Column],
+    ) -> io::Result<Vec<Value>> {
         input.read_u8()?;
 
-        static BIT_OFFSET: usize = 2; // http://dev.mysql.com/doc/internals/en/null-bitmap.html
-        let bitmap_len = (columns.len() + 7 + BIT_OFFSET) / 8;
-
-        let mut bitmap = BitVec::<u8>::default();
-        for i in 0..columns.len() {
-            bitmap.push(input[(i + BIT_OFFSET) / 8] & (1 << ((i + BIT_OFFSET) % 8)) > 0)
-        }
-
-        let mut values = Vec::<Value>::new();
-
-        input = &input[bitmap_len..];
+        let bitmap = NullBitmap::<T>::read(&mut input, columns.len());
+        let mut values = Vec::with_capacity(columns.len());
 
         for (i, column) in columns.iter().enumerate() {
-            // Should not panic because bitmap.len() is always >= columns.len()
-            if bitmap.get(i).unwrap() {
+            if bitmap.is_null(i) {
                 values.push(NULL)
             } else {
                 values.push(read_bin_value(
@@ -316,48 +526,6 @@ impl Value {
         }
 
         Ok(values)
-    }
-
-    fn serialize_bin_many(
-        params: &[Column],
-        values: &[Value],
-    ) -> io::Result<(Vec<u8>, BitVec<u8>, BitVec<u8>)> {
-        static MAX_NON_BYTES_VALUE_BINARY_SIZE: usize = 13;
-
-        let bitmap_len = (params.len() + 7) / 8;
-        let cap = MAX_PAYLOAD_LEN - bitmap_len - values.len() * MAX_NON_BYTES_VALUE_BINARY_SIZE;
-
-        let mut output = Vec::with_capacity(512);
-        let mut written = 0;
-        let mut null_bitmap = BitVec::<u8>::default();
-        let mut large_bitmap = BitVec::<u8>::default();
-
-        null_bitmap.reserve(params.len());
-        large_bitmap.reserve(params.len());
-
-        for value in values.iter() {
-            match *value {
-                Value::NULL => {
-                    null_bitmap.push(true);
-                    large_bitmap.push(false);
-                }
-                Value::Bytes(ref bytes) if !bytes.is_empty() => {
-                    null_bitmap.push(false);
-                    large_bitmap.push(true);
-                }
-                _ => {
-                    null_bitmap.push(false);
-                    if cap as u64 - written < MAX_NON_BYTES_VALUE_BINARY_SIZE as u64 {
-                        large_bitmap.push(true);
-                    } else {
-                        large_bitmap.push(false);
-                        written += output.write_bin_value(value)?;
-                    }
-                }
-            }
-        }
-
-        Ok((output, null_bitmap, large_bitmap))
     }
 }
 
@@ -416,7 +584,122 @@ impl fmt::Debug for Value {
 
 #[cfg(test)]
 mod test {
-    use super::Value;
+    use crate::constants::ColumnType;
+    use crate::io::WriteMysqlExt;
+    use crate::packets::{column_from_payload, Column};
+    use crate::value::{ClientSide, ComStmtExecuteRequestBuilder, NullBitmap, Value};
+
+    #[cfg(feature = "nightly")]
+    #[bench]
+    fn bench_build_stmt_execute_request(bencher: &mut test::Bencher) {
+        let values = vec![
+            Value::Bytes(b"12.3456789".to_vec()),
+            Value::Int(0xF0),
+            Value::Int(0xF000),
+            Value::Int(0xF0000000),
+            Value::Float(std::f32::MAX as f64),
+            Value::Float(std::f64::MAX),
+            Value::NULL,
+            Value::Date(2019, 11, 27, 12, 30, 0, 123456),
+            Value::UInt(0xF000000000000000),
+            Value::Int(0xF00000),
+            Value::Date(2019, 11, 27, 0, 0, 0, 0),
+            Value::Time(true, 300, 8, 8, 8, 123456),
+            Value::Date(2019, 11, 27, 12, 30, 0, 123456),
+            Value::Int(2019),
+            Value::Bytes(b"varchar".to_vec()),
+            Value::Bytes(b"1000000110000001".to_vec()),
+            Value::Bytes(br#"{"foo":"bar","baz":42345.6777}"#.to_vec()),
+            Value::Bytes(b"12.3456789".to_vec()),
+            Value::Bytes(b"Variant".to_vec()),
+            Value::Bytes(b"Element".to_vec()),
+            Value::Bytes(b"MYSQL_TYPE_TINY_BLOB".to_vec()),
+            Value::Bytes(b"MYSQL_TYPE_MEDIUM_BLOB".to_vec()),
+            Value::Bytes(b"MYSQL_TYPE_LONG_BLOB".to_vec()),
+            Value::Bytes(b"MYSQL_TYPE_BLOB".to_vec()),
+            Value::Bytes(b"MYSQL_TYPE_VAR_STRING".to_vec()),
+            Value::Bytes(b"MYSQL_TYPE_STRING".to_vec()),
+            Value::NULL,
+            Value::Bytes(b"MYSQL_TYPE_GEOMETRY".to_vec()),
+        ];
+
+        let (body, _) = ComStmtExecuteRequestBuilder::new(0).build(&*values);
+
+        bencher.bytes = body.len() as u64;
+        bencher.iter(|| ComStmtExecuteRequestBuilder::new(0).build(&*values));
+    }
+
+    #[cfg(feature = "nightly")]
+    #[bench]
+    fn bench_parse_bin_row(bencher: &mut test::Bencher) {
+        fn col(name: &str, ty: ColumnType) -> Column {
+            let mut payload = b"\x00def".to_vec();
+            for _ in 0..5 {
+                payload.write_lenenc_str(name.as_bytes()).unwrap();
+            }
+            payload.extend_from_slice(&b"_\x2d\x00\xff\xff\xff\xff"[..]);
+            payload.push(ty as u8);
+            payload.extend_from_slice(&b"\x00\x00\x00"[..]);
+            column_from_payload(payload).unwrap()
+        }
+
+        let values = vec![
+            Value::Bytes(b"12.3456789".to_vec()),
+            Value::Int(0xF0),
+            Value::Int(0xF000),
+            Value::Int(0xF0000000),
+            Value::Float(std::f32::MAX as f64),
+            Value::Float(std::f64::MAX),
+            Value::NULL,
+            Value::Date(2019, 11, 27, 12, 30, 0, 123456),
+            Value::UInt(0xF000000000000000),
+            Value::Int(0xF00000),
+            Value::Date(2019, 11, 27, 0, 0, 0, 0),
+            Value::Time(true, 300, 8, 8, 8, 123456),
+            Value::Date(2019, 11, 27, 12, 30, 0, 123456),
+            Value::Int(2019),
+            Value::Bytes(b"varchar".to_vec()),
+            Value::Bytes(b"1000000110000001".to_vec()),
+            Value::Bytes(br#"{"foo":"bar","baz":42345.6777}"#.to_vec()),
+            Value::Bytes(b"12.3456789".to_vec()),
+            Value::Bytes(b"Variant".to_vec()),
+            Value::Bytes(b"Element".to_vec()),
+            Value::Bytes(b"MYSQL_TYPE_TINY_BLOB".to_vec()),
+            Value::Bytes(b"MYSQL_TYPE_MEDIUM_BLOB".to_vec()),
+            Value::Bytes(b"MYSQL_TYPE_LONG_BLOB".to_vec()),
+            Value::Bytes(b"MYSQL_TYPE_BLOB".to_vec()),
+            Value::Bytes(b"MYSQL_TYPE_VAR_STRING".to_vec()),
+            Value::Bytes(b"MYSQL_TYPE_STRING".to_vec()),
+            Value::NULL,
+            Value::Bytes(b"MYSQL_TYPE_GEOMETRY".to_vec()),
+        ];
+
+        let (body, _) = ComStmtExecuteRequestBuilder::new(0).build(&*values);
+
+        let bitmap_len = NullBitmap::<ClientSide>::bitmap_len(values.len());
+
+        let meta_offset = ComStmtExecuteRequestBuilder::NULL_BITMAP_OFFSET + bitmap_len + 1;
+        let meta_len = values.len() * 2;
+        let columns = body[meta_offset..(meta_offset + meta_len)]
+            .chunks(2)
+            .map(|meta| col("foo", ColumnType::from(meta[0])))
+            .collect::<Vec<_>>();
+
+        let mut data = vec![0x00];
+        data.extend_from_slice(
+            &body[ComStmtExecuteRequestBuilder::NULL_BITMAP_OFFSET
+                ..(ComStmtExecuteRequestBuilder::NULL_BITMAP_OFFSET + bitmap_len)],
+        );
+        data.extend_from_slice(
+            &body[(ComStmtExecuteRequestBuilder::NULL_BITMAP_OFFSET
+                + bitmap_len
+                + 1
+                + 2 * values.len())..],
+        );
+
+        bencher.bytes = data.len() as u64;
+        bencher.iter(|| Value::read_bin_many::<ClientSide>(&*data, &*columns).unwrap());
+    }
 
     #[test]
     fn should_escape_string() {
