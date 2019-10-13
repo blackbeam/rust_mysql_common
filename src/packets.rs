@@ -6,21 +6,25 @@
 // option. All files in the project carrying such notice may not be copied,
 // modified, or distributed except according to those terms.
 
-use byteorder::{LittleEndian as LE, ReadBytesExt, WriteBytesExt};
+use byteorder::{ByteOrder, LittleEndian as LE, ReadBytesExt, WriteBytesExt};
 use lexical::parse;
 use regex::bytes::Regex;
 
 use std::borrow::Cow;
 use std::cmp::max;
+use std::collections::HashMap;
 use std::fmt;
-use std::io::{self, Write};
+use std::io;
+use std::marker::PhantomData;
 use std::ptr;
 
 use crate::constants::{
-    CapabilityFlags, ColumnFlags, ColumnType, SessionStateType, StatusFlags, UTF8MB4_GENERAL_CI,
-    UTF8_GENERAL_CI,
+    CapabilityFlags, ColumnFlags, ColumnType, Command, SessionStateType, StatusFlags,
+    MAX_PAYLOAD_LEN, UTF8MB4_GENERAL_CI, UTF8_GENERAL_CI,
 };
-use crate::io::ReadMysqlExt;
+use crate::io::{ReadMysqlExt, WriteMysqlExt};
+use crate::misc::lenenc_str_len;
+use crate::value::{ClientSide, SerializationSide, Value};
 
 macro_rules! get_offset_and_len {
     ($buffer:expr, $slice:expr) => {{
@@ -283,7 +287,7 @@ pub fn parse_ok_packet(payload: &[u8], capabilities: CapabilityFlags) -> io::Res
 
 impl<'a> OkPacket<'a> {
     /// Parses Ok packet from `payload` assuming passed client-server `capabilities`.
-    fn parse<'x>(mut payload: &'x [u8], capabilities: CapabilityFlags) -> io::Result<OkPacket<'x>> {
+    fn parse(mut payload: &[u8], capabilities: CapabilityFlags) -> io::Result<OkPacket> {
         let header = payload.read_u8()?;
         let (affected_rows, last_insert_id, status_flags, warnings, info, session_state_info) =
             if header == 0x00 {
@@ -1031,54 +1035,48 @@ impl HandshakeResponse {
         server_version: (u16, u16, u16),
         user: Option<&str>,
         db_name: Option<&str>,
-        auth_plugin: AuthPlugin<'_>,
+        auth_plugin: &AuthPlugin<'_>,
         client_flags: CapabilityFlags,
+        connect_attributes: &HashMap<String, String>,
     ) -> HandshakeResponse {
-        let plugin_auth = client_flags.contains(CapabilityFlags::CLIENT_PLUGIN_AUTH);
-        let user_len = user.map(|user| user.len()).unwrap_or(0);
-        let database_len = db_name.map(|database| database.len()).unwrap_or(0);
-        let scramble_len = scramble_buf
-            .as_ref()
-            .map(|scramble_buf| scramble_buf.as_ref().len())
-            .unwrap_or(0);
+        let scramble = scramble_buf.as_ref().map(|x| x.as_ref()).unwrap_or(&[]);
+        let database = db_name.unwrap_or("");
 
-        let mut payload_len = 4 + 4 + 1 + 23 + user_len + 1 + 1 + scramble_len;
-        if database_len > 0 {
-            payload_len += database_len + 1;
-        }
-        if plugin_auth {
-            payload_len += auth_plugin.as_bytes().len() + 1;
-        }
+        let collation = if server_version >= (5, 5, 3) {
+            UTF8MB4_GENERAL_CI
+        } else {
+            UTF8_GENERAL_CI
+        };
 
-        let mut data = vec![0u8; payload_len];
-        {
-            let mut writer = &mut *data;
-            writer.write_u32::<LE>(client_flags.bits()).unwrap();
-            writer.write_all(&[0u8; 4]).unwrap();
-            let collation = if server_version >= (5, 5, 3) {
-                UTF8MB4_GENERAL_CI
-            } else {
-                UTF8_GENERAL_CI
-            };
-            writer.write_u8(collation as u8).unwrap();
-            writer.write_all(&[0u8; 23]).unwrap();
-            if let Some(user) = user.as_ref() {
-                writer.write_all(user.as_bytes()).unwrap();
-            }
-            writer.write_u8(0).unwrap();
-            writer.write_u8(scramble_len as u8).unwrap();
-            if let Some(ref scramble_buf) = *scramble_buf {
-                writer.write_all(scramble_buf.as_ref()).unwrap();
-            }
-            if let Some(database) = db_name.as_ref() {
-                if database_len > 0 {
-                    writer.write_all(database.as_bytes()).unwrap();
-                    writer.write_u8(0).unwrap();
-                }
-            }
-            if plugin_auth {
-                writer.write_all(auth_plugin.as_bytes()).unwrap();
-                writer.write_u8(0).unwrap();
+        let mut data = Vec::with_capacity(1024);
+        data.write_u32::<LE>(client_flags.bits()).unwrap();
+        data.resize(data.len() + 4, 0);
+        data.push(collation as u8);
+        data.resize(data.len() + 23, 0);
+        data.extend_from_slice(user.unwrap_or("").as_bytes());
+        data.push(0);
+        data.push(scramble.len() as u8);
+        data.extend_from_slice(scramble);
+        if database.len() > 0 {
+            data.extend_from_slice(database.as_bytes());
+            data.push(0);
+        }
+        if client_flags.contains(CapabilityFlags::CLIENT_PLUGIN_AUTH) {
+            data.extend_from_slice(auth_plugin.as_bytes());
+            data.push(0);
+        }
+        if client_flags.contains(CapabilityFlags::CLIENT_CONNECT_ATTRS) {
+            let len = connect_attributes
+                .iter()
+                .map(|(k, v)| lenenc_str_len(k) + lenenc_str_len(v))
+                .sum::<usize>();
+            data.write_lenenc_int(len as u64).expect("out of memory");
+
+            for (name, value) in connect_attributes {
+                data.write_lenenc_str(name.as_bytes())
+                    .expect("out of memory");
+                data.write_lenenc_str(value.as_bytes())
+                    .expect("out of memory");
             }
         }
 
@@ -1100,13 +1098,9 @@ pub struct SslRequest {
 impl SslRequest {
     pub fn new(capabilities: CapabilityFlags) -> SslRequest {
         let mut data = vec![0u8; 4 + 4 + 1 + 23];
-        // Buffer is preallocated so no panic during unwrap.
-        {
-            let mut writer = &mut data[..];
-            writer.write_u32::<LE>(capabilities.bits()).unwrap();
-            writer.write_u32::<LE>(1024 * 1024).unwrap();
-            writer.write_u8(UTF8_GENERAL_CI as u8).unwrap();
-        }
+        LE::write_u32(&mut data[0..], capabilities.bits());
+        LE::write_u32(&mut data[4..], 1024 * 1024);
+        data[8] = UTF8_GENERAL_CI as u8;
         SslRequest { data }
     }
 }
@@ -1172,6 +1166,246 @@ impl StmtPacket {
     /// Value of the warning_count field of a statement packet.
     pub fn warning_count(&self) -> u16 {
         self.warning_count
+    }
+}
+
+/// Null-bitmap.
+///
+/// http://dev.mysql.com/doc/internals/en/null-bitmap.html
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct NullBitmap<T, U: AsRef<[u8]> = Vec<u8>>(U, PhantomData<T>);
+
+impl<T: SerializationSide> NullBitmap<T, Vec<u8>> {
+    /// Creates new null-bitmap for a given number of columns.
+    pub fn new(num_columns: usize) -> Self {
+        Self::from_bytes(vec![0; Self::bitmap_len(num_columns)])
+    }
+
+    /// Will read null-bitmap for a given number of columns from `input`.
+    pub fn read(input: &mut &[u8], num_columns: usize) -> Self {
+        let bitmap_len = Self::bitmap_len(num_columns);
+        assert!(input.len() >= bitmap_len);
+
+        let bitmap = Self::from_bytes(input[..bitmap_len].to_vec());
+        *input = &input[bitmap_len..];
+
+        bitmap
+    }
+}
+
+impl<T: SerializationSide, U: AsRef<[u8]>> NullBitmap<T, U> {
+    pub fn bitmap_len(num_columns: usize) -> usize {
+        (num_columns + 7 + T::BIT_OFFSET) / 8
+    }
+
+    fn byte_and_bit(&self, column_index: usize) -> (usize, u8) {
+        let offset = column_index + T::BIT_OFFSET;
+        let byte = offset / 8;
+        let bit = 1 << (offset % 8) as u8;
+
+        assert!(byte < self.0.as_ref().len());
+
+        (byte, bit)
+    }
+
+    /// Creates new null-bitmap from given bytes.
+    pub fn from_bytes(bytes: U) -> Self {
+        Self(bytes, PhantomData)
+    }
+
+    /// Returns `true` if given column is `NULL` in this `NullBitmap`.
+    pub fn is_null(&self, column_index: usize) -> bool {
+        let (byte, bit) = self.byte_and_bit(column_index);
+        self.0.as_ref()[byte] & bit > 0
+    }
+}
+
+impl<T: SerializationSide, U: AsRef<[u8]> + AsMut<[u8]>> NullBitmap<T, U> {
+    /// Sets flag value for given column.
+    pub fn set(&mut self, column_index: usize, is_null: bool) {
+        let (byte, bit) = self.byte_and_bit(column_index);
+        if is_null {
+            self.0.as_mut()[byte] |= bit
+        } else {
+            self.0.as_mut()[byte] &= !bit
+        }
+    }
+}
+
+impl<T, U: AsRef<[u8]>> AsRef<[u8]> for NullBitmap<T, U> {
+    fn as_ref(&self) -> &[u8] {
+        self.0.as_ref()
+    }
+}
+
+pub struct ComStmtExecuteRequestBuilder {
+    body: Vec<u8>,
+    bitmap_len: usize,
+    params_added: u16,
+}
+
+impl ComStmtExecuteRequestBuilder {
+    pub const NULL_BITMAP_OFFSET: usize = 10;
+
+    pub fn new(stmt_id: u32) -> Self {
+        let mut body = Vec::with_capacity(1024);
+        body.resize(10, 0);
+        // command
+        body[0] = Command::COM_STMT_EXECUTE as u8;
+        // stmt-id
+        LE::write_u32(&mut body[1..5], stmt_id);
+        // iteration-count
+        body[6] = 1;
+
+        Self {
+            body,
+            bitmap_len: 0,
+            params_added: 0,
+        }
+    }
+
+    pub fn build(mut self, params: &[Value]) -> (Vec<u8>, bool) {
+        if params.len() > 0 {
+            self.bitmap_len = NullBitmap::<ClientSide>::bitmap_len(params.len());
+            let meta_len = params.len() * 2;
+            let data_len: usize = params.iter().map(Value::bin_len).sum();
+
+            let total_len = self.body.len() + self.bitmap_len + 1 + meta_len + data_len;
+            let as_long_data = total_len > MAX_PAYLOAD_LEN;
+
+            self.body
+                .resize(self.body.len() + self.bitmap_len + 1 + meta_len, 0);
+            self.body[Self::NULL_BITMAP_OFFSET + self.bitmap_len] = 1;
+
+            for value in params {
+                self.add_param(value, as_long_data);
+            }
+
+            (self.body, as_long_data)
+        } else {
+            (self.body, false)
+        }
+    }
+
+    fn add_param(&mut self, value: &Value, as_long_data: bool) -> u64 {
+        let param_index = self.params_added as usize;
+        self.params_added += 1;
+
+        let mut write = true;
+
+        match value {
+            Value::NULL => {
+                self.set_null_flag(param_index);
+                self.set_type(param_index, ColumnType::MYSQL_TYPE_NULL);
+                write = false;
+            }
+            Value::Bytes(_) => {
+                self.set_type(param_index, ColumnType::MYSQL_TYPE_VAR_STRING);
+                write = !as_long_data;
+            }
+            Value::Int(_) => {
+                self.set_type(param_index, ColumnType::MYSQL_TYPE_LONGLONG);
+            }
+            Value::UInt(_) => {
+                self.set_type(param_index, ColumnType::MYSQL_TYPE_LONGLONG);
+                self.set_unsigned(param_index);
+            }
+            Value::Float(_) => {
+                self.set_type(param_index, ColumnType::MYSQL_TYPE_DOUBLE);
+            }
+            Value::Date(..) => {
+                self.set_type(param_index, ColumnType::MYSQL_TYPE_DATETIME);
+            }
+            Value::Time(..) => {
+                self.set_type(param_index, ColumnType::MYSQL_TYPE_TIME);
+            }
+        }
+
+        if write {
+            self.body.write_bin_value(value).expect("out of memory")
+        } else {
+            0
+        }
+    }
+
+    fn set_type(&mut self, param_index: usize, param_type: ColumnType) {
+        let param_meta_offset = self.param_meta_index_offset(param_index);
+        self.body[param_meta_offset] = param_type as u8;
+    }
+
+    fn set_unsigned(&mut self, param_index: usize) {
+        let param_meta_offset = self.param_meta_index_offset(param_index);
+        self.body[param_meta_offset + 1] = 0x80;
+    }
+
+    fn set_null_flag(&mut self, param_index: usize) {
+        let end = Self::NULL_BITMAP_OFFSET + self.bitmap_len;
+        let bitmap_bytes = &mut self.body[Self::NULL_BITMAP_OFFSET..end];
+
+        NullBitmap::<ClientSide, _>::from_bytes(bitmap_bytes).set(param_index, true);
+    }
+
+    fn param_meta_index_offset(&self, param_index: usize) -> usize {
+        Self::NULL_BITMAP_OFFSET + self.bitmap_len + 1 + 2 * param_index
+    }
+}
+
+pub struct ComStmtSendLongData {
+    body: Vec<u8>,
+}
+
+impl ComStmtSendLongData {
+    pub fn new(stmt_id: u32, param_index: usize, data: &[u8]) -> Self {
+        let mut body = Vec::with_capacity(1 + 4 + 2 + data.len());
+
+        body.push(Command::COM_STMT_SEND_LONG_DATA as u8);
+        body.write_u32::<LE>(stmt_id).expect("unreachable");
+        body.write_u16::<LE>(param_index as u16)
+            .expect("unreachable");
+        body.extend_from_slice(data);
+
+        Self { body }
+    }
+}
+
+impl AsRef<[u8]> for ComStmtSendLongData {
+    fn as_ref(&self) -> &[u8] {
+        &*self.body
+    }
+}
+
+impl Into<Vec<u8>> for ComStmtSendLongData {
+    fn into(self) -> Vec<u8> {
+        self.body
+    }
+}
+
+pub struct ComStmtClose {
+    body: Vec<u8>,
+}
+
+impl ComStmtClose {
+    pub fn new(stmt_id: u32) -> Self {
+        let mut body = Vec::with_capacity(1 + 4);
+        body.push(Command::COM_STMT_CLOSE as u8);
+        body.write_u32::<LE>(stmt_id).expect("unreachable");
+        Self { body }
+    }
+
+    pub fn set_id(&mut self, stmt_id: u32) {
+        LE::write_u32(&mut self.body[1..], stmt_id);
+    }
+}
+
+impl AsRef<[u8]> for ComStmtClose {
+    fn as_ref(&self) -> &[u8] {
+        &*self.body
+    }
+}
+
+impl Into<Vec<u8>> for ComStmtClose {
+    fn into(self) -> Vec<u8> {
+        self.body
     }
 }
 
