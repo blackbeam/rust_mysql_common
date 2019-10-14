@@ -8,6 +8,8 @@
 
 use crate::row::Row;
 use crate::value::convert::{ConvIr, FromValue, FromValueError};
+
+use std::any::type_name;
 use std::error::Error;
 use std::fmt;
 
@@ -70,7 +72,21 @@ pub fn from_row_opt<T: FromRow>(row: Row) -> Result<T, FromRowError> {
 /// from_row::<(Vec<u8>, Option<u8>, u16)>(row) // this'll work and return (vec![..], None, 1024u16)
 /// ```
 pub trait FromRow {
-    fn from_row(row: Row) -> Self;
+    #[inline]
+    fn from_row(row: Row) -> Self
+    where
+        Self: Sized,
+    {
+        match Self::from_row_opt(row) {
+            Ok(x) => x,
+            Err(FromRowError(row)) => panic!(
+                "Couldn't convert {:?} to type {}. (see FromRow documentation)",
+                row,
+                type_name::<Self>(),
+            ),
+        }
+    }
+
     fn from_row_opt(row: Row) -> Result<Self, FromRowError>
     where
         Self: Sized;
@@ -126,16 +142,6 @@ where
     Ir: ConvIr<T>,
     T: FromValue<Intermediate = Ir>,
 {
-    #[inline]
-    fn from_row(row: Row) -> T {
-        match FromRow::from_row_opt(row) {
-            Ok(x) => x,
-            Err(FromRowError(row)) => panic!(
-                "Couldn't convert {:?} to type T. (see FromRow documentation)",
-                row
-            ),
-        }
-    }
     fn from_row_opt(mut row: Row) -> Result<T, FromRowError> {
         if row.len() == 1 {
             Ok(take_or_place!(row, 0, T).commit())
@@ -150,16 +156,6 @@ where
     Ir1: ConvIr<T1>,
     T1: FromValue<Intermediate = Ir1>,
 {
-    #[inline]
-    fn from_row(row: Row) -> (T1,) {
-        match FromRow::from_row_opt(row) {
-            Ok(x) => x,
-            Err(FromRowError(row)) => panic!(
-                "Couldn't convert {:?} to type (T1,). (see FromRow documentation)",
-                row
-            ),
-        }
-    }
     fn from_row_opt(row: Row) -> Result<(T1,), FromRowError> {
         T1::from_row_opt(row).map(|t| (t,))
     }
@@ -172,16 +168,6 @@ where
     Ir2: ConvIr<T2>,
     T2: FromValue<Intermediate = Ir2>,
 {
-    #[inline]
-    fn from_row(row: Row) -> (T1, T2) {
-        match FromRow::from_row_opt(row) {
-            Ok(x) => x,
-            Err(FromRowError(row)) => panic!(
-                "Couldn't convert {:?} to type (T1, T2). (see FromRow documentation)",
-                row
-            ),
-        }
-    }
     fn from_row_opt(mut row: Row) -> Result<(T1, T2), FromRowError> {
         if row.len() != 2 {
             return Err(FromRowError(row));
@@ -201,16 +187,6 @@ where
     Ir3: ConvIr<T3>,
     T3: FromValue<Intermediate = Ir3>,
 {
-    #[inline]
-    fn from_row(row: Row) -> (T1, T2, T3) {
-        match FromRow::from_row_opt(row) {
-            Ok(x) => x,
-            Err(FromRowError(row)) => panic!(
-                "Couldn't convert {:?} to type (T1, T2, T3). (see FromRow documentation)",
-                row
-            ),
-        }
-    }
     fn from_row_opt(mut row: Row) -> Result<(T1, T2, T3), FromRowError> {
         if row.len() != 3 {
             return Err(FromRowError(row));
@@ -233,16 +209,6 @@ where
     Ir4: ConvIr<T4>,
     T4: FromValue<Intermediate = Ir4>,
 {
-    #[inline]
-    fn from_row(row: Row) -> (T1, T2, T3, T4) {
-        match FromRow::from_row_opt(row) {
-            Ok(x) => x,
-            Err(FromRowError(row)) => panic!(
-                "Couldn't convert {:?} to type (T1, .., T4). (see FromRow documentation)",
-                row
-            ),
-        }
-    }
     fn from_row_opt(mut row: Row) -> Result<(T1, T2, T3, T4), FromRowError> {
         if row.len() != 4 {
             return Err(FromRowError(row));
@@ -268,16 +234,6 @@ where
     Ir5: ConvIr<T5>,
     T5: FromValue<Intermediate = Ir5>,
 {
-    #[inline]
-    fn from_row(row: Row) -> (T1, T2, T3, T4, T5) {
-        match FromRow::from_row_opt(row) {
-            Ok(x) => x,
-            Err(FromRowError(row)) => panic!(
-                "Couldn't convert {:?} to type (T1, .., T5). (see FromRow documentation)",
-                row
-            ),
-        }
-    }
     fn from_row_opt(mut row: Row) -> Result<(T1, T2, T3, T4, T5), FromRowError> {
         if row.len() != 5 {
             return Err(FromRowError(row));
@@ -312,16 +268,6 @@ where
     Ir6: ConvIr<T6>,
     T6: FromValue<Intermediate = Ir6>,
 {
-    #[inline]
-    fn from_row(row: Row) -> (T1, T2, T3, T4, T5, T6) {
-        match FromRow::from_row_opt(row) {
-            Ok(x) => x,
-            Err(FromRowError(row)) => panic!(
-                "Couldn't convert {:?} to type (T1, .., T6). (see FromRow documentation)",
-                row
-            ),
-        }
-    }
     fn from_row_opt(mut row: Row) -> Result<(T1, T2, T3, T4, T5, T6), FromRowError> {
         if row.len() != 6 {
             return Err(FromRowError(row));
@@ -361,16 +307,6 @@ where
     Ir7: ConvIr<T7>,
     T7: FromValue<Intermediate = Ir7>,
 {
-    #[inline]
-    fn from_row(row: Row) -> (T1, T2, T3, T4, T5, T6, T7) {
-        match FromRow::from_row_opt(row) {
-            Ok(x) => x,
-            Err(FromRowError(row)) => panic!(
-                "Couldn't convert {:?} to type (T1, .., T7). (see FromRow documentation)",
-                row
-            ),
-        }
-    }
     fn from_row_opt(mut row: Row) -> Result<(T1, T2, T3, T4, T5, T6, T7), FromRowError> {
         if row.len() != 7 {
             return Err(FromRowError(row));
@@ -424,16 +360,6 @@ where
     Ir8: ConvIr<T8>,
     T8: FromValue<Intermediate = Ir8>,
 {
-    #[inline]
-    fn from_row(row: Row) -> (T1, T2, T3, T4, T5, T6, T7, T8) {
-        match FromRow::from_row_opt(row) {
-            Ok(x) => x,
-            Err(FromRowError(row)) => panic!(
-                "Couldn't convert {:?} to type (T1, .., T8). (see FromRow documentation)",
-                row
-            ),
-        }
-    }
     fn from_row_opt(mut row: Row) -> Result<(T1, T2, T3, T4, T5, T6, T7, T8), FromRowError> {
         if row.len() != 8 {
             return Err(FromRowError(row));
@@ -502,16 +428,6 @@ where
     Ir9: ConvIr<T9>,
     T9: FromValue<Intermediate = Ir9>,
 {
-    #[inline]
-    fn from_row(row: Row) -> (T1, T2, T3, T4, T5, T6, T7, T8, T9) {
-        match FromRow::from_row_opt(row) {
-            Ok(x) => x,
-            Err(FromRowError(row)) => panic!(
-                "Couldn't convert {:?} to type (T1, .., T9). (see FromRow documentation)",
-                row
-            ),
-        }
-    }
     fn from_row_opt(mut row: Row) -> Result<(T1, T2, T3, T4, T5, T6, T7, T8, T9), FromRowError> {
         if row.len() != 9 {
             return Err(FromRowError(row));
@@ -616,16 +532,6 @@ where
     Ir10: ConvIr<T10>,
     T10: FromValue<Intermediate = Ir10>,
 {
-    #[inline]
-    fn from_row(row: Row) -> (T1, T2, T3, T4, T5, T6, T7, T8, T9, T10) {
-        match FromRow::from_row_opt(row) {
-            Ok(x) => x,
-            Err(FromRowError(row)) => panic!(
-                "Couldn't convert {:?} to type (T1, .., T10). (see FromRow documentation)",
-                row
-            ),
-        }
-    }
     fn from_row_opt(
         mut row: Row,
     ) -> Result<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10), FromRowError> {
@@ -751,16 +657,6 @@ where
     Ir11: ConvIr<T11>,
     T11: FromValue<Intermediate = Ir11>,
 {
-    #[inline]
-    fn from_row(row: Row) -> (T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11) {
-        match FromRow::from_row_opt(row) {
-            Ok(x) => x,
-            Err(FromRowError(row)) => panic!(
-                "Couldn't convert {:?} to type (T1, .., T11). (see FromRow documentation)",
-                row
-            ),
-        }
-    }
     fn from_row_opt(
         mut row: Row,
     ) -> Result<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11), FromRowError> {
@@ -906,16 +802,6 @@ where
     Ir12: ConvIr<T12>,
     T12: FromValue<Intermediate = Ir12>,
 {
-    #[inline]
-    fn from_row(row: Row) -> (T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12) {
-        match FromRow::from_row_opt(row) {
-            Ok(x) => x,
-            Err(FromRowError(row)) => panic!(
-                "Couldn't convert {:?} to type (T1, .., T12). (see FromRow documentation)",
-                row
-            ),
-        }
-    }
     fn from_row_opt(
         mut row: Row,
     ) -> Result<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12), FromRowError> {
