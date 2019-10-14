@@ -13,6 +13,7 @@ use regex::bytes::Regex;
 use time::{self, at, strptime, Timespec, Tm};
 use uuid::Uuid;
 
+use std::any::type_name;
 use std::error::Error;
 use std::fmt;
 use std::str::from_utf8;
@@ -107,7 +108,10 @@ pub trait FromValue: Sized {
 
     /// Will panic if could not convert `v` to `Self`.
     fn from_value(v: Value) -> Self {
-        Self::from_value_opt(v).expect("Could not retrieve Self from Value")
+        match Self::from_value_opt(v) {
+            Ok(this) => this,
+            Err(_) => panic!("Could not retrieve {} from Value", type_name::<Self>()),
+        }
     }
 
     /// Will return `Err(Error::FromValueError(v))` if could not convert `v` to `Self`.
@@ -135,18 +139,15 @@ pub fn from_value_opt<T: FromValue>(v: Value) -> Result<T, FromValueError> {
 }
 
 macro_rules! impl_from_value {
-    ($ty:ty, $ir:ty, $msg:expr) => {
+    ($ty:ty, $ir:ty) => {
         impl FromValue for $ty {
             type Intermediate = $ir;
-            fn from_value(v: Value) -> $ty {
-                <Self as FromValue>::from_value_opt(v).ok().expect($msg)
-            }
         }
     };
 }
 
 macro_rules! impl_from_value_num {
-    ($t:ident, $msg:expr) => {
+    ($t:ident) => {
         impl ConvIr<$t> for ParseIr<$t> {
             fn new(v: Value) -> Result<ParseIr<$t>, FromValueError> {
                 match v {
@@ -188,7 +189,7 @@ macro_rules! impl_from_value_num {
             }
         }
 
-        impl_from_value!($t, ParseIr<$t>, $msg);
+        impl_from_value!($t, ParseIr<$t>);
     };
 }
 
@@ -242,9 +243,6 @@ where
     T: FromValue,
 {
     type Intermediate = OptionIr<T::Intermediate>;
-    fn from_value(v: Value) -> Option<T> {
-        <Self as FromValue>::from_value_opt(v).expect("Could not retrieve Option<T> from Value")
-    }
 }
 
 impl ConvIr<Value> for Value {
@@ -856,53 +854,29 @@ impl ConvIr<time::Duration> for ParseIr<time::Duration> {
     }
 }
 
-impl_from_value!(
-    NaiveDateTime,
-    ParseIr<NaiveDateTime>,
-    "Could not retrieve NaiveDateTime from Value"
-);
-impl_from_value!(
-    NaiveDate,
-    ParseIr<NaiveDate>,
-    "Could not retrieve NaiveDate from Value"
-);
-impl_from_value!(
-    NaiveTime,
-    ParseIr<NaiveTime>,
-    "Could not retrieve NaiveTime from Value"
-);
-impl_from_value!(
-    Timespec,
-    ParseIr<Timespec>,
-    "Could not retrieve Timespec from Value"
-);
-impl_from_value!(
-    Duration,
-    ParseIr<Duration>,
-    "Could not retrieve Duration from Value"
-);
-impl_from_value!(
-    time::Duration,
-    ParseIr<time::Duration>,
-    "Could not retrieve time::Duration from Value"
-);
-impl_from_value!(String, StringIr, "Could not retrieve String from Value");
-impl_from_value!(Vec<u8>, BytesIr, "Could not retrieve Vec<u8> from Value");
-impl_from_value!(bool, ParseIr<bool>, "Could not retrieve bool from Value");
-impl_from_value!(i64, ParseIr<i64>, "Could not retrieve i64 from Value");
-impl_from_value!(u64, ParseIr<u64>, "Could not retrieve u64 from Value");
-impl_from_value!(f32, ParseIr<f32>, "Could not retrieve f32 from Value");
-impl_from_value!(f64, ParseIr<f64>, "Could not retrieve f64 from Value");
-impl_from_value_num!(i8, "Could not retrieve i8 from Value");
-impl_from_value_num!(u8, "Could not retrieve u8 from Value");
-impl_from_value_num!(i16, "Could not retrieve i16 from Value");
-impl_from_value_num!(u16, "Could not retrieve u16 from Value");
-impl_from_value_num!(i32, "Could not retrieve i32 from Value");
-impl_from_value_num!(u32, "Could not retrieve u32 from Value");
-impl_from_value_num!(isize, "Could not retrieve isize from Value");
-impl_from_value_num!(usize, "Could not retrieve usize from Value");
-impl_from_value_num!(i128, "Could not retrieve i128 from Value");
-impl_from_value_num!(u128, "Could not retrieve u128 from Value");
+impl_from_value!(NaiveDateTime, ParseIr<NaiveDateTime>);
+impl_from_value!(NaiveDate, ParseIr<NaiveDate>);
+impl_from_value!(NaiveTime, ParseIr<NaiveTime>);
+impl_from_value!(Timespec, ParseIr<Timespec>);
+impl_from_value!(Duration, ParseIr<Duration>);
+impl_from_value!(time::Duration, ParseIr<time::Duration>);
+impl_from_value!(String, StringIr);
+impl_from_value!(Vec<u8>, BytesIr);
+impl_from_value!(bool, ParseIr<bool>);
+impl_from_value!(i64, ParseIr<i64>);
+impl_from_value!(u64, ParseIr<u64>);
+impl_from_value!(f32, ParseIr<f32>);
+impl_from_value!(f64, ParseIr<f64>);
+impl_from_value_num!(i8);
+impl_from_value_num!(u8);
+impl_from_value_num!(i16);
+impl_from_value_num!(u16);
+impl_from_value_num!(i32);
+impl_from_value_num!(u32);
+impl_from_value_num!(isize);
+impl_from_value_num!(usize);
+impl_from_value_num!(i128);
+impl_from_value_num!(u128);
 
 pub trait ToValue {
     fn to_value(&self) -> Value;
