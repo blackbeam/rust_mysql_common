@@ -763,17 +763,6 @@ where
     }
 }
 
-#[test]
-fn from_row_test() {
-    use crate::value::Value;
-    let row = Row {
-        values: vec![Some(Value::Int(42)), Some(Value::NULL)],
-        columns: std::sync::Arc::new(vec![]),
-    };
-
-    from_row::<(usize, usize)>(row);
-}
-
 #[cfg(feature = "nightly")]
 #[bench]
 fn bench_from_row(bencher: &mut test::Bencher) {
