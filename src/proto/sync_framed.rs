@@ -79,7 +79,7 @@ where
     T: Write,
 {
     /// Will write packets into the stream. Stream may not be flushed.
-    pub fn write(&mut self, item: Vec<Vec<u8>>) -> Result<(), PacketCodecError> {
+    pub fn write(&mut self, item: Vec<u8>) -> Result<(), PacketCodecError> {
         self.codec.encode(item, &mut self.out_buf)?;
         self.stream.write_all(&*self.out_buf)?;
         self.out_buf.clear();
@@ -93,7 +93,7 @@ where
     }
 
     /// Will send packets into the stream. Stream will be flushed.
-    pub fn send(&mut self, item: Vec<Vec<u8>>) -> Result<(), PacketCodecError> {
+    pub fn send(&mut self, item: Vec<u8>) -> Result<(), PacketCodecError> {
         self.write(item)?;
         self.flush()
     }
@@ -149,9 +149,9 @@ mod tests {
         {
             let mut framed = MySyncFramed::new(&mut buf);
             framed.codec_mut().max_allowed_packet = MAX_PAYLOAD_LEN;
-            framed.send(vec![vec![0_u8; 0]]).unwrap();
-            framed.send(vec![vec![0_u8; 1]]).unwrap();
-            framed.send(vec![vec![0_u8; MAX_PAYLOAD_LEN]]).unwrap();
+            framed.send(vec![0_u8; 0]).unwrap();
+            framed.send(vec![0_u8; 1]).unwrap();
+            framed.send(vec![0_u8; MAX_PAYLOAD_LEN]).unwrap();
         }
         let mut buf = &buf[..];
         let mut framed = MySyncFramed::new(&mut buf);

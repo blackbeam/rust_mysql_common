@@ -328,9 +328,6 @@ impl CompDecoder {
 /// Codec for MySql protocol packets.
 ///
 /// Codec supports both plain and compressed protocols.
-///
-/// `Encoder::Item` for this codec is `Vec<Vec<u8>>` (vector of packets) to allow
-/// to compress more than one MySql packet within one compressed packet.
 #[derive(Debug)]
 pub struct PacketCodec {
     /// Maximum size of a packet for this codec.
@@ -370,11 +367,7 @@ impl PacketCodec {
     }
 
     /// Will encode packets into `dst`.
-    pub fn encode(
-        &mut self,
-        item: Vec<Vec<u8>>,
-        dst: &mut BytesMut,
-    ) -> Result<(), PacketCodecError> {
+    pub fn encode(&mut self, item: Vec<u8>, dst: &mut BytesMut) -> Result<(), PacketCodecError> {
         self.inner.encode(item, dst, self.max_allowed_packet)
     }
 }
@@ -450,13 +443,13 @@ impl PacketCodecInner {
     /// Will try to encode packets into `dst`.
     fn encode(
         &mut self,
-        packets: Vec<Vec<u8>>,
+        packet: Vec<u8>,
         dst: &mut BytesMut,
         max_allowed_packet: usize,
     ) -> Result<(), PacketCodecError> {
         match self {
-            PacketCodecInner::Plain(codec) => codec.encode(packets, dst, max_allowed_packet),
-            PacketCodecInner::Comp(codec) => codec.encode(packets, dst, max_allowed_packet),
+            PacketCodecInner::Plain(codec) => codec.encode(packet, dst, max_allowed_packet),
+            PacketCodecInner::Comp(codec) => codec.encode(packet, dst, max_allowed_packet),
         }
     }
 }
@@ -517,17 +510,15 @@ impl PlainPacketCodec {
     /// Will try to encode packets into `dst`.
     fn encode(
         &mut self,
-        packets: Vec<Vec<u8>>,
+        packet: Vec<u8>,
         dst: &mut BytesMut,
         max_allowed_packet: usize,
     ) -> Result<(), PacketCodecError> {
-        for packet in packets {
-            if packet.len() > max_allowed_packet {
-                Err(PacketCodecError::PacketTooLarge)?;
-            }
-
-            self.seq_id = packet_to_chunks(self.seq_id, &*packet, dst);
+        if packet.len() > max_allowed_packet {
+            Err(PacketCodecError::PacketTooLarge)?;
         }
+
+        self.seq_id = packet_to_chunks(self.seq_id, &*packet, dst);
 
         Ok(())
     }
@@ -599,12 +590,12 @@ impl CompPacketCodec {
     /// Will try to encode packets into `dst`.
     fn encode(
         &mut self,
-        packets: Vec<Vec<u8>>,
+        packet: Vec<u8>,
         dst: &mut BytesMut,
         max_allowed_packet: usize,
     ) -> Result<(), PacketCodecError> {
         self.plain_codec
-            .encode(packets, &mut self.out_buf, max_allowed_packet)?;
+            .encode(packet, &mut self.out_buf, max_allowed_packet)?;
 
         self.comp_seq_id = compress(
             self.comp_seq_id,
@@ -639,7 +630,7 @@ mod tests {
     fn zero_len_packet() -> Result<(), error::PacketCodecError> {
         let mut encoder = PacketCodec::default();
         let mut src = BytesMut::new();
-        encoder.encode(vec![vec![]], &mut src)?;
+        encoder.encode(vec![], &mut src)?;
 
         let mut decoder = PacketCodec::default();
         let result = decoder.decode(&mut src)?.unwrap();
@@ -652,7 +643,7 @@ mod tests {
     fn regular_packet() -> Result<(), error::PacketCodecError> {
         let mut encoder = PacketCodec::default();
         let mut src = BytesMut::new();
-        encoder.encode(vec![vec![0x31, 0x32, 0x33]], &mut src)?;
+        encoder.encode(vec![0x31, 0x32, 0x33], &mut src)?;
 
         let mut decoder = PacketCodec::default();
         let result = decoder.decode(&mut src)?.unwrap();
@@ -668,7 +659,7 @@ mod tests {
         let mut src = BytesMut::new();
 
         for i in 0..1024_usize {
-            encoder.encode(vec![vec![0; i]], &mut src)?;
+            encoder.encode(vec![0; i], &mut src)?;
             let result = decoder.decode(&mut src)?.unwrap();
             assert_eq!(result, vec![0; i]);
         }
@@ -687,7 +678,7 @@ mod tests {
         encoder.max_allowed_packet = *lengths.iter().max().unwrap();
 
         for &len in &lengths {
-            encoder.encode(vec![vec![0x42; len]], &mut src)?;
+            encoder.encode(vec![0x42; len], &mut src)?;
         }
 
         for &len in &lengths {
@@ -709,7 +700,7 @@ mod tests {
 
         let plain = decoder.decode(&mut src).unwrap().unwrap();
         assert_eq!(&*plain, PLAIN);
-        encoder.encode(vec![plain.into()], &mut src).unwrap();
+        encoder.encode(plain.into(), &mut src).unwrap();
 
         decoder.reset_seq_id();
         let plain = decoder.decode(&mut src).unwrap().unwrap();
@@ -725,7 +716,7 @@ mod tests {
         encoder.compress(Compression::none());
         decoder.compress(Compression::none());
 
-        encoder.encode(vec![PLAIN.into()], &mut src).unwrap();
+        encoder.encode(PLAIN.into(), &mut src).unwrap();
         let plain = decoder.decode(&mut src).unwrap().unwrap();
         assert_eq!(&*plain, PLAIN);
     }
@@ -746,7 +737,7 @@ mod tests {
         let mut src = BytesMut::new();
 
         encoder
-            .encode(vec![vec![0; encoder.max_allowed_packet + 1]], &mut src)
+            .encode(vec![0; encoder.max_allowed_packet + 1], &mut src)
             .unwrap();
         decoder.decode(&mut src).unwrap();
     }
