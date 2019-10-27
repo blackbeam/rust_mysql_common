@@ -1090,6 +1090,12 @@ impl AsRef<[u8]> for HandshakeResponse {
     }
 }
 
+impl Into<Vec<u8>> for HandshakeResponse {
+    fn into(self) -> Vec<u8> {
+        self.data
+    }
+}
+
 #[derive(Debug)]
 pub struct SslRequest {
     data: Vec<u8>,
@@ -1108,6 +1114,12 @@ impl SslRequest {
 impl AsRef<[u8]> for SslRequest {
     fn as_ref(&self) -> &[u8] {
         &self.data[..]
+    }
+}
+
+impl Into<Vec<u8>> for SslRequest {
+    fn into(self) -> Vec<u8> {
+        self.data
     }
 }
 
