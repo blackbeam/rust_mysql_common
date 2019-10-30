@@ -1118,16 +1118,13 @@ impl HandshakeResponse {
     ) -> HandshakeResponse {
         let plugin_auth = client_flags.contains(CapabilityFlags::CLIENT_PLUGIN_AUTH);
         let user_len = user.map(|user| user.len()).unwrap_or(0);
-        let database_len = db_name.map(|database| database.len()).unwrap_or(0);
+        let db_name = db_name.unwrap_or("");
         let scramble_len = scramble_buf
             .as_ref()
             .map(|scramble_buf| scramble_buf.as_ref().len())
             .unwrap_or(0);
 
-        let mut payload_len = 4 + 4 + 1 + 23 + user_len + 1 + 1 + scramble_len;
-        if database_len > 0 {
-            payload_len += database_len + 1;
-        }
+        let mut payload_len = 4 + 4 + 1 + 23 + user_len + 1 + 1 + scramble_len + db_name.len() + 1;
         if plugin_auth {
             payload_len += auth_plugin.as_bytes().len() + 1;
         }
@@ -1151,12 +1148,8 @@ impl HandshakeResponse {
             if let Some(ref scramble_buf) = *scramble_buf {
                 writer.write_all(scramble_buf.as_ref()).unwrap();
             }
-            if let Some(database) = db_name.as_ref() {
-                if database_len > 0 {
-                    writer.write_all(database.as_bytes()).unwrap();
-                    writer.write_u8(0).unwrap();
-                }
-            }
+            writer.write_all(db_name.as_bytes()).unwrap();
+            writer.write_u8(0).unwrap();
             if plugin_auth {
                 writer.write_all(auth_plugin.as_bytes()).unwrap();
                 writer.write_u8(0).unwrap();
