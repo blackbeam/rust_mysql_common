@@ -1057,10 +1057,8 @@ impl HandshakeResponse {
         data.push(0);
         data.push(scramble.len() as u8);
         data.extend_from_slice(scramble);
-        if database.len() > 0 {
-            data.extend_from_slice(database.as_bytes());
-            data.push(0);
-        }
+        data.extend_from_slice(database.as_bytes());
+        data.push(0);
         if client_flags.contains(CapabilityFlags::CLIENT_PLUGIN_AUTH) {
             data.extend_from_slice(auth_plugin.as_bytes());
             data.push(0);
