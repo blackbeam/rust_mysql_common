@@ -19,7 +19,7 @@ base64 = "0.11"
 bigdecimal = { version = "0.1", features = ["serde"] }
 bitflags = "1"
 byteorder = "1"
-bytes = "0.4"
+bytes = "0.5.2"
 chrono = "0.4"
 failure = "0.1.5"
 flate2 = { version = "1.0", default-features = false }

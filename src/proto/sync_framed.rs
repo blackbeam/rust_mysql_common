@@ -11,6 +11,7 @@ use bytes::{BufMut, BytesMut};
 use crate::constants::DEFAULT_MAX_ALLOWED_PACKET;
 use crate::proto::codec::error::PacketCodecError;
 use crate::proto::codec::PacketCodec;
+
 use std::io::{Error, ErrorKind::Other, Read, Write};
 
 /// Synchronous framed stream for MySql protocol.
@@ -123,7 +124,10 @@ where
                     Some(item) => return Some(item),
                     None => unsafe {
                         self.in_buf.reserve(1);
-                        match self.stream.read(self.in_buf.bytes_mut()) {
+                        match self
+                            .stream
+                            .read(super::codec::transmute_buf(self.in_buf.bytes_mut()))
+                        {
                             Ok(0) => self.eof = true,
                             Ok(x) => {
                                 self.in_buf.advance_mut(x);
