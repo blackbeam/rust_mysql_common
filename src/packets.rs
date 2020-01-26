@@ -40,7 +40,7 @@ lazy_static! {
 }
 
 /// Represents MySql Column (column packet).
-#[derive(Clone, Eq, PartialEq, Debug)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct Column {
     payload: Vec<u8>,
     schema: (usize, usize),
@@ -213,7 +213,7 @@ impl<'a> SessionStateChange<'a> {
 }
 
 /// Represents change in session state (part of MySql's Ok packet).
-#[derive(Clone, Eq, PartialEq, Debug)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct SessionStateInfo<'a> {
     data_type: SessionStateType,
     data: Cow<'a, [u8]>,
@@ -270,7 +270,7 @@ impl<'a> SessionStateInfo<'a> {
 }
 
 /// Represents MySql's Ok packet.
-#[derive(Clone, Eq, PartialEq, Debug)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct OkPacket<'a> {
     affected_rows: u64,
     last_insert_id: Option<u64>,
@@ -409,7 +409,7 @@ impl<'a> OkPacket<'a> {
 }
 
 /// Progress report information (may be in an error packet of MariaDB server).
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct ProgressReport<'a> {
     stage: u8,
     max_stage: u8,
@@ -483,7 +483,7 @@ impl<'a> fmt::Display for ProgressReport<'a> {
 /// MySql error packet.
 ///
 /// May hold an error or a progress report.
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ErrPacket<'a> {
     /// (<error code>, <sql state>, <error message>)
     Error(u16, [u8; 5], Cow<'a, [u8]>),
@@ -631,6 +631,7 @@ impl<'a> fmt::Display for ErrPacket<'a> {
 }
 
 /// Represents MySql's local infile packet.
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct LocalInfilePacket<'a> {
     file_name: Cow<'a, [u8]>,
 }
@@ -732,7 +733,7 @@ impl<'a> AuthPlugin<'a> {
 }
 
 /// Extra auth-data beyond the initial challenge.
-#[derive(Debug)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct AuthMoreData<'a> {
     data: Cow<'a, [u8]>,
 }
@@ -770,7 +771,7 @@ pub fn parse_auth_more_data(payload: &[u8]) -> io::Result<AuthMoreData<'_>> {
 ///
 /// If both server and client support `CLIENT_PLUGIN_AUTH` capability, server can send this packet
 /// to ask client to use another authentication method.
-#[derive(Debug)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct AuthSwitchRequest<'a> {
     auth_plugin: AuthPlugin<'a>,
     plugin_data: Cow<'a, [u8]>,
@@ -829,7 +830,7 @@ pub fn parse_auth_switch_request(payload: &[u8]) -> io::Result<AuthSwitchRequest
 }
 
 /// Represents MySql's initial handshake packet.
-#[derive(Debug)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct HandshakePacket<'a> {
     protocol_version: u8,
     server_version: Cow<'a, [u8]>,
@@ -1024,7 +1025,7 @@ impl<'a> HandshakePacket<'a> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct HandshakeResponse {
     data: Vec<u8>,
 }
@@ -1094,7 +1095,7 @@ impl Into<Vec<u8>> for HandshakeResponse {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct SslRequest {
     data: Vec<u8>,
 }
@@ -1122,6 +1123,7 @@ impl Into<Vec<u8>> for SslRequest {
 }
 
 /// Represents MySql's statement packet.
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct StmtPacket {
     statement_id: u32,
     num_columns: u16,
@@ -1248,6 +1250,7 @@ impl<T, U: AsRef<[u8]>> AsRef<[u8]> for NullBitmap<T, U> {
     }
 }
 
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct ComStmtExecuteRequestBuilder {
     body: Vec<u8>,
     bitmap_len: usize,
@@ -1360,6 +1363,7 @@ impl ComStmtExecuteRequestBuilder {
     }
 }
 
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct ComStmtSendLongData {
     body: Vec<u8>,
 }
@@ -1390,6 +1394,7 @@ impl Into<Vec<u8>> for ComStmtSendLongData {
     }
 }
 
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct ComStmtClose {
     body: Vec<u8>,
 }

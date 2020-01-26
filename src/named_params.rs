@@ -9,7 +9,7 @@
 use std::borrow::Cow;
 
 /// Appears if a statement have both named and positional parameters.
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub struct MixedParamsError;
 
 enum ParserState {

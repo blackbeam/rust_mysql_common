@@ -64,7 +64,7 @@ impl<T: DeserializeOwned> FromValue for Deserialized<T> {
 }
 
 /// Intermediate result of a Value-to-Json conversion.
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct JsonIr {
     bytes: Vec<u8>,
     output: Json,

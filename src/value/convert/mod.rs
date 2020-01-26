@@ -40,7 +40,7 @@ lazy_static! {
 }
 
 /// `FromValue` conversion error.
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct FromValueError(pub Value);
 
 impl fmt::Display for FromValueError {
@@ -194,7 +194,7 @@ macro_rules! impl_from_value_num {
 }
 
 /// Intermediate result of a Value-to-Option<T> conversion.
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct OptionIr<T> {
     value: Option<Value>,
     ir: Option<T>,
@@ -270,7 +270,7 @@ impl FromValue for Value {
 }
 
 /// Intermediate result of a Value-to-String conversion.
-#[derive(Debug)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct StringIr {
     bytes: Vec<u8>,
 }
@@ -294,7 +294,7 @@ impl ConvIr<String> for StringIr {
 }
 
 /// Intermediate result of a Value-to-Integer conversion.
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ParseIr<T> {
     value: Value,
     output: T,
@@ -458,7 +458,7 @@ impl ConvIr<bool> for ParseIr<bool> {
 }
 
 /// Intermediate result of a Value-to-Vec<u8> conversion.
-#[derive(Debug)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct BytesIr {
     bytes: Vec<u8>,
 }
@@ -1141,7 +1141,7 @@ impl From<Uuid> for Value {
 }
 
 /// Intermediate result of a Value-to-Uuid conversion.
-#[derive(Debug)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct UuidIr {
     val: Uuid,
     bytes: Vec<u8>,

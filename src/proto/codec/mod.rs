@@ -468,7 +468,7 @@ impl Default for PacketCodecInner {
 }
 
 /// Codec for plain MySql protocol.
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Eq, PartialEq, Default)]
 struct PlainPacketCodec {
     /// Chunk sequence id.
     pub seq_id: u8,

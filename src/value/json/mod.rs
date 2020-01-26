@@ -37,7 +37,7 @@ pub struct Serialized<T>(pub T);
 #[derive(Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Debug, Hash)]
 pub struct Deserialized<T>(pub T);
 
-#[derive(Debug)]
+#[derive(Clone, PartialEq, PartialOrd, Eq, Ord, Debug, Hash)]
 pub struct DeserializedIr<T> {
     bytes: Vec<u8>,
     output: Deserialized<T>,

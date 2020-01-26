@@ -14,7 +14,7 @@ use std::error::Error;
 use std::fmt;
 
 /// `FromRow` conversion error.
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct FromRowError(pub Row);
 
 impl fmt::Display for FromRowError {

@@ -33,7 +33,7 @@ impl Error for MissingNamedParameterError {
 }
 
 /// Representations of parameters of a prepared statement.
-#[derive(PartialEq, Clone, Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Params {
     Empty,
     Named(HashMap<String, Value, BuildHasherDefault<XxHash>>),
