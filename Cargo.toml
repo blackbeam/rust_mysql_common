@@ -32,7 +32,7 @@ regex = "1"
 rust_decimal = "1.0"
 sha1 = "0.6"
 sha2 = "0.8"
-time = "0.1"
+time = { version = "0.2", default-features = false, features = ["std"] }
 twox-hash = "1"
 uuid = "0.8"
 serde = "1"
