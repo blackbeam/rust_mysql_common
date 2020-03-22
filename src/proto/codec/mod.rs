@@ -555,9 +555,12 @@ impl CompPacketCodec {
         self.plain_codec.reset_seq_id();
     }
 
-    /// Overwrites plain sequence id with compressed sequence id.
+    /// Overwrites plain sequence id with compressed sequence id
+    /// if on compressed packet boundary.
     fn sync_seq_id(&mut self) {
-        self.plain_codec.seq_id = self.comp_seq_id;
+        if self.in_buf.is_empty() {
+            self.plain_codec.seq_id = self.comp_seq_id;
+        }
     }
 
     /// Will try to decode packet from `src` into `dst`.
