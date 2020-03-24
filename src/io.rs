@@ -68,7 +68,11 @@ pub trait WriteMysqlExt: WriteBytesExt {
                 self.write_u64::<LE>(x)?;
                 Ok(8)
             }
-            Value::Float(x) => {
+            Value::F32(x) => {
+                self.write_f32::<LE>(x)?;
+                Ok(8)
+            }
+            Value::F64(x) => {
                 self.write_f64::<LE>(x)?;
                 Ok(8)
             }

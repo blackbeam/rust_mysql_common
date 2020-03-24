@@ -361,14 +361,10 @@ impl ConvIr<u64> for ParseIr<u64> {
 impl ConvIr<f32> for ParseIr<f32> {
     fn new(v: Value) -> Result<ParseIr<f32>, FromValueError> {
         match v {
-            Value::Float(x)
-                if x >= f64::from(::std::f32::MIN) && x <= f64::from(::std::f32::MAX) =>
-            {
-                Ok(ParseIr {
-                    value: Value::Float(x),
-                    output: x as f32,
-                })
-            }
+            Value::F32(x) => Ok(ParseIr {
+                value: Value::F32(x),
+                output: x,
+            }),
             Value::Bytes(bytes) => {
                 let val = parse(&*bytes).ok();
                 match val {
@@ -393,8 +389,8 @@ impl ConvIr<f32> for ParseIr<f32> {
 impl ConvIr<f64> for ParseIr<f64> {
     fn new(v: Value) -> Result<ParseIr<f64>, FromValueError> {
         match v {
-            Value::Float(x) => Ok(ParseIr {
-                value: Value::Float(x),
+            Value::F64(x) => Ok(ParseIr {
+                value: Value::F64(x),
                 output: x,
             }),
             Value::Bytes(bytes) => {
@@ -955,13 +951,13 @@ impl From<u128> for Value {
 
 impl From<f32> for Value {
     fn from(x: f32) -> Value {
-        Value::Float(x.into())
+        Value::F32(x.into())
     }
 }
 
 impl From<f64> for Value {
     fn from(x: f64) -> Value {
-        Value::Float(x)
+        Value::F64(x)
     }
 }
 
@@ -1317,7 +1313,7 @@ mod tests {
 
         #[test]
         fn f32_roundtrip(n: f32) {
-            let val = Value::Float(n as f64);
+            let val = Value::F32(n);
             let val_bytes = Value::Bytes(n.to_string().into());
             assert_eq!(Value::from(from_value::<f32>(val.clone())), val);
             assert_eq!(Value::from(from_value::<f32>(val_bytes.clone())), val);
@@ -1325,7 +1321,7 @@ mod tests {
 
         #[test]
         fn f64_roundtrip(n: f64) {
-            let val = Value::Float(n);
+            let val = Value::F64(n);
             let val_bytes = Value::Bytes(n.to_string().into());
             assert_eq!(Value::from(from_value::<f64>(val.clone())), val);
             assert_eq!(Value::from(from_value::<f64>(val_bytes.clone())), val);
