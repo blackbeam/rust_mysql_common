@@ -361,8 +361,8 @@ impl ConvIr<u64> for ParseIr<u64> {
 impl ConvIr<f32> for ParseIr<f32> {
     fn new(v: Value) -> Result<ParseIr<f32>, FromValueError> {
         match v {
-            Value::F32(x) => Ok(ParseIr {
-                value: Value::F32(x),
+            Value::Float(x) => Ok(ParseIr {
+                value: Value::Float(x),
                 output: x,
             }),
             Value::Bytes(bytes) => {
@@ -389,8 +389,8 @@ impl ConvIr<f32> for ParseIr<f32> {
 impl ConvIr<f64> for ParseIr<f64> {
     fn new(v: Value) -> Result<ParseIr<f64>, FromValueError> {
         match v {
-            Value::F64(x) => Ok(ParseIr {
-                value: Value::F64(x),
+            Value::Double(x) => Ok(ParseIr {
+                value: Value::Double(x),
                 output: x,
             }),
             Value::Bytes(bytes) => {
@@ -951,13 +951,13 @@ impl From<u128> for Value {
 
 impl From<f32> for Value {
     fn from(x: f32) -> Value {
-        Value::F32(x.into())
+        Value::Float(x.into())
     }
 }
 
 impl From<f64> for Value {
     fn from(x: f64) -> Value {
-        Value::F64(x)
+        Value::Double(x)
     }
 }
 
@@ -1313,7 +1313,7 @@ mod tests {
 
         #[test]
         fn f32_roundtrip(n: f32) {
-            let val = Value::F32(n);
+            let val = Value::Float(n);
             let val_bytes = Value::Bytes(n.to_string().into());
             assert_eq!(Value::from(from_value::<f32>(val.clone())), val);
             assert_eq!(Value::from(from_value::<f32>(val_bytes.clone())), val);
@@ -1321,7 +1321,7 @@ mod tests {
 
         #[test]
         fn f64_roundtrip(n: f64) {
-            let val = Value::F64(n);
+            let val = Value::Double(n);
             let val_bytes = Value::Bytes(n.to_string().into());
             assert_eq!(Value::from(from_value::<f64>(val.clone())), val);
             assert_eq!(Value::from(from_value::<f64>(val_bytes.clone())), val);

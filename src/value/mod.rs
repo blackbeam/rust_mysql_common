@@ -51,8 +51,8 @@ pub enum Value {
     Bytes(Vec<u8>),
     Int(i64),
     UInt(u64),
-    F32(f32),
-    F64(f64),
+    Float(f32),
+    Double(f64),
     /// year, month, day, hour, minutes, seconds, micro seconds
     Date(u16, u8, u8, u8, u8, u8, u32),
     /// is negative, days, hours, minutes, seconds, micro seconds
@@ -134,8 +134,8 @@ impl Value {
             Value::Bytes(x) => lenenc_int_len(x.len()) + x.len(),
             Value::Int(_) => 8,
             Value::UInt(_) => 8,
-            Value::F32(_) => 4,
-            Value::F64(_) => 8,
+            Value::Float(_) => 4,
+            Value::Double(_) => 8,
             Value::Date(0u16, 0u8, 0u8, 0u8, 0u8, 0u8, 0u32) => 1,
             Value::Date(_, _, _, 0u8, 0u8, 0u8, 0u32) => 5,
             Value::Date(_, _, _, _, _, _, 0u32) => 8,
@@ -151,8 +151,8 @@ impl Value {
             Value::NULL => "NULL".into(),
             Value::Int(x) => format!("{}", x),
             Value::UInt(x) => format!("{}", x),
-            Value::F32(x) => format!("{}", x),
-            Value::F64(x) => format!("{}", x),
+            Value::Float(x) => format!("{}", x),
+            Value::Double(x) => format!("{}", x),
             Value::Date(y, m, d, 0, 0, 0, 0) => format!("'{:04}-{:02}-{:02}'", y, m, d),
             Value::Date(y, m, d, h, i, s, 0) => {
                 format!("'{:04}-{:02}-{:02} {:02}:{:02}:{:02}'", y, m, d, h, i, s)
@@ -266,7 +266,7 @@ impl Value {
                 }
             }
             ColumnType::MYSQL_TYPE_FLOAT => Ok(Float(input.read_f32::<LE>()?.into())),
-            ColumnType::MYSQL_TYPE_DOUBLE => Ok(Float(input.read_f64::<LE>()?)),
+            ColumnType::MYSQL_TYPE_DOUBLE => Ok(Double(input.read_f64::<LE>()?)),
             ColumnType::MYSQL_TYPE_TIMESTAMP
             | ColumnType::MYSQL_TYPE_DATE
             | ColumnType::MYSQL_TYPE_DATETIME => {
@@ -367,8 +367,8 @@ impl fmt::Debug for Value {
             }
             Value::Int(ref val) => f.debug_tuple("Int").field(val).finish(),
             Value::UInt(ref val) => f.debug_tuple("UInt").field(val).finish(),
-            Value::F32(ref val) => f.debug_tuple("F32").field(val).finish(),
-            Value::F64(ref val) => f.debug_tuple("F64").field(val).finish(),
+            Value::Float(ref val) => f.debug_tuple("Float").field(val).finish(),
+            Value::Double(ref val) => f.debug_tuple("Double").field(val).finish(),
             Value::Date(y, m, d, 0, 0, 0, 0) => {
                 let format = format!("'{:04}-{:02}-{:02}'", y, m, d);
                 f.debug_tuple("Date").field(&format).finish()
@@ -433,8 +433,8 @@ mod test {
                 Value::Int(0xF0),
                 Value::Int(0xF000),
                 Value::Int(0xF0000000),
-                Value::F32(std::f32::MAX),
-                Value::F64(std::f64::MAX),
+                Value::Float(std::f32::MAX),
+                Value::Double(std::f64::MAX),
                 Value::NULL,
                 Value::Date(2019, 11, 27, 12, 30, 0, 123456),
                 Value::UInt(0xF000000000000000),
@@ -484,8 +484,8 @@ mod test {
                 Value::Int(0xF0),
                 Value::Int(0xF000),
                 Value::Int(0xF0000000),
-                Value::F32(std::f32::MAX),
-                Value::F64(std::f64::MAX),
+                Value::Float(std::f32::MAX),
+                Value::Double(std::f64::MAX),
                 Value::NULL,
                 Value::Date(2019, 11, 27, 12, 30, 0, 123456),
                 Value::UInt(0xF000000000000000),

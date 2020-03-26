@@ -23,12 +23,12 @@ impl ConvIr<BigDecimal> for ParseIr<BigDecimal> {
                 value: Value::UInt(x),
                 output: x.into(),
             }),
-            Value::F32(x) => Ok(ParseIr {
-                value: Value::F32(x),
+            Value::Float(x) => Ok(ParseIr {
+                value: Value::Float(x),
                 output: x.into(),
             }),
-            Value::F64(x) => Ok(ParseIr {
-                value: Value::F64(x),
+            Value::Double(x) => Ok(ParseIr {
+                value: Value::Double(x),
                 output: x.into(),
             }),
             Value::Bytes(bytes) => match BigDecimal::parse_bytes(&*bytes, 10) {

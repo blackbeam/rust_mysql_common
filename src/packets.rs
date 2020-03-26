@@ -1323,10 +1323,10 @@ impl ComStmtExecuteRequestBuilder {
                 self.set_type(param_index, ColumnType::MYSQL_TYPE_LONGLONG);
                 self.set_unsigned(param_index);
             }
-            Value::F64(_) => {
+            Value::Double(_) => {
                 self.set_type(param_index, ColumnType::MYSQL_TYPE_DOUBLE);
             }
-            Value::F32(_) => {
+            Value::Float(_) => {
                 self.set_type(param_index, ColumnType::MYSQL_TYPE_FLOAT);
             }
             Value::Date(..) => {
