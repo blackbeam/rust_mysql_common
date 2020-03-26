@@ -393,6 +393,13 @@ impl ConvIr<f64> for ParseIr<f64> {
                 value: Value::Double(x),
                 output: x,
             }),
+            Value::Float(x) => {
+                let double = x.into();
+                Ok(ParseIr {
+                    value: Value::Double(double),
+                    output: double,
+                })
+            }
             Value::Bytes(bytes) => {
                 let val = parse(&*bytes).ok();
                 match val {
@@ -1386,5 +1393,32 @@ mod tests {
         bencher.iter(|| {
             parse_mysql_time_string(text.as_bytes()).unwrap();
         });
+    }
+
+    #[test]
+    fn value_float_read_conversions_work() {
+        let original_f32 = 3.14;
+        let float_value = Value::Float(original_f32);
+
+        // Reading an f32 from a MySQL float works.
+        let converted_f32: f32 = f32::from_value_opt(float_value.clone()).unwrap();
+        assert_eq!(converted_f32, original_f32);
+
+        // Reading an f64 from a MySQL float also works (lossless cast).
+        let converted_f64: f64 = f64::from_value_opt(float_value.clone()).unwrap();
+        assert_eq!(converted_f64, original_f32 as f64);
+    }
+
+    #[test]
+    fn value_double_read_conversions_work() {
+        let original_f64 = 3.14159265359;
+        let double_value = Value::Double(original_f64);
+
+        // Reading an f64 from a MySQL double works.
+        let converted_f64: f64 = f64::from_value_opt(double_value.clone()).unwrap();
+        assert_eq!(converted_f64, original_f64);
+
+        // Reading an f32 from a MySQL double fails (precision loss).
+        assert!(f32::from_value_opt(double_value).is_err());
     }
 }
