@@ -265,7 +265,7 @@ impl Value {
                     Ok(Int(input.read_i64::<LE>()?))
                 }
             }
-            ColumnType::MYSQL_TYPE_FLOAT => Ok(Float(input.read_f32::<LE>()?.into())),
+            ColumnType::MYSQL_TYPE_FLOAT => Ok(Float(input.read_f32::<LE>()?)),
             ColumnType::MYSQL_TYPE_DOUBLE => Ok(Double(input.read_f64::<LE>()?)),
             ColumnType::MYSQL_TYPE_TIMESTAMP
             | ColumnType::MYSQL_TYPE_DATE
