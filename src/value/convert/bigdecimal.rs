@@ -27,6 +27,10 @@ impl ConvIr<BigDecimal> for ParseIr<BigDecimal> {
                 value: Value::Float(x),
                 output: x.into(),
             }),
+            Value::Double(x) => Ok(ParseIr {
+                value: Value::Double(x),
+                output: x.into(),
+            }),
             Value::Bytes(bytes) => match BigDecimal::parse_bytes(&*bytes, 10) {
                 Some(x) => Ok(ParseIr {
                     value: Value::Bytes(bytes),
