@@ -269,6 +269,18 @@ impl<'a> SessionStateInfo<'a> {
     }
 }
 
+/// OK packet kind (see _OK packet identifier_ section of [WL#7766][1]).
+///
+/// [1]: https://dev.mysql.com/worklog/task/?id=7766
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
+pub enum OkPacketKind {
+    /// This packet terminates a result set (text or binary).
+    ResultSetTerminator,
+    /// Ok packet that is not a result set terminator.
+    Other,
+}
+
 /// Represents MySql's Ok packet.
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct OkPacket<'a> {
@@ -281,16 +293,24 @@ pub struct OkPacket<'a> {
 }
 
 /// Parses Ok packet from `payload` assuming passed client-server `capabilities`.
-pub fn parse_ok_packet(payload: &[u8], capabilities: CapabilityFlags) -> io::Result<OkPacket<'_>> {
-    OkPacket::parse(payload, capabilities)
+pub fn parse_ok_packet(
+    payload: &[u8],
+    capabilities: CapabilityFlags,
+    kind: OkPacketKind,
+) -> io::Result<OkPacket<'_>> {
+    OkPacket::parse(payload, capabilities, kind)
 }
 
 impl<'a> OkPacket<'a> {
     /// Parses Ok packet from `payload` assuming passed client-server `capabilities`.
-    fn parse(mut payload: &[u8], capabilities: CapabilityFlags) -> io::Result<OkPacket> {
+    fn parse(
+        mut payload: &[u8],
+        capabilities: CapabilityFlags,
+        kind: OkPacketKind,
+    ) -> io::Result<OkPacket> {
         let header = payload.read_u8()?;
         let (affected_rows, last_insert_id, status_flags, warnings, info, session_state_info) =
-            if header == 0x00 {
+            if kind == OkPacketKind::Other && header == 0x00 {
                 let affected_rows = payload.read_lenenc_int()?;
                 let last_insert_id = payload.read_lenenc_int()?;
                 // We assume that CLIENT_PROTOCOL_41 was set
@@ -318,7 +338,10 @@ impl<'a> OkPacket<'a> {
                     info,
                     session_state_info,
                 )
-            } else if header == 0xFE && payload.len() < 8 {
+            } else if kind == OkPacketKind::ResultSetTerminator
+                && header == 0xFE
+                && payload.len() < 8
+            {
                 // We assume that CLIENT_PROTOCOL_41 was set
                 let warnings = payload.read_u16::<LE>()?;
                 let status_flags = StatusFlags::from_bits_truncate(payload.read_u16::<LE>()?);
@@ -1429,7 +1452,7 @@ mod test {
     use super::{
         column_from_payload, parse_auth_more_data, parse_auth_switch_request, parse_err_packet,
         parse_handshake_packet, parse_local_infile_packet, parse_ok_packet, parse_stmt_packet,
-        SessionStateChange,
+        OkPacketKind, SessionStateChange,
     };
     use crate::constants::{
         CapabilityFlags, ColumnFlags, ColumnType, StatusFlags, UTF8_GENERAL_CI,
@@ -1587,7 +1610,16 @@ mod test {
         const SESS_STATE_TRACK_OK: &[u8] = b"\x00\x00\x00\x02\x40\x00\x00\x00\x04\x02\x02\x01\x31";
         const EOF: &[u8] = b"\xfe\x00\x00\x02\x00";
 
-        let ok_packet = parse_ok_packet(PLAIN_OK, CapabilityFlags::empty()).unwrap();
+        // packet starting with 0x00 is not an ok packet if it terminates a result set
+        parse_ok_packet(
+            PLAIN_OK,
+            CapabilityFlags::empty(),
+            OkPacketKind::ResultSetTerminator,
+        )
+        .unwrap_err();
+
+        let ok_packet =
+            parse_ok_packet(PLAIN_OK, CapabilityFlags::empty(), OkPacketKind::Other).unwrap();
         assert_eq!(ok_packet.affected_rows(), 0);
         assert_eq!(ok_packet.last_insert_id(), None);
         assert_eq!(
@@ -1598,8 +1630,12 @@ mod test {
         assert_eq!(ok_packet.info_ref(), None);
         assert_eq!(ok_packet.session_state_info(), None);
 
-        let ok_packet =
-            parse_ok_packet(SESS_STATE_SYS_VAR_OK, CapabilityFlags::CLIENT_SESSION_TRACK).unwrap();
+        let ok_packet = parse_ok_packet(
+            SESS_STATE_SYS_VAR_OK,
+            CapabilityFlags::CLIENT_SESSION_TRACK,
+            OkPacketKind::Other,
+        )
+        .unwrap();
         assert_eq!(ok_packet.affected_rows(), 0);
         assert_eq!(ok_packet.last_insert_id(), None);
         assert_eq!(
@@ -1614,8 +1650,12 @@ mod test {
             SessionStateChange::SystemVariable((&b"autocommit"[..]).into(), (&b"OFF"[..]).into())
         );
 
-        let ok_packet =
-            parse_ok_packet(SESS_STATE_SCHEMA_OK, CapabilityFlags::CLIENT_SESSION_TRACK).unwrap();
+        let ok_packet = parse_ok_packet(
+            SESS_STATE_SCHEMA_OK,
+            CapabilityFlags::CLIENT_SESSION_TRACK,
+            OkPacketKind::Other,
+        )
+        .unwrap();
         assert_eq!(ok_packet.affected_rows(), 0);
         assert_eq!(ok_packet.last_insert_id(), None);
         assert_eq!(
@@ -1630,8 +1670,12 @@ mod test {
             SessionStateChange::Schema((&b"test"[..]).into())
         );
 
-        let ok_packet =
-            parse_ok_packet(SESS_STATE_TRACK_OK, CapabilityFlags::CLIENT_SESSION_TRACK).unwrap();
+        let ok_packet = parse_ok_packet(
+            SESS_STATE_TRACK_OK,
+            CapabilityFlags::CLIENT_SESSION_TRACK,
+            OkPacketKind::Other,
+        )
+        .unwrap();
         assert_eq!(ok_packet.affected_rows(), 0);
         assert_eq!(ok_packet.last_insert_id(), None);
         assert_eq!(
@@ -1646,7 +1690,12 @@ mod test {
             SessionStateChange::IsTracked(true)
         );
 
-        let ok_packet = parse_ok_packet(EOF, CapabilityFlags::CLIENT_SESSION_TRACK).unwrap();
+        let ok_packet = parse_ok_packet(
+            EOF,
+            CapabilityFlags::CLIENT_SESSION_TRACK,
+            OkPacketKind::ResultSetTerminator,
+        )
+        .unwrap();
         assert_eq!(ok_packet.affected_rows(), 0);
         assert_eq!(ok_packet.last_insert_id(), None);
         assert_eq!(
