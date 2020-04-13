@@ -615,6 +615,9 @@ impl CompPacketCodec {
             dst,
         )?;
 
+        /* Sync packet number if using compression (see net_serv.cc) */
+        self.plain_codec.seq_id = self.comp_seq_id;
+
         Ok(())
     }
 }
