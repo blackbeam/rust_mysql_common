@@ -6,12 +6,14 @@
 // option. All files in the project carrying such notice may not be copied,
 // modified, or distributed except according to those terms.
 
-use crate::packets::Column;
-use crate::value::convert::{from_value, from_value_opt, FromValue, FromValueError};
-use crate::value::Value;
-use std::fmt;
-use std::ops::Index;
-use std::sync::Arc;
+use crate::{
+    packets::Column,
+    value::{
+        convert::{from_value, from_value_opt, FromValue, FromValueError},
+        Value,
+    },
+};
+use std::{fmt, ops::Index, sync::Arc};
 
 pub mod convert;
 

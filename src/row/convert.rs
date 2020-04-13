@@ -6,12 +6,12 @@
 // option. All files in the project carrying such notice may not be copied,
 // modified, or distributed except according to those terms.
 
-use crate::row::Row;
-use crate::value::convert::{ConvIr, FromValue, FromValueError};
+use crate::{
+    row::Row,
+    value::convert::{ConvIr, FromValue, FromValueError},
+};
 
-use std::any::type_name;
-use std::error::Error;
-use std::fmt;
+use std::{any::type_name, error::Error, fmt};
 
 /// `FromRow` conversion error.
 #[derive(Debug, Clone, PartialEq)]
@@ -766,11 +766,14 @@ where
 #[cfg(feature = "nightly")]
 #[bench]
 fn bench_from_row(bencher: &mut test::Bencher) {
-    use crate::constants::ColumnType;
-    use crate::io::WriteMysqlExt;
-    use crate::packets::column_from_payload;
-    use crate::packets::Column;
-    use crate::value::Value;
+    use std::sync::Arc;
+
+    use crate::{
+        constants::ColumnType,
+        io::WriteMysqlExt,
+        packets::{column_from_payload, Column},
+        value::Value,
+    };
 
     fn col(name: &str, ty: ColumnType) -> Column {
         let mut payload = b"\x00def".to_vec();
@@ -790,12 +793,15 @@ fn bench_from_row(bencher: &mut test::Bencher) {
             Some(Value::Int(0xF000)),
             Some(Value::Int(0xF0000000)),
         ],
-        columns: std::sync::Arc::new(vec![
-            col("foo", ColumnType::MYSQL_TYPE_STRING),
-            col("foo", ColumnType::MYSQL_TYPE_TINY),
-            col("foo", ColumnType::MYSQL_TYPE_SHORT),
-            col("foo", ColumnType::MYSQL_TYPE_LONG),
-        ]),
+        columns: Arc::from(
+            vec![
+                col("foo", ColumnType::MYSQL_TYPE_STRING),
+                col("foo", ColumnType::MYSQL_TYPE_TINY),
+                col("foo", ColumnType::MYSQL_TYPE_SHORT),
+                col("foo", ColumnType::MYSQL_TYPE_LONG),
+            ]
+            .into_boxed_slice(),
+        ),
     };
 
     bencher.iter(|| from_row::<(String, u8, u16, u32)>(row.clone()));

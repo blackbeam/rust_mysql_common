@@ -13,11 +13,7 @@ use regex::bytes::Regex;
 use time::{self, at, strptime, Timespec, Tm};
 use uuid::Uuid;
 
-use std::any::type_name;
-use std::error::Error;
-use std::fmt;
-use std::str::from_utf8;
-use std::time::Duration;
+use std::{any::type_name, error::Error, fmt, str::from_utf8, time::Duration};
 
 use crate::value::Value;
 

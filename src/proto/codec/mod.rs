@@ -14,10 +14,12 @@ use byteorder::{ByteOrder, LittleEndian};
 use bytes::{Buf, BufMut, BytesMut};
 use flate2::read::{ZlibDecoder, ZlibEncoder};
 
-use std::cmp::{max, min};
-use std::io::Read;
-use std::mem;
-use std::num::NonZeroUsize;
+use std::{
+    cmp::{max, min},
+    io::Read,
+    mem,
+    num::NonZeroUsize,
+};
 
 use self::error::PacketCodecError;
 use crate::constants::{DEFAULT_MAX_ALLOWED_PACKET, MAX_PAYLOAD_LEN, MIN_COMPRESS_LENGTH};

@@ -8,15 +8,15 @@
 
 use byteorder::{LittleEndian as LE, ReadBytesExt};
 
-use std::fmt;
-use std::io;
-use std::str::from_utf8;
+use std::{fmt, io, str::from_utf8};
 
-use crate::constants::{ColumnFlags, ColumnType};
-use crate::io::ReadMysqlExt;
-use crate::misc::lenenc_int_len;
-use crate::packets::{Column, NullBitmap};
-use crate::value::Value::*;
+use crate::{
+    constants::{ColumnFlags, ColumnType},
+    io::ReadMysqlExt,
+    misc::lenenc_int_len,
+    packets::{Column, NullBitmap},
+    value::Value::*,
+};
 
 pub mod convert;
 pub mod json;
@@ -420,11 +420,12 @@ mod test {
 
     #[cfg(feature = "nightly")]
     mod benches {
-        use crate::constants::ColumnType;
-        use crate::io::WriteMysqlExt;
-        use crate::packets::{column_from_payload, Column};
-        use crate::packets::{ComStmtExecuteRequestBuilder, NullBitmap};
-        use crate::value::{ClientSide, Value};
+        use crate::{
+            constants::ColumnType,
+            io::WriteMysqlExt,
+            packets::{column_from_payload, Column, ComStmtExecuteRequestBuilder, NullBitmap},
+            value::{ClientSide, Value},
+        };
 
         #[bench]
         fn bench_build_stmt_execute_request(bencher: &mut test::Bencher) {

@@ -8,9 +8,10 @@
 
 use bytes::{BufMut, BytesMut};
 
-use crate::constants::DEFAULT_MAX_ALLOWED_PACKET;
-use crate::proto::codec::error::PacketCodecError;
-use crate::proto::codec::PacketCodec;
+use crate::{
+    constants::DEFAULT_MAX_ALLOWED_PACKET,
+    proto::codec::{error::PacketCodecError, PacketCodec},
+};
 
 use std::io::{Error, ErrorKind::Other, Read, Write};
 
@@ -144,8 +145,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::constants::MAX_PAYLOAD_LEN;
-    use crate::proto::sync_framed::MySyncFramed;
+    use crate::{constants::MAX_PAYLOAD_LEN, proto::sync_framed::MySyncFramed};
 
     #[test]
     fn iter_packets() {

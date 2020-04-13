@@ -10,21 +10,17 @@ use byteorder::{ByteOrder, LittleEndian as LE, ReadBytesExt, WriteBytesExt};
 use lexical::parse;
 use regex::bytes::Regex;
 
-use std::borrow::Cow;
-use std::cmp::max;
-use std::collections::HashMap;
-use std::fmt;
-use std::io;
-use std::marker::PhantomData;
-use std::ptr;
+use std::{borrow::Cow, cmp::max, collections::HashMap, fmt, io, marker::PhantomData, ptr};
 
-use crate::constants::{
-    CapabilityFlags, ColumnFlags, ColumnType, Command, SessionStateType, StatusFlags,
-    MAX_PAYLOAD_LEN, UTF8MB4_GENERAL_CI, UTF8_GENERAL_CI,
+use crate::{
+    constants::{
+        CapabilityFlags, ColumnFlags, ColumnType, Command, SessionStateType, StatusFlags,
+        MAX_PAYLOAD_LEN, UTF8MB4_GENERAL_CI, UTF8_GENERAL_CI,
+    },
+    io::{ReadMysqlExt, WriteMysqlExt},
+    misc::lenenc_str_len,
+    value::{ClientSide, SerializationSide, Value},
 };
-use crate::io::{ReadMysqlExt, WriteMysqlExt};
-use crate::misc::lenenc_str_len;
-use crate::value::{ClientSide, SerializationSide, Value};
 
 macro_rules! get_offset_and_len {
     ($buffer:expr, $slice:expr) => {{
@@ -1606,8 +1602,8 @@ mod test {
     fn should_parse_ok_packet() {
         const PLAIN_OK: &[u8] = b"\x00\x00\x00\x02\x00\x00\x00";
         const SESS_STATE_SYS_VAR_OK: &[u8] =
-            (b"\x00\x00\x00\x02\x40\x00\x00\x00\x11\x00\x0f\x0a\x61\
-        \x75\x74\x6f\x63\x6f\x6d\x6d\x69\x74\x03\x4f\x46\x46");
+            b"\x00\x00\x00\x02\x40\x00\x00\x00\x11\x00\x0f\x0a\x61\
+              \x75\x74\x6f\x63\x6f\x6d\x6d\x69\x74\x03\x4f\x46\x46";
         const SESS_STATE_SCHEMA_OK: &[u8] =
             b"\x00\x00\x00\x02\x40\x00\x00\x00\x07\x01\x05\x04\x74\x65\x73\x74";
         const SESS_STATE_TRACK_OK: &[u8] = b"\x00\x00\x00\x02\x40\x00\x00\x00\x04\x02\x02\x01\x31";

@@ -118,8 +118,7 @@ mod tests {
     use num_bigint::{BigInt, BigUint};
     use proptest::prelude::*;
 
-    use crate::value::convert::from_value;
-    use crate::value::Value;
+    use crate::value::{convert::from_value, Value};
 
     proptest! {
         #[test]

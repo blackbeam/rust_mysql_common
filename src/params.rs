@@ -6,15 +6,19 @@
 // option. All files in the project carrying such notice may not be copied,
 // modified, or distributed except according to those terms.
 
-use crate::value::convert::ToValue;
-use crate::value::Value;
-use std::collections::hash_map::Entry;
-use std::collections::hash_map::Entry::Occupied;
-use std::collections::HashMap;
-use std::error::Error;
-use std::fmt;
-use std::hash::BuildHasherDefault;
 use twox_hash::XxHash;
+
+use std::{
+    collections::{
+        hash_map::{Entry, Entry::Occupied},
+        HashMap,
+    },
+    error::Error,
+    fmt,
+    hash::BuildHasherDefault,
+};
+
+use crate::value::{convert::ToValue, Value};
 
 /// `FromValue` conversion error.
 #[derive(Debug, Eq, PartialEq, Clone)]

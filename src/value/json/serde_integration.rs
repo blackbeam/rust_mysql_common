@@ -7,10 +7,11 @@
 // modified, or distributed except according to those terms.
 
 use super::{Deserialized, DeserializedIr, Serialized};
-use crate::value::convert::{ConvIr, FromValue, FromValueError};
-use crate::value::Value;
-use serde::de::DeserializeOwned;
-use serde::Serialize;
+use crate::value::{
+    convert::{ConvIr, FromValue, FromValueError},
+    Value,
+};
+use serde::{de::DeserializeOwned, Serialize};
 use serde_json::{self, Value as Json};
 use std::str::{from_utf8, from_utf8_unchecked};
 
