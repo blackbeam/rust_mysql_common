@@ -269,27 +269,21 @@ impl FromValue for Value {
     }
 }
 
-/// Intermediate result of a Value-to-String conversion.
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub struct StringIr {
-    bytes: Vec<u8>,
-}
-
-impl ConvIr<String> for StringIr {
-    fn new(v: Value) -> Result<StringIr, FromValueError> {
+impl ConvIr<String> for Vec<u8> {
+    fn new(v: Value) -> Result<Vec<u8>, FromValueError> {
         match v {
             Value::Bytes(bytes) => match from_utf8(&*bytes) {
-                Ok(_) => Ok(StringIr { bytes }),
+                Ok(_) => Ok(bytes),
                 Err(_) => Err(FromValueError(Value::Bytes(bytes))),
             },
             v => Err(FromValueError(v)),
         }
     }
     fn commit(self) -> String {
-        unsafe { String::from_utf8_unchecked(self.bytes) }
+        unsafe { String::from_utf8_unchecked(self) }
     }
     fn rollback(self) -> Value {
-        Value::Bytes(self.bytes)
+        Value::Bytes(self)
     }
 }
 
@@ -460,24 +454,18 @@ impl ConvIr<bool> for ParseIr<bool> {
     }
 }
 
-/// Intermediate result of a Value-to-Vec<u8> conversion.
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub struct BytesIr {
-    bytes: Vec<u8>,
-}
-
-impl ConvIr<Vec<u8>> for BytesIr {
-    fn new(v: Value) -> Result<BytesIr, FromValueError> {
+impl ConvIr<Vec<u8>> for Vec<u8> {
+    fn new(v: Value) -> Result<Vec<u8>, FromValueError> {
         match v {
-            Value::Bytes(bytes) => Ok(BytesIr { bytes }),
+            Value::Bytes(bytes) => Ok(bytes),
             v => Err(FromValueError(v)),
         }
     }
     fn commit(self) -> Vec<u8> {
-        self.bytes
+        self
     }
     fn rollback(self) -> Value {
-        Value::Bytes(self.bytes)
+        Value::Bytes(self)
     }
 }
 
@@ -863,8 +851,8 @@ impl_from_value!(NaiveTime, ParseIr<NaiveTime>);
 impl_from_value!(Timespec, ParseIr<Timespec>);
 impl_from_value!(Duration, ParseIr<Duration>);
 impl_from_value!(time::Duration, ParseIr<time::Duration>);
-impl_from_value!(String, StringIr);
-impl_from_value!(Vec<u8>, BytesIr);
+impl_from_value!(String, Vec<u8>);
+impl_from_value!(Vec<u8>, Vec<u8>);
 impl_from_value!(bool, ParseIr<bool>);
 impl_from_value!(i64, ParseIr<i64>);
 impl_from_value!(u64, ParseIr<u64>);
@@ -1214,6 +1202,18 @@ mod tests {
     }
 
     proptest! {
+        #[test]
+        fn bytes_roundtrip(s: Vec<u8>) {
+            let val = Value::Bytes(s);
+            assert_eq!(Value::from(from_value::<Vec<u8>>(val.clone())), val);
+        }
+
+        #[test]
+        fn string_roundtrip(s: String) {
+            let val = Value::Bytes(s.as_bytes().to_vec());
+            assert_eq!(Value::from(from_value::<String>(val.clone())), val);
+        }
+
         #[test]
         fn parse_mysql_time_string_doesnt_crash(s in r"\PC*") {
             parse_mysql_time_string(s.as_bytes());
