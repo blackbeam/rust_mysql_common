@@ -10,7 +10,7 @@ use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 use lexical::parse;
 use num_traits::{FromPrimitive, ToPrimitive};
 use regex::bytes::Regex;
-use time::{Date, OffsetDateTime, ParseError, PrimitiveDateTime, Time, UtcOffset};
+use time::{Date, ParseError, PrimitiveDateTime, Time};
 use uuid::Uuid;
 
 use std::{any::type_name, error::Error, fmt, str::from_utf8, time::Duration};
@@ -462,41 +462,6 @@ impl ConvIr<Vec<u8>> for Vec<u8> {
     }
     fn rollback(self) -> Value {
         Value::Bytes(self)
-    }
-}
-
-impl ConvIr<OffsetDateTime> for ParseIr<OffsetDateTime> {
-    fn new(value: Value) -> Result<ParseIr<OffsetDateTime>, FromValueError> {
-        let local_utc_offset = UtcOffset::local_offset_at(OffsetDateTime::unix_epoch());
-
-        match value {
-            Value::Date(y, m, d, h, i, s, u) => Ok(ParseIr {
-                value: Value::Date(y, m, d, h, i, s, u),
-                output: match create_primitive_date_time(y, m, d, h, i, s, u) {
-                    Some(datetime) => datetime.assume_offset(local_utc_offset),
-                    None => return Err(FromValueError(value)),
-                },
-            }),
-            Value::Bytes(bytes) => {
-                let val = parse_mysql_datetime_string_with_time(&*bytes)
-                    .map(|dt: PrimitiveDateTime| dt.assume_offset(local_utc_offset));
-
-                match val {
-                    Ok(output) => Ok(ParseIr {
-                        value: Value::Bytes(bytes),
-                        output,
-                    }),
-                    Err(_) => Err(FromValueError(Value::Bytes(bytes))),
-                }
-            }
-            v => Err(FromValueError(v)),
-        }
-    }
-    fn commit(self) -> OffsetDateTime {
-        self.output
-    }
-    fn rollback(self) -> Value {
-        self.value
     }
 }
 
@@ -956,7 +921,6 @@ impl ConvIr<time::Duration> for ParseIr<time::Duration> {
 impl_from_value!(NaiveDateTime, ParseIr<NaiveDateTime>);
 impl_from_value!(NaiveDate, ParseIr<NaiveDate>);
 impl_from_value!(NaiveTime, ParseIr<NaiveTime>);
-impl_from_value!(OffsetDateTime, ParseIr<OffsetDateTime>);
 impl_from_value!(PrimitiveDateTime, ParseIr<PrimitiveDateTime>);
 impl_from_value!(Date, ParseIr<Date>);
 impl_from_value!(Time, ParseIr<Time>);
@@ -1133,21 +1097,6 @@ impl From<NaiveTime> for Value {
             x.minute() as u8,
             x.second() as u8,
             x.nanosecond() / 1000,
-        )
-    }
-}
-
-impl From<OffsetDateTime> for Value {
-    fn from(x: OffsetDateTime) -> Value {
-        let t = x.to_offset(UtcOffset::current_local_offset());
-        Value::Date(
-            t.year() as u16,
-            t.month(),
-            t.day(),
-            t.hour(),
-            t.minute(),
-            t.second(),
-            t.microsecond(),
         )
     }
 }
