@@ -10,7 +10,7 @@ use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 use lexical::parse;
 use num_traits::{FromPrimitive, ToPrimitive};
 use regex::bytes::Regex;
-use time::{self, at, strptime, Timespec, Tm};
+use time::{Date, ParseError, PrimitiveDateTime, Time};
 use uuid::Uuid;
 
 use std::{any::type_name, error::Error, fmt, str::from_utf8, time::Duration};
@@ -465,44 +465,53 @@ impl ConvIr<Vec<u8>> for Vec<u8> {
     }
 }
 
-impl ConvIr<Timespec> for ParseIr<Timespec> {
-    fn new(value: Value) -> Result<ParseIr<Timespec>, FromValueError> {
-        let tm_utcoff = at(Timespec::new(0, 0)).tm_utcoff;
+impl ConvIr<PrimitiveDateTime> for ParseIr<PrimitiveDateTime> {
+    fn new(value: Value) -> Result<ParseIr<PrimitiveDateTime>, FromValueError> {
         match value {
             Value::Date(y, m, d, h, i, s, u) => Ok(ParseIr {
                 value: Value::Date(y, m, d, h, i, s, u),
-                output: Tm {
-                    tm_year: i32::from(y) - 1_900,
-                    tm_mon: i32::from(m) - 1,
-                    tm_mday: d.into(),
-                    tm_hour: h.into(),
-                    tm_min: i.into(),
-                    tm_sec: s.into(),
-                    tm_nsec: u as i32 * 1_000,
-                    tm_utcoff,
-                    tm_wday: 0,
-                    tm_yday: 0,
-                    tm_isdst: -1,
-                }
-                .to_timespec(),
+                output: match create_primitive_date_time(y, m, d, h, i, s, u) {
+                    Some(datetime) => datetime,
+                    None => return Err(FromValueError(value)),
+                },
+            }),
+            Value::Bytes(bytes) => match parse_mysql_datetime_string_with_time(&*bytes) {
+                Ok(output) => Ok(ParseIr {
+                    value: Value::Bytes(bytes),
+                    output,
+                }),
+                Err(_) => Err(FromValueError(Value::Bytes(bytes))),
+            },
+            v => Err(FromValueError(v)),
+        }
+    }
+    fn commit(self) -> PrimitiveDateTime {
+        self.output
+    }
+    fn rollback(self) -> Value {
+        self.value
+    }
+}
+
+/// Converts a MySQL `DATE` value to a `time::Date`.
+impl ConvIr<Date> for ParseIr<Date> {
+    fn new(value: Value) -> Result<ParseIr<Date>, FromValueError> {
+        match value {
+            Value::Date(y, m, d, h, i, s, u) => Ok(ParseIr {
+                value: Value::Date(y, m, d, h, i, s, u),
+                output: match Date::try_from_ymd(y as i32, m, d) {
+                    Ok(date) => date,
+                    Err(_) => return Err(FromValueError(value)),
+                },
             }),
             Value::Bytes(bytes) => {
-                let val = from_utf8(&*bytes)
+                match from_utf8(&*bytes)
                     .ok()
-                    .and_then(|s| {
-                        strptime(s, "%Y-%m-%d %H:%M:%S")
-                            .or_else(|_| strptime(s, "%Y-%m-%d"))
-                            .ok()
-                    })
-                    .map(|mut tm| {
-                        tm.tm_utcoff = tm_utcoff;
-                        tm.tm_isdst = -1;
-                        tm.to_timespec()
-                    });
-                match val {
-                    Some(timespec) => Ok(ParseIr {
+                    .and_then(|s| time::parse(s, "%Y-%m-%d").ok())
+                {
+                    Some(output) => Ok(ParseIr {
                         value: Value::Bytes(bytes),
-                        output: timespec,
+                        output,
                     }),
                     None => Err(FromValueError(Value::Bytes(bytes))),
                 }
@@ -510,12 +519,77 @@ impl ConvIr<Timespec> for ParseIr<Timespec> {
             v => Err(FromValueError(v)),
         }
     }
-    fn commit(self) -> Timespec {
+    fn commit(self) -> Date {
         self.output
     }
     fn rollback(self) -> Value {
         self.value
     }
+}
+
+/// Converts a MySQL `TIME` value to a `time::Time`.
+/// Note: `time::Time` only allows for time values in the 00:00:00 - 23:59:59 range.
+/// If you're expecting `TIME` values in MySQL's `TIME` value range of -838:59:59 - 838:59:59,
+/// use time::Duration instead.
+impl ConvIr<Time> for ParseIr<Time> {
+    fn new(value: Value) -> Result<ParseIr<Time>, FromValueError> {
+        match value {
+            Value::Time(false, 0, h, m, s, u) => Ok(ParseIr {
+                value: Value::Time(false, 0, h, m, s, u),
+                output: match Time::try_from_hms_micro(h, m, s, u) {
+                    Ok(time) => time,
+                    Err(_) => return Err(FromValueError(value)),
+                },
+            }),
+            Value::Bytes(bytes) => match parse_mysql_time_string_with_time(&*bytes) {
+                Ok(output) => Ok(ParseIr {
+                    value: Value::Bytes(bytes),
+                    output,
+                }),
+                Err(_) => Err(FromValueError(Value::Bytes(bytes))),
+            },
+            v => Err(FromValueError(v)),
+        }
+    }
+    fn commit(self) -> Time {
+        self.output
+    }
+    fn rollback(self) -> Value {
+        self.value
+    }
+}
+
+#[inline]
+fn create_primitive_date_time(
+    y: u16,
+    m: u8,
+    d: u8,
+    h: u8,
+    i: u8,
+    s: u8,
+    u: u32,
+) -> Option<PrimitiveDateTime> {
+    if let Ok(date) = Date::try_from_ymd(y as i32, m, d) {
+        if let Ok(time) = Time::try_from_hms_micro(h, i, s, u) {
+            return Some(PrimitiveDateTime::new(date, time));
+        }
+    }
+
+    None
+}
+
+#[inline]
+fn parse_mysql_datetime_string_with_time(bytes: &[u8]) -> Result<PrimitiveDateTime, ParseError> {
+    from_utf8(&*bytes)
+        .map_err(|_| ParseError::InsufficientInformation)
+        .and_then(|s| time::parse(s, "%Y-%m-%d %H:%M:%S").or_else(|_| time::parse(s, "%Y-%m-%d")))
+}
+
+#[inline]
+fn parse_mysql_time_string_with_time(bytes: &[u8]) -> Result<Time, ParseError> {
+    from_utf8(&*bytes)
+        .map_err(|_| ParseError::InsufficientInformation)
+        .and_then(|s| Time::parse(s, "%H:%M:%S"))
 }
 
 impl ConvIr<NaiveDateTime> for ParseIr<NaiveDateTime> {
@@ -811,6 +885,9 @@ impl ConvIr<time::Duration> for ParseIr<time::Duration> {
                 })
             }
             Value::Bytes(val_bytes) => {
+                // Parse the string using `parse_mysql_time_string`
+                // instead of `parse_mysql_time_string_with_time` here,
+                // as it may contain an hour value that's outside of a day's normal 0-23 hour range.
                 let duration = match parse_mysql_time_string(&*val_bytes) {
                     Some((is_neg, hours, minutes, seconds, microseconds)) => {
                         let duration = time::Duration::hours(hours.into())
@@ -844,7 +921,9 @@ impl ConvIr<time::Duration> for ParseIr<time::Duration> {
 impl_from_value!(NaiveDateTime, ParseIr<NaiveDateTime>);
 impl_from_value!(NaiveDate, ParseIr<NaiveDate>);
 impl_from_value!(NaiveTime, ParseIr<NaiveTime>);
-impl_from_value!(Timespec, ParseIr<Timespec>);
+impl_from_value!(PrimitiveDateTime, ParseIr<PrimitiveDateTime>);
+impl_from_value!(Date, ParseIr<Date>);
+impl_from_value!(Time, ParseIr<Time>);
 impl_from_value!(Duration, ParseIr<Duration>);
 impl_from_value!(time::Duration, ParseIr<time::Duration>);
 impl_from_value!(String, Vec<u8>);
@@ -1022,17 +1101,35 @@ impl From<NaiveTime> for Value {
     }
 }
 
-impl From<Timespec> for Value {
-    fn from(x: Timespec) -> Value {
-        let t = at(x);
+impl From<PrimitiveDateTime> for Value {
+    fn from(x: PrimitiveDateTime) -> Value {
         Value::Date(
-            t.tm_year as u16 + 1_900,
-            (t.tm_mon + 1) as u8,
-            t.tm_mday as u8,
-            t.tm_hour as u8,
-            t.tm_min as u8,
-            t.tm_sec as u8,
-            t.tm_nsec as u32 / 1000,
+            x.year() as u16,
+            x.month(),
+            x.day(),
+            x.hour(),
+            x.minute(),
+            x.second(),
+            x.microsecond(),
+        )
+    }
+}
+
+impl From<Date> for Value {
+    fn from(x: Date) -> Value {
+        Value::Date(x.year() as u16, x.month(), x.day(), 0, 0, 0, 0)
+    }
+}
+
+impl From<Time> for Value {
+    fn from(x: Time) -> Value {
+        Value::Time(
+            false,
+            0,
+            x.hour() as u8,
+            x.minute() as u8,
+            x.second() as u8,
+            x.microsecond(),
         )
     }
 }
@@ -1061,18 +1158,21 @@ impl From<Duration> for Value {
 impl From<time::Duration> for Value {
     fn from(mut x: time::Duration) -> Value {
         let negative = x < time::Duration::zero();
+
         if negative {
             x = -x;
         }
-        let days = x.num_days() as u32;
-        x = x - time::Duration::days(x.num_days());
-        let hours = x.num_hours() as u8;
-        x = x - time::Duration::hours(x.num_hours());
-        let minutes = x.num_minutes() as u8;
-        x = x - time::Duration::minutes(x.num_minutes());
-        let seconds = x.num_seconds() as u8;
-        x = x - time::Duration::seconds(x.num_seconds());
-        let microseconds = x.num_microseconds().unwrap_or(0) as u32;
+
+        let days = x.whole_days() as u32;
+        x = x - time::Duration::days(x.whole_days());
+        let hours = x.whole_hours() as u8;
+        x = x - time::Duration::hours(x.whole_hours());
+        let minutes = x.whole_minutes() as u8;
+        x = x - time::Duration::minutes(x.whole_minutes());
+        let seconds = x.whole_seconds() as u8;
+        x = x - time::Duration::seconds(x.whole_seconds());
+        let microseconds = x.whole_microseconds() as u32;
+
         Value::Time(negative, days, hours, minutes, seconds, microseconds)
     }
 }
@@ -1213,6 +1313,7 @@ mod tests {
         #[test]
         fn parse_mysql_time_string_doesnt_crash(s in r"\PC*") {
             parse_mysql_time_string(s.as_bytes());
+            let _ = parse_mysql_time_string_with_time(s.as_bytes());
         }
 
         #[test]
@@ -1220,6 +1321,9 @@ mod tests {
             s in r"-?[0-8][0-9][0-9]:[0-5][0-9]:[0-5][0-9](\.[0-9]{1,6})?"
         ) {
             parse_mysql_time_string(s.as_bytes()).unwrap();
+            // Don't test `parse_mysql_time_string_with_time` here,
+            // as this tests valid MySQL TIME values, not valid time ranges within a day.
+            // Due to that, `time::parse` will return an Err for invalid time strings.
         }
 
         #[test]
@@ -1243,11 +1347,16 @@ mod tests {
             );
             let time = parse_mysql_time_string(time_string.as_bytes()).unwrap();
             assert_eq!(time, (sign == 1, h, m, s, if have_us == 1 { us } else { 0 }));
+
+            // Don't test `parse_mysql_time_string_with_time` here,
+            // as this tests valid MySQL TIME values, not valid time ranges within a day.
+            // Due to that, `time::parse` will return an Err for invalid time strings.
         }
 
         #[test]
         fn parse_mysql_datetime_string_doesnt_crash(s in "\\PC*") {
             parse_mysql_datetime_string(s.as_bytes());
+            let _ = parse_mysql_datetime_string_with_time(s.as_bytes());
         }
 
         #[test]
@@ -1277,8 +1386,95 @@ mod tests {
                     "".into()
                 }
             );
+
             let datetime = parse_mysql_datetime_string(time_string.as_bytes()).unwrap();
             assert_eq!(datetime, (y, m, d, h, i, s, if have_us == 1 { us } else { 0 }));
+
+            match parse_mysql_datetime_string_with_time(time_string.as_bytes()) {
+                Ok(datetime) => {
+                    // If `time` successfully parsed the string,
+                    // then let's ensure it matches the values used to create that time string.
+
+                    // `time` and other C-like `strptime` based parsers have no way of parsing
+                    // microseconds from the time string. As such, we ignore them entirely.
+                    assert_eq!(
+                        (
+                            datetime.year() as u32,
+                            datetime.month() as u32,
+                            datetime.day() as u32,
+                            datetime.hour() as u32,
+                            datetime.minute() as u32,
+                            datetime.second() as u32,
+                            0,
+                        ),
+                        (y, m, d, h, i, s, 0));
+                },
+                Err(err) => {
+                    // If `time` failed to parse the string,
+                    // then let's check if we passed an invalid value based on the error received,
+                    // and fail the test if the string should have parsed successfully.
+                    // Any commented out checks are simply to avoid having the compiler show
+                    // 'comparison is useless due to type limits' warnings.
+                    match err {
+                        ParseError::InvalidSecond => assert!(/*s < 0 || */s > 59),
+                        ParseError::InvalidMinute => assert!(/*i < 0 || */i > 59),
+                        // For InvalidHour, only check if the randomized hour value is within
+                        // 0-23 instead of MySQL `TIME`'s full range of -838-838,
+                        // since we don't generate values that low or high,
+                        // and should be parsed with time::Duration instead.
+                        ParseError::InvalidHour => assert!(/*h < 0 || */h > 23),
+                        ParseError::InvalidDayOfMonth => assert!(d < 1 || d > 31),
+                        ParseError::InvalidMonth => assert!(m < 1000 || m <= 12),
+                        // For InvalidYear, ensure that the year isn't also 0,
+                        // which is a valid value with non-strict-mode MySQL.
+                        ParseError::InvalidYear => assert!(y != 0 && (y < 1000 || y > 9999)),
+                        ParseError::ComponentOutOfRange(_) |
+                        ParseError::InsufficientInformation => {
+                            // We may receive an ComponentOutOfRange or InsufficientInformation
+                            // error for a few reasons, such as the format string being incorrect,
+                            // the format of the time string being incorrect,
+                            // or in some cases, when a value is out of range,
+                            // such as when trying to parse a hour value of
+                            // less than zero or greater than 23.
+
+                            // Try creating `Date` and `Time` values from the values directly,
+                            // and catch any `ComponentRangeError` that they might return.
+
+                            // Seeing as we have no way to tell which value
+                            // is rejected if we pass them in all at once,
+                            // we call `try_from_ymd` and `try_from_hms_micro`
+                            // for each value separately.
+
+                            if Date::try_from_ymd(y as i32, 1, 1).is_err() {
+                                assert!(y != 0 && (y < 1000 || y > 9999));
+                            } else if Date::try_from_ymd(0, m as u8, 1).is_err() {
+                                assert!(m < 1000 || m <= 12);
+                            } else if Date::try_from_ymd(0, 1, d as u8).is_err() {
+                                assert!(d < 1 || d > 31);
+                            } else if Time::try_from_hms_micro(h as u8, 0, 0, 0).is_err() {
+                                assert!(/*h < 0 || */h > 23);
+                            } else if Time::try_from_hms_micro(0, i as u8, 0, 0).is_err() {
+                                assert!(/*i < 0 || */i > 59);
+                            } else if Time::try_from_hms_micro(0, 0, s as u8, 0).is_err() {
+                                assert!(/*i < 0 || */i > 59);
+                            }
+
+                            // If each of the values passed separately, then the only reason we
+                            // were given an error is because the date or time itself is invalid,
+                            // i.e. February 30th, November 31st, etc.
+                            // We have no way of validating if the date or time is actually
+                            // invalid or not, so we just assume it's handled correctly
+                            // within `time` if all values could be handled separately.
+                        },
+                        err => {
+                            // Panic for any other error as well, seeing as the others either
+                            // would never happen, or the time string format must be incorrect,
+                            // neither of which should ever happen.
+                            panic!("Failed to parse time due to an unknown reason. {}", err);
+                        }
+                    }
+                }
+            }
         }
 
         #[test]
@@ -1416,5 +1612,25 @@ mod tests {
 
         // Reading an f32 from a MySQL double fails (precision loss).
         assert!(f32::from_value_opt(double_value).is_err());
+    }
+
+    #[cfg(feature = "nightly")]
+    #[bench]
+    fn bench_parse_mysql_datetime_string_with_time(bencher: &mut test::Bencher) {
+        let text = "1234-12-12 12:12:12.123456";
+        bencher.bytes = text.len() as u64;
+        bencher.iter(|| {
+            parse_mysql_datetime_string_with_time(text.as_bytes()).unwrap();
+        });
+    }
+
+    #[cfg(feature = "nightly")]
+    #[bench]
+    fn bench_parse_mysql_time_string_with_time(bencher: &mut test::Bencher) {
+        let text = "12:34:56.012345";
+        bencher.bytes = text.len() as u64;
+        bencher.iter(|| {
+            parse_mysql_time_string_with_time(text.as_bytes()).unwrap();
+        });
     }
 }
