@@ -23,7 +23,7 @@ pub mod convert;
 #[derive(Clone, PartialEq)]
 pub struct Row {
     values: Vec<Option<Value>>,
-    columns: Arc<Vec<Column>>,
+    columns: Arc<[Column]>,
 }
 
 impl fmt::Debug for Row {
@@ -44,10 +44,10 @@ impl fmt::Debug for Row {
 }
 
 /// Creates `Row` from values and columns.
-pub fn new_row(values: Vec<Value>, columns: Arc<Vec<Column>>) -> Row {
+pub fn new_row(values: Vec<Value>, columns: Arc<[Column]>) -> Row {
     assert!(values.len() == columns.len());
     Row {
-        values: values.into_iter().map(Some).collect(),
+        values: values.into_iter().map(Some).collect::<Vec<_>>(),
         columns,
     }
 }
@@ -60,11 +60,11 @@ impl Row {
 
     /// Returns columns of this row.
     pub fn columns_ref(&self) -> &[Column] {
-        &**self.columns
+        &*self.columns
     }
 
     /// Returns columns of this row.
-    pub fn columns(&self) -> Arc<Vec<Column>> {
+    pub fn columns(&self) -> Arc<[Column]> {
         self.columns.clone()
     }
 
