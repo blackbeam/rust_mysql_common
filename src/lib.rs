@@ -136,6 +136,7 @@ macro_rules! params {
     }
 }
 
+pub mod binlog;
 pub mod constants;
 pub mod crypto;
 pub mod io;
