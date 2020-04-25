@@ -9,16 +9,17 @@
 use bytes::BufMut;
 use lexical::parse;
 use regex::bytes::Regex;
+use saturating::Saturating as S;
 use smallvec::SmallVec;
 
 use std::{
     borrow::Cow,
-    cmp::max,
+    cmp::{max, min},
     collections::HashMap,
     convert::{TryFrom, TryInto},
     fmt, io,
     marker::PhantomData,
-    ops,
+    mem::size_of,
 };
 
 use crate::{
@@ -809,7 +810,7 @@ pub enum AuthPluginData {
     Sha2([u8; 32]),
 }
 
-impl ops::Deref for AuthPluginData {
+impl std::ops::Deref for AuthPluginData {
     type Target = [u8];
 
     fn deref(&self) -> &Self::Target {
@@ -1563,6 +1564,661 @@ impl MySerialize for ComStmtClose {
     }
 }
 
+/// Registers a slave at the master. Should be sent before requesting a binlog events
+/// with `COM_BINLOG_DUMP`.
+#[derive(Clone, Eq, PartialEq, Hash)]
+pub struct ComRegisterSlave<'a> {
+    /// The slaves server-id.
+    pub server_id: u32,
+    /// The host name or IP address of the slave to be reported to the master during slave
+    /// registration. Usually empty.
+    pub hostname: Cow<'a, [u8]>,
+    /// The account user name of the slave to be reported to the master during slave registration.
+    /// Usually empty.
+    ///
+    /// # Note
+    ///
+    /// Serialization will truncate this value if length is greater than 255 bytes.
+    pub user: Cow<'a, [u8]>,
+    /// The account password of the slave to be reported to the master during slave registration.
+    /// Usually empty.
+    ///
+    /// # Note
+    ///
+    /// Serialization will truncate this value if length is greater than 255 bytes.
+    pub password: Cow<'a, [u8]>,
+    /// The TCP/IP port number for connecting to the slave, to be reported to the master during
+    /// slave registration. Usually empty.
+    ///
+    /// # Note
+    ///
+    /// Serialization will truncate this value if length is greater than 255 bytes.
+    pub port: u16,
+    /// Ignored.
+    pub replication_rank: u32,
+    /// Usually 0. Appears as "master id" in `SHOW SLAVE HOSTS` on the master. Unknown what else
+    /// it impacts.
+    pub master_id: u32,
+}
+
+impl ComRegisterSlave<'_> {
+    /// Creates new `ComRegisterSlave` with the given server identifier. Other fields will be empty.
+    pub fn new(server_id: u32) -> Self {
+        Self {
+            server_id,
+            hostname: Default::default(),
+            user: Default::default(),
+            password: Default::default(),
+            port: Default::default(),
+            replication_rank: Default::default(),
+            master_id: Default::default(),
+        }
+    }
+
+    /// Returns `hostname` as a UTF-8 string (lossy converted).
+    pub fn get_hostname(&self) -> Cow<str> {
+        String::from_utf8_lossy(&self.hostname)
+    }
+
+    /// Returns `user` as a UTF-8 string (lossy converted).
+    pub fn get_user(&self) -> Cow<str> {
+        String::from_utf8_lossy(&self.user)
+    }
+
+    /// Returns `password` as a UTF-8 string (lossy converted).
+    pub fn get_password(&self) -> Cow<str> {
+        String::from_utf8_lossy(&self.password)
+    }
+
+    /// Returns length of a serialized instance (in bytes).
+    pub fn len(&self) -> usize {
+        let mut len = 0;
+
+        len += 1; // [15] COM_REGISTER_SLAVE
+        len += 4; // server-id
+        len += 1; // slaves hostname length
+        len += min(u8::MAX as usize, self.hostname.len()); // slaves hostname
+        len += 1; // slaves user len
+        len += min(u8::MAX as usize, self.user.len()); // slaves user
+        len += 1; // slaves password len
+        len += min(u8::MAX as usize, self.password.len()); // slaves password
+        len += 2; // slaves mysql-port
+        len += 4; // replication rank
+        len += 4; // master id
+
+        len
+    }
+}
+
+impl MySerialize for ComRegisterSlave<'_> {
+    fn serialize(&self, buf: &mut Vec<u8>) {
+        buf.put_u8(Command::COM_REGISTER_SLAVE as u8);
+        buf.put_u32_le(self.server_id);
+        buf.put_u8_str(&self.hostname);
+        buf.put_u8_str(&self.user);
+        buf.put_u8_str(&self.password);
+        buf.put_u16_le(self.port);
+        buf.put_u32_le(self.replication_rank);
+        buf.put_u32_le(self.master_id);
+    }
+}
+
+impl<'de> MyDeserialize<'de> for ComRegisterSlave<'de> {
+    type Ctx = ();
+
+    fn deserialize((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+        let mut sbuf = buf.checked_eat_buf(5).ok_or_else(unexpected_buf_eof)?;
+
+        if sbuf.eat_u8() != Command::COM_REGISTER_SLAVE as u8 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "invalid COM_REGISTER_SLAVE prefix",
+            ));
+        }
+
+        let server_id = sbuf.eat_u32_le();
+
+        let hostname = buf.checked_eat_u8_str().ok_or_else(unexpected_buf_eof)?;
+        let user = buf.checked_eat_u8_str().ok_or_else(unexpected_buf_eof)?;
+        let password = buf.checked_eat_u8_str().ok_or_else(unexpected_buf_eof)?;
+
+        let mut sbuf = buf.checked_eat_buf(10).ok_or_else(unexpected_buf_eof)?;
+        let port = sbuf.eat_u16_le();
+        let replication_rank = sbuf.eat_u32_le();
+        let master_id = sbuf.eat_u32_le();
+
+        Ok(Self {
+            server_id,
+            hostname: Cow::Borrowed(hostname),
+            user: Cow::Borrowed(user),
+            password: Cow::Borrowed(password),
+            port,
+            replication_rank,
+            master_id,
+        })
+    }
+}
+
+impl fmt::Debug for ComRegisterSlave<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ComRegisterSlave")
+            .field("server_id", &self.server_id)
+            .field("hostname", &self.get_hostname())
+            .field("user", &self.get_user())
+            .field("password", &self.get_password())
+            .field("port", &self.port)
+            .field("replication_rank", &self.replication_rank)
+            .field("master_id", &self.master_id)
+            .finish()
+    }
+}
+
+/// COM_TABLE_DUMP command.
+#[derive(Clone, Eq, PartialEq, Hash)]
+pub struct ComTableDump<'a> {
+    /// Database name.
+    ///
+    /// # Note
+    ///
+    /// Serialization will truncate this value if length is greater than 255 bytes.
+    pub database: Cow<'a, [u8]>,
+    /// Table name.
+    ///
+    /// # Note
+    ///
+    /// Serialization will truncate this value if length is greater than 255 bytes.
+    pub table: Cow<'a, [u8]>,
+}
+
+impl<'a> ComTableDump<'a> {
+    /// Creates new instance.
+    pub fn new(database: impl Into<Cow<'a, [u8]>>, table: impl Into<Cow<'a, [u8]>>) -> Self {
+        Self {
+            database: database.into(),
+            table: table.into(),
+        }
+    }
+
+    /// Returns `database` as a UTF-8 string (lossy converted).
+    pub fn get_database(&self) -> Cow<str> {
+        String::from_utf8_lossy(&self.database)
+    }
+
+    /// Returns `table` as a UTF-8 string (lossy converted).
+    pub fn get_table(&self) -> Cow<str> {
+        String::from_utf8_lossy(&self.table)
+    }
+
+    /// Returns length of serialized instance (in bytes).
+    pub fn len(&self) -> usize {
+        let mut len = 0;
+
+        len += 1; // [13] COM_TABLE_DUMP
+        len += 1; // database_len
+        len += min(u8::MAX as usize, self.database.len()); // database name
+        len += 1; // table_len
+        len += min(u8::MAX as usize, self.table.len()); // table name
+
+        len
+    }
+}
+
+impl MySerialize for ComTableDump<'_> {
+    fn serialize(&self, buf: &mut Vec<u8>) {
+        buf.put_u8(Command::COM_TABLE_DUMP as u8);
+        buf.put_u8_str(&self.database);
+        buf.put_u8_str(&self.table);
+    }
+}
+
+impl<'de> MyDeserialize<'de> for ComTableDump<'de> {
+    type Ctx = ();
+
+    fn deserialize((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+        if buf.checked_eat_u8().ok_or_else(unexpected_buf_eof)? != Command::COM_TABLE_DUMP as u8 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "invalid COM_TABLE_DUMP prefix",
+            ));
+        }
+
+        let database = buf.checked_eat_u8_str().ok_or_else(unexpected_buf_eof)?;
+        let table = buf.checked_eat_u8_str().ok_or_else(unexpected_buf_eof)?;
+
+        Ok(Self {
+            database: Cow::Borrowed(database),
+            table: Cow::Borrowed(table),
+        })
+    }
+}
+
+impl fmt::Debug for ComTableDump<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ComTableDump")
+            .field("database", &self.get_database())
+            .field("table", &self.get_table())
+            .finish()
+    }
+}
+
+bitflags! {
+    /// Empty flags of a `LoadEvent`.
+    pub struct BinlogDumpFlags: u16 {
+        /// If there is no more event to send a EOF_Packet instead of blocking the connection
+        const BINLOG_DUMP_NON_BLOCK = 0x01;
+        const BINLOG_THROUGH_POSITION = 0x02;
+        const BINLOG_THROUGH_GTID = 0x04;
+    }
+}
+
+/// Command to request a binlog-stream from the master starting a given position.
+#[derive(Clone, Eq, PartialEq, Hash)]
+pub struct ComBinlogDump<'a> {
+    /// Position in the binlog-file to start the stream with (`0` by default).
+    pub pos: u32,
+    /// Command flags (empty by default).
+    ///
+    /// This field contains raw value. Use `Self::get_flags` to parse it.
+    pub flags: u16,
+    /// Server id of this slave.
+    pub server_id: u32,
+    /// Filename of the binlog on the master.
+    ///
+    /// If the binlog-filename is empty, the server will send the binlog-stream of the first known
+    /// binlog.
+    pub filename: Cow<'a, [u8]>,
+}
+
+impl<'a> ComBinlogDump<'a> {
+    /// Creates new instance with default values for `pos` and `flags`.
+    pub fn new(server_id: u32, filename: impl Into<Cow<'a, [u8]>>) -> Self {
+        Self {
+            pos: 0,
+            flags: 0,
+            server_id,
+            filename: filename.into(),
+        }
+    }
+
+    /// Returns `filename` as a UTF-8 string (lossy converted).
+    pub fn get_filename(&self) -> Cow<str> {
+        String::from_utf8_lossy(&self.filename)
+    }
+
+    /// Returns parsed `flags` field with unknown bits truncated.
+    pub fn get_flags(&self) -> BinlogDumpFlags {
+        BinlogDumpFlags::from_bits_truncate(self.flags)
+    }
+
+    /// Defines flags for this instance.
+    pub fn with_flags(mut self, flags: BinlogDumpFlags) -> Self {
+        self.flags = flags.bits();
+        self
+    }
+
+    /// Defines position for this instance.
+    pub fn with_pos(mut self, pos: u32) -> Self {
+        self.pos = pos;
+        self
+    }
+
+    /// Returns length of serialized instance (in bytes).
+    pub fn len(&self) -> usize {
+        let mut len = S(0);
+
+        len += S(1); // [12] COM_BINLOG_DUMP
+        len += S(4); // binlog-pos
+        len += S(2); // flags
+        len += S(4); // server-id
+        len += S(self.filename.len()); // binlog-filename
+
+        len.0
+    }
+}
+
+impl MySerialize for ComBinlogDump<'_> {
+    fn serialize(&self, buf: &mut Vec<u8>) {
+        buf.put_u8(Command::COM_BINLOG_DUMP as u8);
+        buf.put_u32_le(self.pos);
+        buf.put_u16_le(self.flags);
+        buf.put_u32_le(self.server_id);
+        buf.put_slice(&self.filename);
+    }
+}
+
+impl<'de> MyDeserialize<'de> for ComBinlogDump<'de> {
+    type Ctx = ();
+
+    fn deserialize((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+        let mut sbuf = buf.checked_eat_buf(11).ok_or_else(unexpected_buf_eof)?;
+
+        if sbuf.eat_u8() != Command::COM_BINLOG_DUMP as u8 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "invalid COM_BINLOG_DUMP prefix",
+            ));
+        }
+
+        let pos = sbuf.eat_u32_le();
+        let flags = sbuf.eat_u16_le();
+        let server_id = sbuf.eat_u32_le();
+        let filename = buf.eat_all();
+
+        Ok(Self {
+            pos,
+            flags,
+            server_id,
+            filename: Cow::Borrowed(filename),
+        })
+    }
+}
+
+impl fmt::Debug for ComBinlogDump<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ComBinlogDump")
+            .field("pos", &self.pos)
+            .field("flags", &{
+                let flags = self.flags;
+                format!(
+                    "{:?} (Unknown flags: {:016b}",
+                    flags,
+                    self.flags & (u16::MAX ^ BinlogDumpFlags::all().bits())
+                )
+            })
+            .field("server_id", &self.server_id)
+            .field("filename", &self.get_filename())
+            .finish()
+    }
+}
+
+/// SID block is a part of the `COM_BINLOG_DUMP_GTID` command.
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+pub struct SidBlock {
+    /// SID value.
+    pub sid: [u8; Self::SID_LEN],
+    /// Pairs of `(<start>, <end>)` (empty by default).
+    pub intervals: Vec<(u64, u64)>,
+}
+
+impl SidBlock {
+    pub const SID_LEN: usize = 16;
+
+    /// Creates new instance.
+    pub fn new(sid: [u8; Self::SID_LEN]) -> Self {
+        Self {
+            sid,
+            intervals: Default::default(),
+        }
+    }
+
+    /// Adds an interval to this instance.
+    pub fn with_interval(mut self, interval: (u64, u64)) -> Self {
+        self.intervals.push(interval);
+        self
+    }
+
+    /// Returns length of serialized instance (in bytes).
+    pub fn len(&self) -> usize {
+        let mut len = S(0);
+
+        len += S(Self::SID_LEN); // SID
+        len += S(8); // n_intervals
+        len += S(16 * self.intervals.len()); // intervals
+
+        len.0
+    }
+}
+
+impl MySerialize for SidBlock {
+    fn serialize(&self, buf: &mut Vec<u8>) {
+        buf.put_slice(&self.sid[..]);
+        buf.put_u64_le(self.intervals.len() as u64);
+        for (start, end) in &self.intervals {
+            buf.put_u64_le(*start);
+            buf.put_u64_le(*end);
+        }
+    }
+}
+
+impl<'de> MyDeserialize<'de> for SidBlock {
+    type Ctx = ();
+
+    fn deserialize((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+        let mut sbuf = buf
+            .checked_eat_buf(Self::SID_LEN + size_of::<u64>())
+            .ok_or_else(unexpected_buf_eof)?;
+
+        let sid_slice = sbuf.eat(Self::SID_LEN);
+        let n_intervals = sbuf.eat_u64_le();
+
+        let mut intervals = Vec::with_capacity(n_intervals as usize);
+        sbuf = buf
+            .checked_eat_buf(size_of::<u64>() * 2 * (n_intervals as usize))
+            .ok_or_else(unexpected_buf_eof)?;
+
+        for _ in 0..n_intervals {
+            let start = sbuf.eat_u64_le();
+            let end = sbuf.eat_u64_le();
+            intervals.push((start, end));
+        }
+
+        let mut sid = [0_u8; Self::SID_LEN];
+        sid.copy_from_slice(sid_slice);
+        Ok(Self { sid, intervals })
+    }
+}
+
+/// Command to request a binlog-stream from the master starting a given position.
+#[derive(Clone, Eq, PartialEq, Hash)]
+pub struct ComBinlogDumpGtid<'a> {
+    /// Command flags (empty by default).
+    pub flags: u16,
+    /// Server id of this slave.
+    pub server_id: u32,
+    /// Filename of the binlog on the master.
+    ///
+    /// If the binlog-filename is empty, the server will send the binlog-stream of the first known
+    /// binlog.
+    ///
+    /// # Note
+    ///
+    /// Serialization will truncate this value if length is greater than 2^32 - 1 bytes.
+    pub filename: Cow<'a, [u8]>,
+    /// Position in the binlog-file to start the stream with (`0` by default).
+    pub pos: u64,
+    /// SID blocks (empty by default).
+    ///
+    /// # Note
+    ///
+    /// Serialization will truncate serialized value if its length is greater than 2^32 - 1 bytes.
+    pub sid_blocks: Vec<SidBlock>,
+}
+
+impl<'a> ComBinlogDumpGtid<'a> {
+    /// Creates new instance with default values for `pos`, `data` and `flags` fields.
+    pub fn new(server_id: u32, filename: impl Into<Cow<'a, [u8]>>) -> Self {
+        Self {
+            pos: 0,
+            flags: 0,
+            server_id,
+            filename: filename.into(),
+            sid_blocks: Default::default(),
+        }
+    }
+
+    /// Returns `filename` as a UTF-8 string (lossy converted).
+    pub fn get_filename(&self) -> Cow<str> {
+        String::from_utf8_lossy(&self.filename)
+    }
+
+    /// Returns parsed `flags` field with unknown bits truncated.
+    pub fn get_flags(&self) -> BinlogDumpFlags {
+        BinlogDumpFlags::from_bits_truncate(self.flags)
+    }
+
+    /// Defines flags for this instance.
+    pub fn with_flags(mut self, flags: BinlogDumpFlags) -> Self {
+        self.flags = flags.bits();
+        self
+    }
+
+    /// Defines position for this instance.
+    pub fn with_pos(mut self, pos: u64) -> Self {
+        self.pos = pos;
+        self
+    }
+
+    /// Adds SID block to this instance.
+    pub fn with_sid_block(mut self, block: SidBlock) -> Self {
+        self.sid_blocks.push(block);
+        self
+    }
+
+    /// Returns length of serialized instance (in bytes).
+    pub fn len(&self) -> usize {
+        let mut len = S(0);
+
+        len += S(1); // [1e] COM_BINLOG_DUMP_GTID
+        len += S(2); // flags
+        len += S(4); // server-id
+        len += S(4); // binlog-filename-len
+        len += S(min(u32::MAX as usize, self.filename.len())); // binlog-filename
+        len += S(8); // binlog-pos
+        if self
+            .get_flags()
+            .contains(BinlogDumpFlags::BINLOG_THROUGH_GTID)
+        {
+            len += S(4); // data-size
+            len += S(min(
+                u32::MAX as usize,
+                self.sid_blocks.iter().map(SidBlock::len).sum(),
+            )); // data
+        }
+
+        len.0
+    }
+}
+
+impl MySerialize for ComBinlogDumpGtid<'_> {
+    fn serialize(&self, buf: &mut Vec<u8>) {
+        buf.put_u8(Command::COM_BINLOG_DUMP_GTID as u8);
+        buf.put_u16_le(self.flags);
+        buf.put_u32_le(self.server_id);
+        buf.put_u32_str(&self.filename);
+        buf.put_u64_le(self.pos);
+
+        if self
+            .get_flags()
+            .contains(BinlogDumpFlags::BINLOG_THROUGH_GTID)
+        {
+            let n_sids = min(u32::MAX as usize, self.sid_blocks.len());
+
+            let mut data_len = S(4);
+            for block in &self.sid_blocks {
+                data_len += S(block.len());
+            }
+
+            buf.put_u32_le(data_len.0 as u32);
+            buf.put_u32_le(n_sids as u32);
+
+            for sid_block in &self.sid_blocks {
+                sid_block.serialize(&mut *buf);
+            }
+        }
+    }
+}
+
+impl<'de> MyDeserialize<'de> for ComBinlogDumpGtid<'de> {
+    type Ctx = ();
+
+    fn deserialize((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+        let mut sbuf = buf.checked_eat_buf(7).ok_or_else(unexpected_buf_eof)?;
+
+        if sbuf.eat_u8() != Command::COM_BINLOG_DUMP_GTID as u8 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "invalid COM_BINLOG_DUMP_GTID prefix",
+            ));
+        }
+
+        let flags = sbuf.eat_u16_le();
+        let server_id = sbuf.eat_u32_le();
+        let filename = buf.checked_eat_u32_str().ok_or_else(unexpected_buf_eof)?;
+        let pos = buf.checked_eat_u64_le().ok_or_else(unexpected_buf_eof)?;
+
+        let mut sid_blocks = Vec::new();
+        if BinlogDumpFlags::from_bits_truncate(flags).contains(BinlogDumpFlags::BINLOG_THROUGH_GTID)
+        {
+            let data_len = buf.checked_eat_u32_le().ok_or_else(unexpected_buf_eof)? as usize;
+            if data_len > 0 {
+                sbuf = buf
+                    .checked_eat_buf(data_len)
+                    .ok_or_else(unexpected_buf_eof)?;
+                let n_sids = sbuf.checked_eat_u32_le().ok_or_else(unexpected_buf_eof)? as usize;
+                sid_blocks.reserve(n_sids);
+                for _ in 0..n_sids {
+                    sid_blocks.push(SidBlock::deserialize((), &mut sbuf)?);
+                }
+            }
+        }
+
+        Ok(Self {
+            flags,
+            server_id,
+            filename: Cow::Borrowed(filename),
+            pos,
+            sid_blocks,
+        })
+    }
+}
+
+impl fmt::Debug for ComBinlogDumpGtid<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ComBinlogDumpGtid")
+            .field("pos", &self.pos)
+            .field("flags", &{
+                let flags = self.flags;
+                format!(
+                    "{:?} (Unknown flags: {:016b})",
+                    flags,
+                    self.flags & (u16::MAX ^ BinlogDumpFlags::all().bits())
+                )
+            })
+            .field("server_id", &self.server_id)
+            .field("filename", &self.get_filename())
+            .field("sid_blocks", &self.sid_blocks)
+            .finish()
+    }
+}
+
+/// Each Semi Sync Binlog Event with the `SEMI_SYNC_ACK_REQ` flag set the slave has to acknowledge
+/// with Semi-Sync ACK packet.
+pub struct SemiSyncAckPacket<'a> {
+    pub position: u64,
+    pub filename: Cow<'a, [u8]>,
+}
+
+impl SemiSyncAckPacket<'_> {
+    /// Returns length of a serialized instance (in bytes).
+    pub fn len(&self) -> usize {
+        let mut len = S(0);
+
+        len += S(1); // [ef]
+        len += S(8); // log position
+        len += S(self.filename.len()); // log filename
+
+        len.0
+    }
+}
+
+impl MySerialize for SemiSyncAckPacket<'_> {
+    fn serialize(&self, buf: &mut Vec<u8>) {
+        buf.put_u8(0xef);
+        buf.put_u64_le(self.position);
+        buf.put_slice(&self.filename);
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -1571,6 +2227,94 @@ mod test {
         proto::{MyDeserialize, MySerialize},
     };
     use std::collections::HashMap;
+
+    proptest::proptest! {
+        #[test]
+        fn com_table_dump_roundtrip(database: Vec<u8>, table: Vec<u8>) {
+            let cmd = ComTableDump::new(database, table);
+
+            let mut output = Vec::new();
+            cmd.serialize(&mut output);
+
+            assert_eq!(cmd, ComTableDump::deserialize((), &mut ParseBuf(&output[..]))?);
+        }
+
+        #[test]
+        fn com_binlog_dump_roundtrip(
+            server_id: u32,
+            filename: Vec<u8>,
+            pos: u32,
+            flags: u16,
+        ) {
+            let mut cmd = ComBinlogDump::new(server_id, filename).with_pos(pos);
+            cmd.flags = flags;
+
+            let mut output = Vec::new();
+            cmd.serialize(&mut output);
+
+            assert_eq!(cmd, ComBinlogDump::deserialize((), &mut ParseBuf(&output[..]))?);
+        }
+
+        #[test]
+        fn com_register_slave_roundtrip(
+            server_id: u32,
+            hostname in r"\w{0,256}",
+            user in r"\w{0,256}",
+            password in r"\w{0,256}",
+            port: u16,
+            replication_rank: u32,
+            master_id: u32,
+        ) {
+            let cmd = ComRegisterSlave {
+                server_id,
+                hostname: hostname.as_bytes().into(),
+                user: user.as_bytes().into(),
+                password: password.as_bytes().into(),
+                port,
+                replication_rank,
+                master_id,
+            };
+
+            let mut output = Vec::new();
+            cmd.serialize(&mut output);
+            let parsed = ComRegisterSlave::deserialize((), &mut ParseBuf(&output[..]))?;
+
+            if hostname.len() > 255 || user.len() > 255 || password.len() > 255 {
+                assert_ne!(cmd, parsed);
+            } else {
+                assert_eq!(cmd, parsed);
+            }
+        }
+
+        #[test]
+        fn com_binlog_dump_gtid_roundtrip(
+            flags: u16,
+            server_id: u32,
+            filename: Vec<u8>,
+            pos: u64,
+            sid_blocks in 0_u64..1024,
+        ) {
+            let mut cmd = ComBinlogDumpGtid::new(server_id, filename).with_pos(pos);
+            cmd.flags = flags;
+
+            if BinlogDumpFlags::from_bits_truncate(flags)
+                .contains(BinlogDumpFlags::BINLOG_THROUGH_GTID)
+            {
+                for i in 0..sid_blocks {
+                    let mut block = SidBlock::new([i as u8; 16]);
+                    for j in 0..i {
+                        block = block.with_interval((i, j));
+                    }
+                    cmd = cmd.with_sid_block(block);
+                }
+            }
+
+            let mut output = Vec::new();
+            cmd.serialize(&mut output);
+
+            assert_eq!(cmd, ComBinlogDumpGtid::deserialize((), &mut ParseBuf(&output[..]))?);
+        }
+    }
 
     #[test]
     fn should_parse_local_infile_packet() {

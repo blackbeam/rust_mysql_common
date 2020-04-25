@@ -32,6 +32,20 @@ pub trait BufMutExt: BufMut {
         self.put_lenenc_int(s.len() as u64);
         self.put_slice(s);
     }
+
+    /// Writes a string with u8 length prefix. Truncates, if the length is greater that `u8::MAX`.
+    fn put_u8_str(&mut self, s: &[u8]) {
+        let len = std::cmp::min(s.len(), u8::MAX as usize);
+        self.put_u8(len as u8);
+        self.put_slice(&s[..len]);
+    }
+
+    /// Writes a string with u32 length prefix. Truncates, if the length is greater that `u32::MAX`.
+    fn put_u32_str(&mut self, s: &[u8]) {
+        let len = std::cmp::min(s.len(), u32::MAX as usize);
+        self.put_u32_le(len as u32);
+        self.put_slice(&s[..len]);
+    }
 }
 
 impl<T: BufMut> BufMutExt for T {}
@@ -218,6 +232,30 @@ impl<'a> ParseBuf<'a> {
     /// Same as `eat_lenenc_str`. Returns `None` if buffer is too small.
     pub fn checked_eat_lenenc_str(&mut self) -> Option<&'a [u8]> {
         let len = self.checked_eat_lenenc_int()?;
+        self.checked_eat(len as usize)
+    }
+
+    /// Consumes MySql string with u8 length prefix from the head of the buffer.
+    pub fn eat_u8_str(&mut self) -> &'a [u8] {
+        let len = self.eat_u8();
+        self.eat(len as usize)
+    }
+
+    /// Same as `eat_u8_str`. Returns `None` if buffer is too small.
+    pub fn checked_eat_u8_str(&mut self) -> Option<&'a [u8]> {
+        let len = self.checked_eat_u8()?;
+        self.checked_eat(len as usize)
+    }
+
+    /// Consumes MySql string with u32 length prefix from the head of the buffer.
+    pub fn eat_u32_str(&mut self) -> &'a [u8] {
+        let len = self.eat_u32_le();
+        self.eat(len as usize)
+    }
+
+    /// Same as `eat_u32_str`. Returns `None` if buffer is too small.
+    pub fn checked_eat_u32_str(&mut self) -> Option<&'a [u8]> {
+        let len = self.checked_eat_u32_le()?;
         self.checked_eat(len as usize)
     }
 

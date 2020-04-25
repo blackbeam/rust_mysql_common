@@ -1,5 +1,3 @@
-use std::io;
-
 // Copyright (c) 2017 Anatoly Ikorsky
 //
 // Licensed under the Apache License, Version 2.0
@@ -7,6 +5,13 @@ use std::io;
 // license <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
 // option. All files in the project carrying such notice may not be copied,
 // modified, or distributed except according to those terms.
+
+use saturating::Saturating as S;
+
+use std::{
+    cmp::min,
+    io::{self, Read, Write},
+};
 
 /// Returns length of length-encoded-integer representation of `x`.
 pub fn lenenc_int_len(x: u64) -> u64 {
@@ -60,6 +65,74 @@ pub fn split_version<T: AsRef<[u8]>>(version_str: T) -> (u8, u8, u8) {
 
     (nums[0], nums[1], nums[2])
 }
+
+pub(crate) struct LimitedRead<T> {
+    limit: S<usize>,
+    read: T,
+}
+
+impl<T> LimitedRead<T> {
+    pub fn new(read: T, limit: S<usize>) -> Self {
+        Self { read, limit }
+    }
+
+    pub fn get_limit(&self) -> usize {
+        self.limit.0
+    }
+}
+
+impl<T: Read> Read for LimitedRead<T> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let limit = min(buf.len(), self.limit.0);
+        let count = self.read.read(&mut buf[..limit])?;
+        self.limit -= S(count);
+        Ok(count)
+    }
+}
+
+pub(crate) trait LimitRead: Read + Sized {
+    fn limit(&mut self, limit: S<usize>) -> LimitedRead<&mut Self> {
+        LimitedRead::new(self, limit)
+    }
+}
+
+impl<T: Read> LimitRead for T {}
+
+pub(crate) struct LimitedWrite<T> {
+    limit: S<usize>,
+    write: T,
+}
+
+impl<T> LimitedWrite<T> {
+    pub fn new(write: T, limit: S<usize>) -> Self {
+        Self { write, limit }
+    }
+
+    pub fn get_limit(&self) -> usize {
+        self.limit.0
+    }
+}
+
+impl<T: Write> Write for LimitedWrite<T> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        let limit = min(buf.len(), self.limit.0);
+        let count = self.write.write(&buf[..limit])?;
+        self.limit -= S(count);
+        Ok(count)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.write.flush()
+    }
+}
+
+pub(crate) trait LimitWrite: Write + Sized {
+    fn limit(&mut self, limit: S<usize>) -> LimitedWrite<&mut Self> {
+        LimitedWrite::new(self, limit)
+    }
+}
+
+impl<T: Write> LimitWrite for T {}
 
 #[cfg(test)]
 mod tests {

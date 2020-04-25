@@ -31,11 +31,8 @@ use std::{
 use crate::{
     constants::{ColumnType, ItemResult, UnknownColumnType},
     io::{ReadMysqlExt, WriteMysqlExt},
+    misc::{LimitRead, LimitWrite},
 };
-
-const MAX_U8: usize = std::u8::MAX as usize;
-const MAX_U16: usize = std::u16::MAX as usize;
-const MAX_U32: usize = std::u32::MAX as usize;
 
 /// Depending on the MySQL Version that created the binlog the format is slightly different.
 #[repr(u8)]
@@ -215,62 +212,6 @@ bitflags! {
     }
 }
 
-struct LimitedRead<T> {
-    limit: S<usize>,
-    read: T,
-}
-
-impl<T> LimitedRead<T> {
-    fn new(read: T, limit: S<usize>) -> Self {
-        Self { read, limit }
-    }
-
-    fn limit(&self) -> usize {
-        self.limit.0
-    }
-}
-
-impl<T: Read> Read for LimitedRead<T> {
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        let limit = min(buf.len(), self.limit.0);
-        let count = self.read.read(&mut buf[..limit])?;
-        self.limit -= S(count);
-        Ok(count)
-    }
-}
-
-struct LimitedWrite<T> {
-    limit: S<usize>,
-    write: T,
-}
-
-impl<T> LimitedWrite<T> {
-    fn new(write: T, limit: S<usize>) -> Self {
-        Self { write, limit }
-    }
-
-    fn nest(&mut self, limit: S<usize>) -> LimitedWrite<&mut Self> {
-        LimitedWrite { write: self, limit }
-    }
-
-    fn limit(&self) -> usize {
-        self.limit.0
-    }
-}
-
-impl<T: Write> Write for LimitedWrite<T> {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        let limit = min(buf.len(), self.limit.0);
-        let count = self.write.write(&buf[..limit])?;
-        self.limit -= S(count);
-        Ok(count)
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        self.write.flush()
-    }
-}
-
 /// Binlog event.
 ///
 /// For structs that aren't binlog events `event_size` and `fde` parameters are ignored
@@ -328,23 +269,21 @@ impl BinlogStruct for BinlogFileHeader {
     const EVENT_TYPE: Option<EventType> = None;
 
     /// Event size and post-header length will be ignored for this struct.
+    ///
+    /// # Note
+    ///
+    /// It'll return `InvalidData` if header != `Self::Value`.
     fn read<T: Read>(
         _event_size: usize,
         _fde: &FormatDescriptionEvent,
         _version: BinlogVersion,
-        input: T,
+        mut input: T,
     ) -> io::Result<Self> {
-        let mut input = LimitedRead::new(input, S(Self::LEN));
-
         let mut buf = [0_u8; Self::LEN];
         input.read_exact(&mut buf)?;
 
         if buf != Self::VALUE {
             return Err(Error::new(InvalidData, "invalid binlog file header"));
-        }
-
-        if input.limit() > 0 {
-            return Err(Error::new(Other, "bytes remaining on stream"));
         }
 
         Ok(Self)
@@ -712,9 +651,9 @@ impl BinlogStruct for Event {
         })
     }
 
-    fn write<T: Write>(&self, version: BinlogVersion, output: T) -> io::Result<()> {
+    fn write<T: Write>(&self, version: BinlogVersion, mut output: T) -> io::Result<()> {
         let is_fde = self.header.event_type == EventType::FORMAT_DESCRIPTION_EVENT as u8;
-        let mut output = LimitedWrite::new(output, S(self.len(version)));
+        let mut output = output.limit(S(self.len(version)));
 
         self.header.write(version, &mut output)?;
         output.write_all(&self.data)?;
@@ -752,7 +691,7 @@ impl BinlogStruct for Event {
             _ => (),
         }
 
-        min(len.0, MAX_U32 - BinlogEventHeader::len(version))
+        min(len.0, u32::MAX as usize - BinlogEventHeader::len(version))
     }
 }
 
@@ -832,21 +771,15 @@ impl BinlogStruct for BinlogEventHeader {
     fn read<T: Read>(
         _event_size: usize,
         _fde: &FormatDescriptionEvent,
-        version: BinlogVersion,
-        input: T,
+        _version: BinlogVersion,
+        mut input: T,
     ) -> io::Result<Self> {
-        let mut input = LimitedRead::new(input, S(BinlogEventHeader::len(version)));
-
         let timestamp = input.read_u32::<LittleEndian>()?;
         let event_type = input.read_u8()?;
         let server_id = input.read_u32::<LittleEndian>()?;
         let event_size = input.read_u32::<LittleEndian>()?;
         let log_pos = input.read_u32::<LittleEndian>()?;
         let flags = input.read_u16::<LittleEndian>()?;
-
-        if input.limit() > 0 {
-            return Err(Error::new(Other, "bytes remaining on stream"));
-        }
 
         Ok(Self {
             timestamp,
@@ -1155,9 +1088,9 @@ impl BinlogStruct for FormatDescriptionEvent {
         event_size: usize,
         _fde: &FormatDescriptionEvent,
         _version: BinlogVersion,
-        input: T,
+        mut input: T,
     ) -> io::Result<Self> {
-        let mut input = LimitedRead::new(input, S(event_size) - S(BinlogEventHeader::LEN));
+        let mut input = input.limit(S(event_size) - S(BinlogEventHeader::LEN));
 
         let binlog_version = input.read_u16::<LittleEndian>()?;
 
@@ -1168,12 +1101,8 @@ impl BinlogStruct for FormatDescriptionEvent {
 
         input.read_u8()?; // skip event_header_length
 
-        let mut event_type_header_lengths = vec![0_u8; input.limit()];
+        let mut event_type_header_lengths = vec![0_u8; input.get_limit()];
         input.read_exact(&mut event_type_header_lengths)?;
-
-        if input.limit() > 0 {
-            return Err(Error::new(Other, "bytes remaining on stream"));
-        }
 
         Ok(Self {
             binlog_version,
@@ -1184,8 +1113,8 @@ impl BinlogStruct for FormatDescriptionEvent {
         })
     }
 
-    fn write<T: Write>(&self, version: BinlogVersion, output: T) -> io::Result<()> {
-        let mut output = LimitedWrite::new(output, S(self.len(version)));
+    fn write<T: Write>(&self, version: BinlogVersion, mut output: T) -> io::Result<()> {
+        let mut output = output.limit(S(self.len(version)));
 
         output.write_u16::<LittleEndian>(self.binlog_version)?;
         output.write_all(&self.server_version)?;
@@ -1205,7 +1134,7 @@ impl BinlogStruct for FormatDescriptionEvent {
         len += S(1);
         len += S(self.event_type_header_lengths.len());
 
-        min(len.0, MAX_U32 - BinlogEventHeader::len(version))
+        min(len.0, u32::MAX as usize - BinlogEventHeader::len(version))
     }
 }
 
@@ -1236,24 +1165,20 @@ impl BinlogStruct for RotateEvent {
         event_size: usize,
         _fde: &FormatDescriptionEvent,
         version: BinlogVersion,
-        input: T,
+        mut input: T,
     ) -> io::Result<Self> {
-        let mut input = LimitedRead::new(input, S(event_size) - S(BinlogEventHeader::len(version)));
+        let mut input = input.limit(S(event_size) - S(BinlogEventHeader::len(version)));
 
         let position = input.read_u64::<LittleEndian>()?;
 
-        let mut name = vec![0_u8; input.limit()];
+        let mut name = vec![0_u8; input.get_limit()];
         input.read_exact(&mut name)?;
-
-        if input.limit() > 0 {
-            return Err(Error::new(Other, "bytes remaining on stream"));
-        }
 
         Ok(Self { position, name })
     }
 
-    fn write<T: Write>(&self, version: BinlogVersion, output: T) -> io::Result<()> {
-        let mut output = LimitedWrite::new(output, S(self.len(version)));
+    fn write<T: Write>(&self, version: BinlogVersion, mut output: T) -> io::Result<()> {
+        let mut output = output.limit(S(self.len(version)));
 
         output.write_u64::<LittleEndian>(self.position)?;
         output.write_all(&self.name)?;
@@ -1267,7 +1192,7 @@ impl BinlogStruct for RotateEvent {
         len += S(8);
         len += S(self.name.len());
 
-        min(len.0, MAX_U32 - BinlogEventHeader::len(version))
+        min(len.0, u32::MAX as usize - BinlogEventHeader::len(version))
     }
 }
 
@@ -1336,9 +1261,9 @@ impl BinlogStruct for QueryEvent {
         event_size: usize,
         fde: &FormatDescriptionEvent,
         version: BinlogVersion,
-        input: T,
+        mut input: T,
     ) -> io::Result<Self> {
-        let mut input = LimitedRead::new(input, S(event_size) - S(BinlogEventHeader::len(version)));
+        let mut input = input.limit(S(event_size) - S(BinlogEventHeader::len(version)));
 
         let post_header_len = fde.get_event_type_header_length(Self::EVENT_TYPE.unwrap());
 
@@ -1361,10 +1286,10 @@ impl BinlogStruct for QueryEvent {
 
         input.read_u8()?;
 
-        let mut query = vec![0_u8; input.limit()];
+        let mut query = vec![0_u8; input.get_limit()];
         input.read_exact(&mut query)?;
 
-        if input.limit() > 0 {
+        if input.get_limit() > 0 {
             return Err(Error::new(Other, "bytes remaining on stream"));
         }
 
@@ -1378,16 +1303,21 @@ impl BinlogStruct for QueryEvent {
         })
     }
 
-    fn write<T: Write>(&self, version: BinlogVersion, output: T) -> io::Result<()> {
-        let mut output = LimitedWrite::new(output, S(self.len(version)));
+    fn write<T: Write>(&self, version: BinlogVersion, mut output: T) -> io::Result<()> {
+        let mut output = output.limit(S(self.len(version)));
+
+        let schema_len = min(self.schema.len(), u8::MAX as usize);
+        let status_vars_len = min(self.status_vars.len(), u16::MAX as usize);
 
         output.write_u32::<LittleEndian>(self.thread_id)?;
         output.write_u32::<LittleEndian>(self.execution_time)?;
-        output.write_u8(min(self.schema.len(), MAX_U8) as u8)?;
+        output.write_u8(schema_len as u8)?;
         output.write_u16::<LittleEndian>(self.error_code)?;
-        output.write_u16::<LittleEndian>(min(self.status_vars.len(), MAX_U16) as u16)?;
-        output.nest(S(MAX_U16)).write_all(&self.status_vars)?;
-        output.nest(S(MAX_U8)).write_all(&self.schema)?;
+        output.write_u16::<LittleEndian>(status_vars_len as u16)?;
+        output
+            .limit(S(status_vars_len))
+            .write_all(&self.status_vars)?;
+        output.limit(S(schema_len)).write_all(&self.schema)?;
         output.write_u8(0)?;
         output.write_all(&self.query)?;
 
@@ -1402,12 +1332,12 @@ impl BinlogStruct for QueryEvent {
         len += S(1);
         len += S(2);
         len += S(2);
-        len += S(min(self.status_vars.len(), MAX_U16));
-        len += S(min(self.schema.len(), MAX_U8));
+        len += S(min(self.status_vars.len(), u16::MAX as usize));
+        len += S(min(self.schema.len(), u8::MAX as usize));
         len += S(1);
         len += S(self.query.len());
 
-        min(len.0, MAX_U32 - BinlogEventHeader::len(version))
+        min(len.0, u32::MAX as usize - BinlogEventHeader::len(version))
     }
 }
 
@@ -1636,6 +1566,15 @@ impl<'a> Iterator for StatusVarsIterator<'a> {
 }
 
 bitflags! {
+    /// Semi-sync binlog flags.
+    pub struct SemiSyncFlags: u8 {
+        // If the SEMI_SYNC_ACK_REQ flag is set the master waits for a Semi Sync ACK packet
+        // from the slave before it sends the next event.
+        const SEMI_SYNC_ACK_REQ = 0x01;
+    }
+}
+
+bitflags! {
     /// Empty flags of a `LoadEvent`.
     pub struct EmptyFlags: u8 {
         const FIELD_TERM_EMPTY = 0x01;
@@ -1691,7 +1630,7 @@ impl fmt::Debug for LoadEvent {
             .field("opt_flags", &{
                 let flags = self.opt_flags;
                 format!(
-                    "{:?} (Unknown flags: {:08b}",
+                    "{:?} (Unknown flags: {:08b})",
                     flags,
                     self.opt_flags & (std::u8::MAX ^ OptFlags::all().bits())
                 )
@@ -1699,7 +1638,7 @@ impl fmt::Debug for LoadEvent {
             .field("empty_flags", &{
                 let flags = self.empty_flags;
                 format!(
-                    "{:?} (Unknown flags: {:08b}",
+                    "{:?} (Unknown flags: {:08b})",
                     flags,
                     self.empty_flags & (std::u8::MAX ^ EmptyFlags::all().bits())
                 )
@@ -1726,9 +1665,9 @@ impl BinlogStruct for LoadEvent {
         event_size: usize,
         _fde: &FormatDescriptionEvent,
         version: BinlogVersion,
-        input: T,
+        mut input: T,
     ) -> io::Result<Self> {
-        let mut input = LimitedRead::new(input, S(event_size) - S(BinlogEventHeader::len(version)));
+        let mut input = input.limit(S(event_size) - S(BinlogEventHeader::len(version)));
 
         let thread_id = input.read_u32::<LittleEndian>()?;
         let exec_time = input.read_u32::<LittleEndian>()?;
@@ -1770,13 +1709,9 @@ impl BinlogStruct for LoadEvent {
         input.read_exact(&mut schema_name)?;
         input.read_u8()?; // skip null
 
-        let mut file_name = vec![0_u8; input.limit()];
+        let mut file_name = vec![0_u8; input.get_limit() - 1];
         input.read_exact(&mut file_name)?;
         input.read_u8()?; // skip null
-
-        if input.limit() > 0 {
-            return Err(Error::new(Other, "bytes remaining on stream"));
-        }
 
         Ok(Self {
             thread_id,
@@ -1799,14 +1734,17 @@ impl BinlogStruct for LoadEvent {
     /// Writes a [`LOAD_EVENT`] to the given stream.
     ///
     /// Will write `self.len()` bytes.
-    fn write<T: Write>(&self, version: BinlogVersion, output: T) -> io::Result<()> {
-        let mut output = LimitedWrite::new(output, S(self.len(version)));
+    fn write<T: Write>(&self, version: BinlogVersion, mut output: T) -> io::Result<()> {
+        let mut output = output.limit(S(self.len(version)));
+
+        let table_len = min(self.table_name.len(), u8::MAX as usize);
+        let schema_len = min(self.schema_name.len(), u8::MAX as usize);
 
         output.write_u32::<LittleEndian>(self.thread_id)?;
         output.write_u32::<LittleEndian>(self.exec_time)?;
         output.write_u32::<LittleEndian>(self.skip_lines)?;
-        output.write_u8(min(self.table_name.len(), MAX_U8) as u8)?;
-        output.write_u8(min(self.schema_name.len(), MAX_U8) as u8)?;
+        output.write_u8(table_len as u8)?;
+        output.write_u8(schema_len as u8)?;
         output.write_u32::<LittleEndian>(self.field_names.len() as u32)?;
 
         output.write_u8(self.field_term)?;
@@ -1818,18 +1756,18 @@ impl BinlogStruct for LoadEvent {
         output.write_u8(self.empty_flags)?;
 
         for field_name in self.field_names.iter() {
-            output.write_u8(min(field_name.len(), MAX_U8) as u8)?;
+            output.write_u8(min(field_name.len(), u8::MAX as usize) as u8)?;
         }
 
         for field_name in self.field_names.iter() {
-            output.nest(S(MAX_U8)).write_all(&field_name)?;
+            output.limit(S(u8::MAX as usize)).write_all(&field_name)?;
             output.write_u8(0)?;
         }
 
-        output.nest(S(MAX_U8)).write_all(&self.table_name)?;
+        output.limit(S(table_len)).write_all(&self.table_name)?;
         output.write_u8(0)?;
 
-        output.nest(S(MAX_U8)).write_all(&self.schema_name)?;
+        output.limit(S(schema_len)).write_all(&self.schema_name)?;
         output.write_u8(0)?;
 
         output.write_all(&self.file_name)?;
@@ -1840,9 +1778,9 @@ impl BinlogStruct for LoadEvent {
 
     /// Returns length of this load event in bytes.
     fn len(&self, version: BinlogVersion) -> usize {
-        let table_name_len = min(self.table_name.len(), MAX_U8);
-        let schema_len = min(self.schema_name.len(), MAX_U8);
-        let num_fields = min(self.field_names.len(), MAX_U32);
+        let table_name_len = min(self.table_name.len(), u8::MAX as usize);
+        let schema_len = min(self.schema_name.len(), u8::MAX as usize);
+        let num_fields = min(self.field_names.len(), u32::MAX as usize);
 
         let mut len = S(0);
 
@@ -1867,7 +1805,7 @@ impl BinlogStruct for LoadEvent {
             .iter()
             .take(num_fields)
             .map(Vec::len)
-            .map(|len| min(len, MAX_U8))
+            .map(|len| min(len, u8::MAX as usize))
             .sum::<usize>());
         len += S(num_fields);
         len += S(table_name_len);
@@ -1877,7 +1815,7 @@ impl BinlogStruct for LoadEvent {
         len += S(self.file_name.len());
         len += S(1);
 
-        min(len.0, MAX_U32 - BinlogEventHeader::len(version))
+        min(len.0, u32::MAX as usize - BinlogEventHeader::len(version))
     }
 }
 
@@ -1976,7 +1914,7 @@ impl fmt::Debug for NewLoadEvent {
             .field("opt_flags", &{
                 let flags = self.opt_flags;
                 format!(
-                    "{:?} (Unknown flags: {:08b}",
+                    "{:?} (Unknown flags: {:08b})",
                     flags,
                     self.opt_flags & (std::u8::MAX ^ OptFlags::all().bits())
                 )
@@ -2006,9 +1944,9 @@ impl BinlogStruct for NewLoadEvent {
         event_size: usize,
         _fde: &FormatDescriptionEvent,
         version: BinlogVersion,
-        input: T,
+        mut input: T,
     ) -> io::Result<Self> {
-        let mut input = LimitedRead::new(input, S(event_size) - S(BinlogEventHeader::len(version)));
+        let mut input = input.limit(S(event_size) - S(BinlogEventHeader::len(version)));
 
         let slave_proxy_id = input.read_u32::<LittleEndian>()?;
         let exec_time = input.read_u32::<LittleEndian>()?;
@@ -2057,11 +1995,7 @@ impl BinlogStruct for NewLoadEvent {
         let schema_name = len_enc!(schema_len);
         input.read_u8()?; // skip null
 
-        let file_name = len_enc!(input.limit());
-
-        if input.limit() > 0 {
-            return Err(Error::new(Other, "bytes remaining on stream"));
-        }
+        let file_name = len_enc!(input.get_limit());
 
         Ok(Self {
             thread_id: slave_proxy_id,
@@ -2083,20 +2017,21 @@ impl BinlogStruct for NewLoadEvent {
     /// Writes a [`NEW_LOAD_EVENT`] to the given stream.
     ///
     /// Will write `self.len()` bytes.
-    fn write<T: Write>(&self, version: BinlogVersion, output: T) -> io::Result<()> {
-        let mut output = LimitedWrite::new(output, S(self.len(version)));
+    fn write<T: Write>(&self, version: BinlogVersion, mut output: T) -> io::Result<()> {
+        let mut output = output.limit(S(self.len(version)));
 
         output.write_u32::<LittleEndian>(self.thread_id)?;
         output.write_u32::<LittleEndian>(self.exec_time)?;
         output.write_u32::<LittleEndian>(self.skip_lines)?;
-        output.write_u8(min(self.table_name.len(), MAX_U8) as u8)?;
-        output.write_u8(min(self.schema_name.len(), MAX_U8) as u8)?;
+        output.write_u8(min(self.table_name.len(), u8::MAX as usize) as u8)?;
+        output.write_u8(min(self.schema_name.len(), u8::MAX as usize) as u8)?;
         output.write_u32::<LittleEndian>(self.field_names.len() as u32)?;
 
         macro_rules! len_enc {
             ($field:expr) => {{
-                output.write_u8(min($field.len(), MAX_U8) as u8)?;
-                output.nest(S(MAX_U8)).write_all(&$field)?;
+                let field_len = min($field.len(), u8::MAX as usize);
+                output.write_u8(field_len as u8)?;
+                output.limit(S(field_len)).write_all(&$field)?;
             }};
         }
 
@@ -2109,18 +2044,22 @@ impl BinlogStruct for NewLoadEvent {
         output.write_u8(self.opt_flags)?;
 
         for field_name in self.field_names.iter() {
-            output.write_u8(min(field_name.len(), MAX_U8) as u8)?;
+            output.write_u8(min(field_name.len(), u8::MAX as usize) as u8)?;
         }
 
         for field_name in self.field_names.iter() {
-            output.nest(S(MAX_U8)).write_all(&field_name)?;
+            output.limit(S(u8::MAX as usize)).write_all(&field_name)?;
             output.write_u8(0)?;
         }
 
-        output.nest(S(MAX_U8)).write_all(&self.table_name)?;
+        output
+            .limit(S(u8::MAX as usize))
+            .write_all(&self.table_name)?;
         output.write_u8(0)?;
 
-        output.nest(S(MAX_U8)).write_all(&self.schema_name)?;
+        output
+            .limit(S(u8::MAX as usize))
+            .write_all(&self.schema_name)?;
         output.write_u8(0)?;
 
         output.write_all(&self.file_name)?;
@@ -2130,7 +2069,7 @@ impl BinlogStruct for NewLoadEvent {
 
     /// Returns length of this load event in bytes.
     fn len(&self, version: BinlogVersion) -> usize {
-        let num_fields = min(self.field_names.len(), MAX_U32);
+        let num_fields = min(self.field_names.len(), u32::MAX as usize);
 
         let mut len = S(0);
 
@@ -2142,15 +2081,15 @@ impl BinlogStruct for NewLoadEvent {
         len += S(4);
 
         len += S(1);
-        len += S(min(self.field_term.len(), MAX_U8));
+        len += S(min(self.field_term.len(), u8::MAX as usize));
         len += S(1);
-        len += S(min(self.enclosed_by.len(), MAX_U8));
+        len += S(min(self.enclosed_by.len(), u8::MAX as usize));
         len += S(1);
-        len += S(min(self.line_term.len(), MAX_U8));
+        len += S(min(self.line_term.len(), u8::MAX as usize));
         len += S(1);
-        len += S(min(self.line_start.len(), MAX_U8));
+        len += S(min(self.line_start.len(), u8::MAX as usize));
         len += S(1);
-        len += S(min(self.escaped_by.len(), MAX_U8));
+        len += S(min(self.escaped_by.len(), u8::MAX as usize));
         len += S(1);
 
         len += S(num_fields);
@@ -2159,16 +2098,16 @@ impl BinlogStruct for NewLoadEvent {
             .iter()
             .take(num_fields)
             .map(Vec::len)
-            .map(|len| min(len, MAX_U8))
+            .map(|len| min(len, u8::MAX as usize))
             .sum::<usize>());
         len += S(num_fields);
-        len += S(min(self.table_name.len(), MAX_U8));
+        len += S(min(self.table_name.len(), u8::MAX as usize));
         len += S(1);
-        len += S(min(self.schema_name.len(), MAX_U8));
+        len += S(min(self.schema_name.len(), u8::MAX as usize));
         len += S(1);
         len += S(self.file_name.len());
 
-        min(len.0, MAX_U32 - BinlogEventHeader::len(version))
+        min(len.0, u32::MAX as usize - BinlogEventHeader::len(version))
     }
 }
 
@@ -2242,18 +2181,14 @@ impl BinlogStruct for CreateFileEvent {
         event_size: usize,
         _fde: &FormatDescriptionEvent,
         version: BinlogVersion,
-        input: T,
+        mut input: T,
     ) -> io::Result<Self> {
-        let mut input = LimitedRead::new(input, S(event_size) - S(BinlogEventHeader::len(version)));
+        let mut input = input.limit(S(event_size) - S(BinlogEventHeader::len(version)));
 
         let file_id = input.read_u32::<LittleEndian>()?;
 
-        let mut block_data = vec![0_u8; input.limit()];
+        let mut block_data = vec![0_u8; input.get_limit()];
         input.read_exact(&mut block_data)?;
-
-        if input.limit() > 0 {
-            return Err(Error::new(Other, "bytes remaining on stream"));
-        }
 
         Ok(Self {
             file_id,
@@ -2261,8 +2196,8 @@ impl BinlogStruct for CreateFileEvent {
         })
     }
 
-    fn write<T: Write>(&self, version: BinlogVersion, output: T) -> io::Result<()> {
-        let mut output = LimitedWrite::new(output, S(self.len(version)));
+    fn write<T: Write>(&self, version: BinlogVersion, mut output: T) -> io::Result<()> {
+        let mut output = output.limit(S(self.len(version)));
 
         output.write_u32::<LittleEndian>(self.file_id)?;
         output.write_all(&self.block_data)?;
@@ -2277,7 +2212,7 @@ impl BinlogStruct for CreateFileEvent {
         len += S(4);
         len += S(self.block_data.len());
 
-        min(len.0, MAX_U32 - BinlogEventHeader::len(version))
+        min(len.0, u32::MAX as usize - BinlogEventHeader::len(version))
     }
 }
 
@@ -2297,18 +2232,14 @@ impl BinlogStruct for AppendBlockEvent {
         event_size: usize,
         _fde: &FormatDescriptionEvent,
         version: BinlogVersion,
-        input: T,
+        mut input: T,
     ) -> io::Result<Self> {
-        let mut input = LimitedRead::new(input, S(event_size) - S(BinlogEventHeader::len(version)));
+        let mut input = input.limit(S(event_size) - S(BinlogEventHeader::len(version)));
 
         let file_id = input.read_u32::<LittleEndian>()?;
 
-        let mut block_data = vec![0_u8; input.limit()];
+        let mut block_data = vec![0_u8; input.get_limit()];
         input.read_exact(&mut block_data)?;
-
-        if input.limit() > 0 {
-            return Err(Error::new(Other, "bytes remaining on stream"));
-        }
 
         Ok(Self {
             file_id,
@@ -2316,8 +2247,8 @@ impl BinlogStruct for AppendBlockEvent {
         })
     }
 
-    fn write<T: Write>(&self, version: BinlogVersion, output: T) -> io::Result<()> {
-        let mut output = LimitedWrite::new(output, S(self.len(version)));
+    fn write<T: Write>(&self, version: BinlogVersion, mut output: T) -> io::Result<()> {
+        let mut output = output.limit(S(self.len(version)));
 
         output.write_u32::<LittleEndian>(self.file_id)?;
         output.write_all(&self.block_data)?;
@@ -2332,7 +2263,7 @@ impl BinlogStruct for AppendBlockEvent {
         len += S(4);
         len += S(self.block_data.len());
 
-        min(len.0, MAX_U32 - BinlogEventHeader::len(version))
+        min(len.0, u32::MAX as usize - BinlogEventHeader::len(version))
     }
 }
 
@@ -2351,12 +2282,12 @@ impl BinlogStruct for ExecLoadEvent {
         event_size: usize,
         _fde: &FormatDescriptionEvent,
         version: BinlogVersion,
-        input: T,
+        mut input: T,
     ) -> io::Result<Self> {
-        let mut input = LimitedRead::new(input, S(event_size) - S(BinlogEventHeader::len(version)));
+        let mut input = input.limit(S(event_size) - S(BinlogEventHeader::len(version)));
         let file_id = input.read_u32::<LittleEndian>()?;
 
-        if input.limit() > 0 {
+        if input.get_limit() > 0 {
             return Err(Error::new(Other, "bytes remaining on stream"));
         }
 
@@ -2390,18 +2321,14 @@ impl BinlogStruct for BeginLoadQueryEvent {
         event_size: usize,
         _fde: &FormatDescriptionEvent,
         version: BinlogVersion,
-        input: T,
+        mut input: T,
     ) -> io::Result<Self> {
-        let mut input = LimitedRead::new(input, S(event_size) - S(BinlogEventHeader::len(version)));
+        let mut input = input.limit(S(event_size) - S(BinlogEventHeader::len(version)));
 
         let file_id = input.read_u32::<LittleEndian>()?;
 
-        let mut block_data = vec![0_u8; input.limit()];
+        let mut block_data = vec![0_u8; input.get_limit()];
         input.read_exact(&mut block_data)?;
-
-        if input.limit() > 0 {
-            return Err(Error::new(Other, "bytes remaining on stream"));
-        }
 
         Ok(Self {
             file_id,
@@ -2409,8 +2336,8 @@ impl BinlogStruct for BeginLoadQueryEvent {
         })
     }
 
-    fn write<T: Write>(&self, version: BinlogVersion, output: T) -> io::Result<()> {
-        let mut output = LimitedWrite::new(output, S(self.len(version)));
+    fn write<T: Write>(&self, version: BinlogVersion, mut output: T) -> io::Result<()> {
+        let mut output = output.limit(S(self.len(version)));
 
         output.write_u32::<LittleEndian>(self.file_id)?;
         output.write_all(&self.block_data)?;
@@ -2425,7 +2352,7 @@ impl BinlogStruct for BeginLoadQueryEvent {
         len += S(4);
         len += S(self.block_data.len());
 
-        min(len.0, MAX_U32 - BinlogEventHeader::len(version))
+        min(len.0, u32::MAX as usize - BinlogEventHeader::len(version))
     }
 }
 
@@ -2521,12 +2448,12 @@ impl BinlogStruct for ExecuteLoadQueryEvent {
         event_size: usize,
         _fde: &FormatDescriptionEvent,
         version: BinlogVersion,
-        input: T,
+        mut input: T,
     ) -> io::Result<Self>
     where
         Self: Sized,
     {
-        let mut input = LimitedRead::new(input, S(event_size) - S(BinlogEventHeader::len(version)));
+        let mut input = input.limit(S(event_size) - S(BinlogEventHeader::len(version)));
 
         let thread_id = input.read_u32::<LittleEndian>()?;
         let execution_time = input.read_u32::<LittleEndian>()?;
@@ -2545,12 +2472,8 @@ impl BinlogStruct for ExecuteLoadQueryEvent {
         input.read_exact(&mut schema)?;
         input.read_u8()?;
 
-        let mut query = vec![0_u8; input.limit()];
+        let mut query = vec![0_u8; input.get_limit()];
         input.read_exact(&mut query)?;
-
-        if input.limit() > 0 {
-            return Err(Error::new(Other, "bytes remaining on stream"));
-        }
 
         Ok(Self {
             thread_id,
@@ -2566,20 +2489,22 @@ impl BinlogStruct for ExecuteLoadQueryEvent {
         })
     }
 
-    fn write<T: Write>(&self, version: BinlogVersion, output: T) -> io::Result<()> {
-        let mut output = LimitedWrite::new(output, S(self.len(version)));
+    fn write<T: Write>(&self, version: BinlogVersion, mut output: T) -> io::Result<()> {
+        let mut output = output.limit(S(self.len(version)));
 
         output.write_u32::<LittleEndian>(self.thread_id)?;
         output.write_u32::<LittleEndian>(self.execution_time)?;
-        output.write_u8(min(self.schema.len(), MAX_U8) as u8)?;
+        output.write_u8(min(self.schema.len(), u8::MAX as usize) as u8)?;
         output.write_u16::<LittleEndian>(self.error_code)?;
-        output.write_u16::<LittleEndian>(min(self.status_vars.len(), MAX_U16) as u16)?;
+        output.write_u16::<LittleEndian>(min(self.status_vars.len(), u16::MAX as usize) as u16)?;
         output.write_u32::<LittleEndian>(self.file_id)?;
         output.write_u32::<LittleEndian>(self.start_pos)?;
         output.write_u32::<LittleEndian>(self.end_pos)?;
         output.write_u8(self.dup_handling)?;
-        output.nest(S(MAX_U16)).write_all(&self.status_vars)?;
-        output.nest(S(MAX_U8)).write_all(&self.schema)?;
+        output
+            .limit(S(u16::MAX as usize))
+            .write_all(&self.status_vars)?;
+        output.limit(S(u8::MAX as usize)).write_all(&self.schema)?;
         output.write_u8(0)?;
         output.write_all(&self.query)?;
 
@@ -2598,12 +2523,12 @@ impl BinlogStruct for ExecuteLoadQueryEvent {
         len += S(4); // start_pos
         len += S(4); // end_pos
         len += S(1); // dup_handling_flags
-        len += S(min(self.status_vars.len(), MAX_U16 - 13)); // status_vars
-        len += S(min(self.schema.len(), MAX_U8)); // db_len
+        len += S(min(self.status_vars.len(), u16::MAX as usize - 13)); // status_vars
+        len += S(min(self.schema.len(), u8::MAX as usize)); // db_len
         len += S(1); // null-byte
         len += S(self.query.len());
 
-        min(len.0, MAX_U32 - BinlogEventHeader::len(version))
+        min(len.0, u32::MAX as usize - BinlogEventHeader::len(version))
     }
 }
 
@@ -2625,15 +2550,15 @@ impl BinlogStruct for DeleteFileEvent {
         event_size: usize,
         _fde: &FormatDescriptionEvent,
         version: BinlogVersion,
-        input: T,
+        mut input: T,
     ) -> io::Result<Self>
     where
         Self: Sized,
     {
-        let mut input = LimitedRead::new(input, S(event_size) - S(BinlogEventHeader::len(version)));
+        let mut input = input.limit(S(event_size) - S(BinlogEventHeader::len(version)));
         let file_id = input.read_u32::<LittleEndian>()?;
 
-        if input.limit() > 0 {
+        if input.get_limit() > 0 {
             return Err(Error::new(Other, "bytes remaining on stream"));
         }
 
@@ -2670,17 +2595,17 @@ impl BinlogStruct for RandEvent {
         event_size: usize,
         _fde: &FormatDescriptionEvent,
         version: BinlogVersion,
-        input: T,
+        mut input: T,
     ) -> io::Result<Self>
     where
         Self: Sized,
     {
-        let mut input = LimitedRead::new(input, S(event_size) - S(BinlogEventHeader::len(version)));
+        let mut input = input.limit(S(event_size) - S(BinlogEventHeader::len(version)));
 
         let seed1 = input.read_u64::<LittleEndian>()?;
         let seed2 = input.read_u64::<LittleEndian>()?;
 
-        if input.limit() > 0 {
+        if input.get_limit() > 0 {
             return Err(Error::new(Other, "bytes remaining on stream"));
         }
 
@@ -2714,12 +2639,12 @@ impl BinlogStruct for XidEvent {
         event_size: usize,
         fde: &FormatDescriptionEvent,
         version: BinlogVersion,
-        input: T,
+        mut input: T,
     ) -> io::Result<Self>
     where
         Self: Sized,
     {
-        let mut input = LimitedRead::new(input, S(event_size) - S(BinlogEventHeader::len(version)));
+        let mut input = input.limit(S(event_size) - S(BinlogEventHeader::len(version)));
 
         let post_header_len = fde.get_event_type_header_length(Self::EVENT_TYPE.unwrap());
 
@@ -2729,7 +2654,7 @@ impl BinlogStruct for XidEvent {
 
         let xid = input.read_u64::<LittleEndian>()?;
 
-        if input.limit() > 0 {
+        if input.get_limit() > 0 {
             return Err(Error::new(Other, "bytes remaining on stream"));
         }
 
@@ -2814,12 +2739,12 @@ impl BinlogStruct for IntvarEvent {
         event_size: usize,
         fde: &FormatDescriptionEvent,
         version: BinlogVersion,
-        input: T,
+        mut input: T,
     ) -> io::Result<Self>
     where
         Self: Sized,
     {
-        let mut input = LimitedRead::new(input, S(event_size) - S(BinlogEventHeader::len(version)));
+        let mut input = input.limit(S(event_size) - S(BinlogEventHeader::len(version)));
 
         let post_header_len = fde.get_event_type_header_length(Self::EVENT_TYPE.unwrap());
 
@@ -2830,7 +2755,7 @@ impl BinlogStruct for IntvarEvent {
         let subtype = input.read_u8()?;
         let value = input.read_u64::<LittleEndian>()?;
 
-        if input.limit() > 0 {
+        if input.get_limit() > 0 {
             return Err(Error::new(Other, "bytes remaining on stream"));
         }
 
@@ -2936,12 +2861,12 @@ impl BinlogStruct for UserVarEvent {
         event_size: usize,
         _fde: &FormatDescriptionEvent,
         version: BinlogVersion,
-        input: T,
+        mut input: T,
     ) -> io::Result<Self>
     where
         Self: Sized,
     {
-        let mut input = LimitedRead::new(input, S(event_size) - S(BinlogEventHeader::len(version)));
+        let mut input = input.limit(S(event_size) - S(BinlogEventHeader::len(version)));
 
         let name_len = input.read_u32::<LittleEndian>()? as usize;
         let mut name = vec![0_u8; name_len];
@@ -2966,13 +2891,13 @@ impl BinlogStruct for UserVarEvent {
         input.read_exact(&mut value)?;
 
         // Old servers may not pack flags here.
-        let flags = if input.limit() > 0 {
+        let flags = if input.get_limit() > 0 {
             input.read_u8()?
         } else {
             0
         };
 
-        if input.limit() > 0 {
+        if input.get_limit() > 0 {
             return Err(Error::new(Other, "bytes remaining on stream"));
         }
 
@@ -2986,8 +2911,8 @@ impl BinlogStruct for UserVarEvent {
         })
     }
 
-    fn write<T: Write>(&self, version: BinlogVersion, output: T) -> io::Result<()> {
-        let mut output = LimitedWrite::new(output, S(self.len(version)));
+    fn write<T: Write>(&self, version: BinlogVersion, mut output: T) -> io::Result<()> {
+        let mut output = output.limit(S(self.len(version)));
 
         output.write_u32::<LittleEndian>(self.name.len() as u32)?;
         output.write_all(&self.name)?;
@@ -3006,18 +2931,18 @@ impl BinlogStruct for UserVarEvent {
         let mut len = S(0);
 
         len += S(4);
-        len += S(min(self.name.len(), MAX_U32));
+        len += S(min(self.name.len(), u32::MAX as usize));
         len += S(1);
 
         if !self.is_null {
             len += S(1);
             len += S(4);
             len += S(4);
-            len += S(min(self.value.len(), MAX_U32));
+            len += S(min(self.value.len(), u32::MAX as usize));
             len += S(1);
         }
 
-        min(len.0, MAX_U32 - BinlogEventHeader::len(version))
+        min(len.0, u32::MAX as usize - BinlogEventHeader::len(version))
     }
 }
 
@@ -3088,19 +3013,19 @@ impl BinlogStruct for IncidentEvent {
         event_size: usize,
         _fde: &FormatDescriptionEvent,
         version: BinlogVersion,
-        input: T,
+        mut input: T,
     ) -> io::Result<Self>
     where
         Self: Sized,
     {
-        let mut input = LimitedRead::new(input, S(event_size) - S(BinlogEventHeader::len(version)));
+        let mut input = input.limit(S(event_size) - S(BinlogEventHeader::len(version)));
 
         let incident_type = input.read_u16::<LittleEndian>()?;
         let message_len = input.read_u8()? as usize;
         let mut message = vec![0_u8; message_len];
         input.read_exact(&mut message)?;
 
-        if input.limit() > 0 {
+        if input.get_limit() > 0 {
             return Err(Error::new(Other, "bytes remaining on stream"));
         }
 
@@ -3110,11 +3035,11 @@ impl BinlogStruct for IncidentEvent {
         })
     }
 
-    fn write<T: Write>(&self, version: BinlogVersion, output: T) -> io::Result<()> {
-        let mut output = LimitedWrite::new(output, S(self.len(version)));
+    fn write<T: Write>(&self, version: BinlogVersion, mut output: T) -> io::Result<()> {
+        let mut output = output.limit(S(self.len(version)));
         output.write_u16::<LittleEndian>(self.incident_type)?;
-        output.write_u8(min(self.message.len(), MAX_U8) as u8)?;
-        output.nest(S(MAX_U8)).write_all(&self.message)?;
+        output.write_u8(min(self.message.len(), u8::MAX as usize) as u8)?;
+        output.limit(S(u8::MAX as usize)).write_all(&self.message)?;
         Ok(())
     }
 
@@ -3122,10 +3047,10 @@ impl BinlogStruct for IncidentEvent {
         let mut len = S(0);
 
         len += S(2);
-        len += S(min(self.message.len(), MAX_U8));
+        len += S(min(self.message.len(), u8::MAX as usize));
         len += S(self.message.len());
 
-        min(len.0, MAX_U32 - BinlogEventHeader::len(version))
+        min(len.0, u32::MAX as usize - BinlogEventHeader::len(version))
     }
 }
 
@@ -3276,12 +3201,12 @@ impl BinlogStruct for TableMapEvent {
         event_size: usize,
         fde: &FormatDescriptionEvent,
         version: BinlogVersion,
-        input: T,
+        mut input: T,
     ) -> io::Result<Self>
     where
         Self: Sized,
     {
-        let mut input = LimitedRead::new(input, S(event_size) - S(BinlogEventHeader::len(version)));
+        let mut input = input.limit(S(event_size) - S(BinlogEventHeader::len(version)));
 
         let table_id = if 6 == fde.get_event_type_header_length(Self::EVENT_TYPE.unwrap()) {
             input.read_u32::<LittleEndian>()? as u64
@@ -3313,7 +3238,7 @@ impl BinlogStruct for TableMapEvent {
         let mut null_bitmask = vec![0_u8; bitmask_len as usize];
         input.read_exact(&mut null_bitmask)?;
 
-        let mut optional_metadata = vec![0_u8; input.limit()];
+        let mut optional_metadata = vec![0_u8; input.get_limit()];
         input.read_exact(&mut optional_metadata)?;
 
         Ok(Self {
@@ -3328,16 +3253,20 @@ impl BinlogStruct for TableMapEvent {
         })
     }
 
-    fn write<T: Write>(&self, version: BinlogVersion, output: T) -> io::Result<()> {
-        let mut output = LimitedWrite::new(output, S(self.len(version)));
+    fn write<T: Write>(&self, version: BinlogVersion, mut output: T) -> io::Result<()> {
+        let mut output = output.limit(S(self.len(version)));
 
         output.write_u48::<LittleEndian>(self.table_id)?;
         output.write_u16::<LittleEndian>(self.flags)?;
-        output.write_u8(min(self.database_name.len(), MAX_U8) as u8)?;
-        output.nest(S(MAX_U8)).write_all(&self.database_name)?;
+        output.write_u8(min(self.database_name.len(), u8::MAX as usize) as u8)?;
+        output
+            .limit(S(u8::MAX as usize))
+            .write_all(&self.database_name)?;
         output.write_u8(0)?;
-        output.write_u8(min(self.table_name.len(), MAX_U8) as u8)?;
-        output.nest(S(MAX_U8)).write_all(&self.table_name)?;
+        output.write_u8(min(self.table_name.len(), u8::MAX as usize) as u8)?;
+        output
+            .limit(S(u8::MAX as usize))
+            .write_all(&self.table_name)?;
         output.write_u8(0)?;
         output.write_lenenc_int(self.get_columns_count() as u64)?;
         output.write_all(&self.columns_type)?;
@@ -3354,10 +3283,10 @@ impl BinlogStruct for TableMapEvent {
         len += S(6);
         len += S(2);
         len += S(1);
-        len += S(min(self.database_name.len(), MAX_U8));
+        len += S(min(self.database_name.len(), u8::MAX as usize));
         len += S(1);
         len += S(1);
-        len += S(min(self.table_name.len(), MAX_U8));
+        len += S(min(self.table_name.len(), u8::MAX as usize));
         len += S(1);
         len += S(crate::misc::lenenc_int_len(self.get_columns_count() as u64) as usize);
         len += S(self.get_columns_count());
@@ -3365,7 +3294,7 @@ impl BinlogStruct for TableMapEvent {
         len += S((self.get_columns_count() + 8) / 7);
         len += S(self.optional_metadata.len());
 
-        min(len.0, MAX_U32 - BinlogEventHeader::len(version))
+        min(len.0, u32::MAX as usize - BinlogEventHeader::len(version))
     }
 }
 /// Query that caused the following `ROWS_EVENT`.
@@ -3396,28 +3325,24 @@ impl BinlogStruct for RowsQueryEvent {
         event_size: usize,
         _fde: &FormatDescriptionEvent,
         version: BinlogVersion,
-        input: T,
+        mut input: T,
     ) -> io::Result<Self>
     where
         Self: Sized,
     {
-        let mut input = LimitedRead::new(input, S(event_size) - S(BinlogEventHeader::len(version)));
+        let mut input = input.limit(S(event_size) - S(BinlogEventHeader::len(version)));
 
         input.read_u8()?; // ignore length
-        let mut query = vec![0_u8; input.limit()];
+        let mut query = vec![0_u8; input.get_limit()];
         input.read_exact(&mut query)?;
-
-        if input.limit() > 0 {
-            return Err(Error::new(Other, "bytes remaining on stream"));
-        }
 
         Ok(Self { query })
     }
 
-    fn write<T: Write>(&self, version: BinlogVersion, output: T) -> io::Result<()> {
-        let mut output = LimitedWrite::new(output, S(self.len(version)));
+    fn write<T: Write>(&self, version: BinlogVersion, mut output: T) -> io::Result<()> {
+        let mut output = output.limit(S(self.len(version)));
 
-        output.write_u8(min(self.query.len(), MAX_U8) as u8)?;
+        output.write_u8(min(self.query.len(), u8::MAX as usize) as u8)?;
         output.write_all(&self.query)?;
 
         Ok(())
@@ -3429,7 +3354,7 @@ impl BinlogStruct for RowsQueryEvent {
         len += S(1);
         len += S(self.query.len());
 
-        min(len.0, MAX_U32 - BinlogEventHeader::len(version))
+        min(len.0, u32::MAX as usize - BinlogEventHeader::len(version))
     }
 }
 
@@ -3503,9 +3428,9 @@ impl RowsEvent {
         event_size: usize,
         fde: &FormatDescriptionEvent,
         version: BinlogVersion,
-        input: T,
+        mut input: T,
     ) -> io::Result<Self> {
-        let mut input = LimitedRead::new(input, S(event_size) - S(BinlogEventHeader::len(version)));
+        let mut input = input.limit(S(event_size) - S(BinlogEventHeader::len(version)));
         let post_header_len = fde.get_event_type_header_length(event_type);
 
         let is_delete_event = event_type == EventType::DELETE_ROWS_EVENT
@@ -3548,7 +3473,7 @@ impl RowsEvent {
             None
         };
 
-        let mut rows_data = vec![0_u8; input.limit()];
+        let mut rows_data = vec![0_u8; input.get_limit()];
         input.read_exact(&mut rows_data)?;
 
         let (columns_before_image, columns_after_image) = if is_update_event {
@@ -3573,21 +3498,24 @@ impl RowsEvent {
     /// Writes this event into the given stream.
     ///
     /// This function will be used in `BinlogStruct` implementations for derived events.
-    pub fn write<T: Write>(&self, version: BinlogVersion, output: T) -> io::Result<()> {
-        let mut output = LimitedWrite::new(output, S(self.len(version)));
+    pub fn write<T: Write>(&self, version: BinlogVersion, mut output: T) -> io::Result<()> {
+        let mut output = output.limit(S(self.len(version)));
 
         output.write_u48::<LittleEndian>(self.table_id)?;
         output.write_u16::<LittleEndian>(self.flags)?;
-        output.write_u16::<LittleEndian>(
-            min(self.extra_data.len().saturating_add(2), MAX_U16) as u16
-        )?;
-        output.nest(S(MAX_U16 - 2)).write_all(&self.extra_data)?;
+        output.write_u16::<LittleEndian>(min(
+            self.extra_data.len().saturating_add(2),
+            u16::MAX as usize,
+        ) as u16)?;
+        output
+            .limit(S(u16::MAX as usize - 2))
+            .write_all(&self.extra_data)?;
         output.write_lenenc_int(self.num_columns)?;
         let bitmap_len = (self.num_columns as usize + 7) / 8;
         {
             let num_bitmaps = self.columns_before_image.is_some() as usize
                 + self.columns_after_image.is_some() as usize;
-            let mut output = LimitedWrite::new(&mut output, S(bitmap_len * num_bitmaps));
+            let mut output = output.limit(S(bitmap_len) * S(num_bitmaps));
             output.write_all(
                 self.columns_before_image
                     .as_ref()
@@ -3601,7 +3529,7 @@ impl RowsEvent {
                     .unwrap_or_default(),
             )?;
 
-            if output.limit() > 0 {
+            if output.get_limit() > 0 {
                 return Err(Error::new(UnexpectedEof, "failed to fill whole buffer"));
             }
         }
@@ -3619,7 +3547,7 @@ impl RowsEvent {
         len += S(6); // table_id
         len += S(2); // flags
         len += S(2); // extra-data len
-        len += S(min(self.extra_data.len(), MAX_U16 - 2)); // extra data
+        len += S(min(self.extra_data.len(), u16::MAX as usize - 2)); // extra data
         len += S(crate::misc::lenenc_int_len(self.num_columns) as usize); // number of columns
         let bitmap_len = (self.num_columns as usize + 7) / 8;
         if self.columns_before_image.is_some() {
@@ -3630,7 +3558,7 @@ impl RowsEvent {
         }
         len += S(self.rows_data.len());
 
-        min(len.0, MAX_U32 - BinlogEventHeader::len(version))
+        min(len.0, u32::MAX as usize - BinlogEventHeader::len(version))
     }
 }
 

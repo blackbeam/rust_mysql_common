@@ -565,11 +565,17 @@ bitflags! {
 #[allow(non_camel_case_types)]
 #[repr(i8)]
 pub enum ItemResult {
+    /// not valid for UDFs
     INVALID_RESULT = -1,
+    /// char *
     STRING_RESULT = 0,
     REAL_RESULT,
+    /// double
+    /// long long
     INT_RESULT,
+    /// not valid for UDFs
     ROW_RESULT,
+    /// char *, to be converted to/from a decimal
     DECIMAL_RESULT,
 }
 
