@@ -510,7 +510,9 @@ impl TryFrom<u8> for ColumnType {
     }
 }
 
-bitflags! {
+my_bitflags! {
+    Flags2, u32,
+
     /// Bitmask of flags that are usually set with `SET`.
     pub struct Flags2: u32 {
         const OPTION_AUTO_IS_NULL          = 0x00004000;
@@ -520,7 +522,9 @@ bitflags! {
     }
 }
 
-bitflags! {
+my_bitflags! {
+    SqlMode, u64,
+
     /// Bitmask of flags that are usually set with `SET sql_mode`.
     pub struct SqlMode: u64 {
         const MODE_REAL_AS_FLOAT              = 0x00000001;
@@ -579,9 +583,15 @@ pub enum ItemResult {
     DECIMAL_RESULT,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, thiserror::Error)]
 #[error("Unknown item result type {}", _0)]
 pub struct UnknownItemResultType(pub i8);
+
+impl From<UnknownItemResultType> for i8 {
+    fn from(x: UnknownItemResultType) -> Self {
+        x.0
+    }
+}
 
 impl TryFrom<i8> for ItemResult {
     type Error = UnknownItemResultType;
@@ -599,6 +609,12 @@ impl TryFrom<i8> for ItemResult {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, thiserror::Error)]
 #[error("Unknown column type {}", _0)]
 pub struct UnknownColumnType(pub u8);
+
+impl From<UnknownColumnType> for u8 {
+    fn from(x: UnknownColumnType) -> Self {
+        x.0
+    }
+}

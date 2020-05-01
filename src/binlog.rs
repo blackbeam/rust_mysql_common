@@ -12,7 +12,9 @@
 //! All structures of this module contains raw data that may not necessarily be valid.
 //! Please consult the MySql documentation.
 
+use bitvec::{order::Lsb0, vec::BitVec};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+use num_traits::{Bounded, PrimInt};
 use saturating::Saturating as S;
 
 use std::{
@@ -26,20 +28,148 @@ use std::{
         ErrorKind::{InvalidData, Other, UnexpectedEof},
         Read, Write,
     },
+    marker::PhantomData,
 };
 
 use crate::{
-    constants::{ColumnType, ItemResult, UnknownColumnType},
+    constants::{ColumnType, ItemResult, UnknownColumnType, UnknownItemResultType},
     io::{ReadMysqlExt, WriteMysqlExt},
     misc::{LimitRead, LimitWrite},
+    Bitflags,
 };
+
+/// Wrapper for a raw value of a particular type.
+#[derive(Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[repr(transparent)]
+pub struct RawField<T, E, V>(pub T, PhantomData<(E, V)>);
+
+impl<T: Copy, U: Into<T>, V: TryFrom<T, Error = U>> RawField<T, U, V> {
+    /// Creates a new wrapper.
+    pub fn new(t: T) -> Self {
+        Self(t, PhantomData)
+    }
+
+    /// Returns either parsed value of this field, or raw value in case of an error.
+    pub fn get(&self) -> Result<V, U> {
+        V::try_from(self.0)
+    }
+}
+
+impl<T: fmt::Debug, U: fmt::Debug, V: fmt::Debug> fmt::Debug for RawField<T, U, V>
+where
+    T: Copy,
+    U: Into<T>,
+    V: TryFrom<T, Error = U>,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match V::try_from(self.0) {
+            Ok(u) => u.fmt(f),
+            Err(t) => write!(
+                f,
+                "Unknown value for type {}: {:?}",
+                std::any::type_name::<U>(),
+                t
+            ),
+        }
+    }
+}
+
+/// Wrapper for a sequence of values of a particular type.
+#[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[repr(transparent)]
+pub struct RawSeq<T, U, V>(pub Vec<T>, PhantomData<(U, V)>);
+
+impl<T: Copy, U: Into<T>, V: TryFrom<T, Error = U>> RawSeq<T, U, V> {
+    /// Creates a new wrapper.
+    pub fn new(t: Vec<T>) -> Self {
+        Self(t, PhantomData)
+    }
+
+    /// Returns either parsed value at the given index, or raw value in case of an error.
+    pub fn get(&self, index: usize) -> Option<Result<V, U>> {
+        self.0.get(index).copied().map(V::try_from)
+    }
+
+    /// Returns a length of this sequence.
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+}
+
+impl<T: fmt::Debug, U: fmt::Debug, V: fmt::Debug> fmt::Debug for RawSeq<T, U, V>
+where
+    T: Copy,
+    U: Into<T>,
+    V: TryFrom<T, Error = U>,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0
+            .iter()
+            .copied()
+            .map(RawField::<T, U, V>::new)
+            .collect::<Vec<_>>()
+            .fmt(f)
+    }
+}
+
+/// Wrapper for raw flags value.
+#[derive(Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub struct RawFlags<T: Bitflags>(pub T::Repr);
+
+impl<T: Bitflags> RawFlags<T> {
+    /// Returns parsed flags. Unknown bits will be truncated.
+    pub fn get(&self) -> T {
+        T::from_bits_truncate(self.0)
+    }
+}
+
+impl<T: fmt::Debug> fmt::Debug for RawFlags<T>
+where
+    T: Bitflags,
+    T::Repr: fmt::Binary,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:?}", self.get())?;
+        let unknown_bits = self.0 & (T::Repr::max_value() ^ T::all().bits());
+        if unknown_bits.count_ones() > 0 {
+            write!(
+                f,
+                " (Unknown bits: {:0width$b})",
+                unknown_bits,
+                width = T::Repr::max_value().count_ones() as usize,
+            )?
+        }
+        Ok(())
+    }
+}
+
+/// Wrapper for raw text value.
+#[derive(Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub struct RawText<T = Vec<u8>>(pub T);
+
+impl<T: AsRef<[u8]>> RawText<T> {
+    /// Returns either parsed value of this field, or raw value in case of an error.
+    pub fn get(&self) -> Cow<str> {
+        let slice = self.0.as_ref();
+        match slice.iter().position(|c| *c == 0) {
+            Some(position) => String::from_utf8_lossy(&slice[..position]),
+            None => String::from_utf8_lossy(slice),
+        }
+    }
+}
+
+impl<T: AsRef<[u8]>> fmt::Debug for RawText<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.get().fmt(f)
+    }
+}
 
 /// Depending on the MySQL Version that created the binlog the format is slightly different.
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub enum BinlogVersion {
     /// MySQL 3.23 - < 4.0.0
-    Version1,
+    Version1 = 1,
     /// MySQL 4.0.0 - 4.0.1
     Version2,
     /// MySQL 4.0.2 - < 5.0.0
@@ -48,15 +178,27 @@ pub enum BinlogVersion {
     Version4,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, thiserror::Error)]
+#[error("Unknown binlog version {}", _0)]
+#[repr(transparent)]
+pub struct UnknownBinlogVersion(pub u16);
+
+impl From<UnknownBinlogVersion> for u16 {
+    fn from(x: UnknownBinlogVersion) -> Self {
+        x.0
+    }
+}
+
 impl TryFrom<u16> for BinlogVersion {
-    type Error = u16;
+    type Error = UnknownBinlogVersion;
+
     fn try_from(value: u16) -> Result<Self, Self::Error> {
         match value {
             1 => Ok(Self::Version1),
             2 => Ok(Self::Version2),
             3 => Ok(Self::Version3),
             4 => Ok(Self::Version4),
-            x => Err(x),
+            x => Err(UnknownBinlogVersion(x)),
         }
     }
 }
@@ -128,9 +270,21 @@ pub enum EventType {
     ENUM_END_EVENT,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, thiserror::Error)]
+#[error("Unknown event type {}", _0)]
+#[repr(transparent)]
+pub struct UnknownEventType(pub u8);
+
+impl From<UnknownEventType> for u8 {
+    fn from(x: UnknownEventType) -> Self {
+        x.0
+    }
+}
+
 impl TryFrom<u8> for EventType {
-    type Error = u8;
-    fn try_from(byte: u8) -> Result<Self, u8> {
+    type Error = UnknownEventType;
+
+    fn try_from(byte: u8) -> Result<Self, UnknownEventType> {
         match byte {
             0x00 => Ok(Self::UNKNOWN_EVENT),
             0x01 => Ok(Self::START_EVENT_V3),
@@ -168,12 +322,14 @@ impl TryFrom<u8> for EventType {
             0x21 => Ok(Self::GTID_EVENT),
             0x22 => Ok(Self::ANONYMOUS_GTID_EVENT),
             0x23 => Ok(Self::PREVIOUS_GTIDS_EVENT),
-            x => Err(x),
+            x => Err(UnknownEventType(x)),
         }
     }
 }
 
-bitflags! {
+my_bitflags! {
+    EventFlags, u16,
+
     /// Binlog Event Flags
     pub struct EventFlags: u16 {
         /// Gets unset in the `FORMAT_DESCRIPTION_EVENT`
@@ -232,12 +388,7 @@ pub trait BinlogStruct {
     ///
     /// *   `BINLOG_CHECKSUM_ALG_DESC_LEN + BINLOG_CHECKSUM_LEN` for `FormatDescriptionEvent`;
     /// *   `BINLOG_CHECKSUM_LEN` for other events.
-    fn read<T: Read>(
-        event_size: usize,
-        fde: &FormatDescriptionEvent,
-        version: BinlogVersion,
-        input: T,
-    ) -> io::Result<Self>
+    fn read<T: Read>(event_size: usize, fde: &FormatDescriptionEvent, input: T) -> io::Result<Self>
     where
         Self: Sized;
 
@@ -276,7 +427,6 @@ impl BinlogStruct for BinlogFileHeader {
     fn read<T: Read>(
         _event_size: usize,
         _fde: &FormatDescriptionEvent,
-        _version: BinlogVersion,
         mut input: T,
     ) -> io::Result<Self> {
         let mut buf = [0_u8; Self::LEN];
@@ -298,12 +448,48 @@ impl BinlogStruct for BinlogFileHeader {
     }
 }
 
+/// Reader for binlog events.
+///
+/// It'll maintain actual fde and must be used
+/// to read binlog files and binlog event streams from server.
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+pub struct EventStreamReader {
+    fde: FormatDescriptionEvent,
+}
+
+impl EventStreamReader {
+    /// Creates new instance.
+    pub fn new(version: BinlogVersion) -> Self {
+        Self {
+            fde: FormatDescriptionEvent::new(version),
+        }
+    }
+
+    /// Will read next event from the given stream using actual fde.
+    pub fn read<T: Read>(&mut self, input: T) -> io::Result<Event> {
+        let event = Event::read(0, &self.fde, input)?;
+
+        // we'll redefine fde with an actual one
+        if event.header.event_type.get() == Ok(EventType::FORMAT_DESCRIPTION_EVENT) {
+            self.fde = match event.read_event::<FormatDescriptionEvent>() {
+                Ok(mut fde) => {
+                    fde.footer = event.footer;
+                    fde
+                }
+                Err(err) => return Err(err),
+            };
+        }
+
+        Ok(event)
+    }
+}
+
 /// Binlog file.
 ///
 /// It's an iterator over events in a binlog file.
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct BinlogFile<T> {
-    fde: FormatDescriptionEvent,
+    reader: EventStreamReader,
     read: T,
 }
 
@@ -312,14 +498,9 @@ impl<T: Read> BinlogFile<T> {
     ///
     /// It'll try to read binlog file header.
     pub fn new(version: BinlogVersion, mut read: T) -> io::Result<Self> {
-        let fde = FormatDescriptionEvent::new(version);
-        BinlogFileHeader::read(
-            BinlogFileHeader::LEN,
-            &fde,
-            BinlogVersion::Version4,
-            &mut read,
-        )?;
-        Ok(Self { fde, read })
+        let reader = EventStreamReader::new(version);
+        BinlogFileHeader::read(BinlogFileHeader::LEN, &reader.fde, &mut read)?;
+        Ok(Self { reader, read })
     }
 }
 
@@ -327,20 +508,8 @@ impl<T: Read> Iterator for BinlogFile<T> {
     type Item = io::Result<Event>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let event = Event::read(0, &self.fde, BinlogVersion::Version4, &mut self.read);
-        match event {
-            Ok(event) => {
-                if event.header.get_event_type() == Ok(EventType::FORMAT_DESCRIPTION_EVENT) {
-                    self.fde = match event.read_event::<FormatDescriptionEvent>() {
-                        Ok(mut fde) => {
-                            fde.footer = event.footer;
-                            fde
-                        }
-                        Err(err) => return Some(Err(err)),
-                    }
-                }
-                Some(Ok(event))
-            }
+        match self.reader.read(&mut self.read) {
+            Ok(event) => Some(Ok(event)),
             Err(err) if err.kind() == UnexpectedEof => None,
             Err(err) => Some(Err(err)),
         }
@@ -357,13 +526,18 @@ pub enum EventData {
     StopEvent,
     RotateEvent(RotateEvent),
     IntvarEvent(IntvarEvent),
-    LoadEvent(LoadEvent),
+    /// Ignored by this implementation
+    LoadEvent(Vec<u8>),
     SlaveEvent,
-    CreateFileEvent(CreateFileEvent),
-    AppendBlockEvent(AppendBlockEvent),
-    ExecLoadEvent(ExecLoadEvent),
-    DeleteFileEvent(DeleteFileEvent),
-    NewLoadEvent(NewLoadEvent),
+    CreateFileEvent(Vec<u8>),
+    /// Ignored by this implementation
+    AppendBlockEvent(Vec<u8>),
+    /// Ignored by this implementation
+    ExecLoadEvent(Vec<u8>),
+    /// Ignored by this implementation
+    DeleteFileEvent(Vec<u8>),
+    /// Ignored by this implementation
+    NewLoadEvent(Vec<u8>),
     RandEvent(RandEvent),
     UserVarEvent(UserVarEvent),
     FormatDescriptionEvent(FormatDescriptionEvent),
@@ -416,13 +590,13 @@ impl EventData {
             EventData::StopEvent => Ok(()),
             EventData::RotateEvent(ev) => ev.write(version, output),
             EventData::IntvarEvent(ev) => ev.write(version, output),
-            EventData::LoadEvent(ev) => ev.write(version, output),
+            EventData::LoadEvent(ev) => output.write_all(&ev),
             EventData::SlaveEvent => Ok(()),
-            EventData::CreateFileEvent(ev) => ev.write(version, output),
-            EventData::AppendBlockEvent(ev) => ev.write(version, output),
-            EventData::ExecLoadEvent(ev) => ev.write(version, output),
-            EventData::DeleteFileEvent(ev) => ev.write(version, output),
-            EventData::NewLoadEvent(ev) => ev.write(version, output),
+            EventData::CreateFileEvent(ev) => output.write_all(&ev),
+            EventData::AppendBlockEvent(ev) => output.write_all(&ev),
+            EventData::ExecLoadEvent(ev) => output.write_all(&ev),
+            EventData::DeleteFileEvent(ev) => output.write_all(&ev),
+            EventData::NewLoadEvent(ev) => output.write_all(&ev),
             EventData::RandEvent(ev) => ev.write(version, output),
             EventData::UserVarEvent(ev) => ev.write(version, output),
             EventData::FormatDescriptionEvent(ev) => ev.write(version, output),
@@ -455,9 +629,9 @@ impl EventData {
 }
 
 /// Enumeration spcifying checksum algorithm used to encode a binary log event.
-#[repr(u8)]
-#[allow(non_camel_case_types)]
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
+#[allow(non_camel_case_types)]
+#[repr(u8)]
 pub enum BinlogChecksumAlg {
     /// Events are without checksum though its generator is checksum-capable New Master (NM).
     BINLOG_CHECKSUM_ALG_OFF = 0,
@@ -465,13 +639,25 @@ pub enum BinlogChecksumAlg {
     BINLOG_CHECKSUM_ALG_CRC32 = 1,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, thiserror::Error)]
+#[error("Unknown checksum algorithm {}", _0)]
+#[repr(transparent)]
+pub struct UnknownChecksumAlg(pub u8);
+
+impl From<UnknownChecksumAlg> for u8 {
+    fn from(x: UnknownChecksumAlg) -> Self {
+        x.0
+    }
+}
+
 impl TryFrom<u8> for BinlogChecksumAlg {
-    type Error = u8;
+    type Error = UnknownChecksumAlg;
+
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         match value {
             0 => Ok(Self::BINLOG_CHECKSUM_ALG_OFF),
             1 => Ok(Self::BINLOG_CHECKSUM_ALG_CRC32),
-            value => Err(value),
+            x => Err(UnknownChecksumAlg(x)),
         }
     }
 }
@@ -508,7 +694,6 @@ impl Event {
             // we'll use data.len() here because of truncated event footer
             BinlogEventHeader::LEN + self.data.len(),
             &self.fde,
-            BinlogVersion::Version4,
             &*self.data,
         )
     }
@@ -517,7 +702,7 @@ impl Event {
     pub fn read_data(&self) -> io::Result<Option<EventData>> {
         use EventType::*;
 
-        let event_type = match self.header.get_event_type() {
+        let event_type = match self.header.event_type.get() {
             Ok(event_type) => event_type,
             _ => return Ok(None),
         };
@@ -529,13 +714,13 @@ impl Event {
             STOP_EVENT => EventData::StopEvent,
             ROTATE_EVENT => EventData::RotateEvent(self.read_event()?),
             INTVAR_EVENT => EventData::IntvarEvent(self.read_event()?),
-            LOAD_EVENT => EventData::LoadEvent(self.read_event()?),
+            LOAD_EVENT => EventData::LoadEvent(self.data.clone()),
             SLAVE_EVENT => EventData::SlaveEvent,
-            CREATE_FILE_EVENT => EventData::CreateFileEvent(self.read_event()?),
-            APPEND_BLOCK_EVENT => EventData::AppendBlockEvent(self.read_event()?),
-            EXEC_LOAD_EVENT => EventData::ExecLoadEvent(self.read_event()?),
-            DELETE_FILE_EVENT => EventData::DeleteFileEvent(self.read_event()?),
-            NEW_LOAD_EVENT => EventData::NewLoadEvent(self.read_event()?),
+            CREATE_FILE_EVENT => EventData::CreateFileEvent(self.data.clone()),
+            APPEND_BLOCK_EVENT => EventData::AppendBlockEvent(self.data.clone()),
+            EXEC_LOAD_EVENT => EventData::ExecLoadEvent(self.data.clone()),
+            DELETE_FILE_EVENT => EventData::DeleteFileEvent(self.data.clone()),
+            NEW_LOAD_EVENT => EventData::NewLoadEvent(self.data.clone()),
             RAND_EVENT => EventData::RandEvent(self.read_event()?),
             USER_VAR_EVENT => EventData::UserVarEvent(self.read_event()?),
             FORMAT_DESCRIPTION_EVENT => {
@@ -574,14 +759,15 @@ impl Event {
 
     /// Calculates checksum for this event.
     pub fn calc_checksum(&self, alg: BinlogChecksumAlg) -> u32 {
-        let is_fde = self.header.event_type == EventType::FORMAT_DESCRIPTION_EVENT as u8;
+        let is_fde = self.header.event_type.0 == EventType::FORMAT_DESCRIPTION_EVENT as u8;
 
         let mut hasher = crc32fast::Hasher::new();
         let mut header = [0_u8; BinlogEventHeader::LEN];
         self.header
             .write(
                 self.fde
-                    .get_binlog_version()
+                    .binlog_version
+                    .get()
                     .unwrap_or(BinlogVersion::Version4),
                 &mut header[..],
             )
@@ -598,22 +784,22 @@ impl Event {
 impl BinlogStruct for Event {
     const EVENT_TYPE: Option<EventType> = None;
 
+    /// `event_size` will be ignored.
     fn read<T: Read>(
         _event_size: usize,
         fde: &FormatDescriptionEvent,
-        version: BinlogVersion,
         mut input: T,
     ) -> io::Result<Self> {
+        let version = fde.binlog_version.get().unwrap_or(BinlogVersion::Version4);
         let binlog_header_len = BinlogEventHeader::len(version);
         let mut fde = fde.clone();
 
-        let header =
-            BinlogEventHeader::read(BinlogEventHeader::len(version), &fde, version, &mut input)?;
+        let header = BinlogEventHeader::read(BinlogEventHeader::len(version), &fde, &mut input)?;
 
         let mut data = vec![0_u8; (S(header.event_size as usize) - S(binlog_header_len)).0];
         input.read_exact(&mut data).unwrap();
 
-        let is_fde = header.event_type == EventType::FORMAT_DESCRIPTION_EVENT as u8;
+        let is_fde = header.event_type.0 == EventType::FORMAT_DESCRIPTION_EVENT as u8;
         let mut bytes_to_truncate = 0;
         let mut checksum = [0_u8; BinlogEventFooter::BINLOG_CHECKSUM_LEN];
 
@@ -631,8 +817,8 @@ impl BinlogStruct for Event {
         };
 
         // fde will always contain checksum (see WL#2540)
-        let contains_checksum =
-            !footer.checksum_alg.is_none() && (is_fde || footer.checksum_alg != Some(0));
+        let contains_checksum = !footer.checksum_alg.is_none()
+            && (is_fde || footer.checksum_alg != Some(RawField::new(0)));
 
         if contains_checksum {
             // truncate checksum
@@ -652,7 +838,7 @@ impl BinlogStruct for Event {
     }
 
     fn write<T: Write>(&self, version: BinlogVersion, mut output: T) -> io::Result<()> {
-        let is_fde = self.header.event_type == EventType::FORMAT_DESCRIPTION_EVENT as u8;
+        let is_fde = self.header.event_type.0 == EventType::FORMAT_DESCRIPTION_EVENT as u8;
         let mut output = output.limit(S(self.len(version)));
 
         self.header.write(version, &mut output)?;
@@ -674,7 +860,7 @@ impl BinlogStruct for Event {
     }
 
     fn len(&self, version: BinlogVersion) -> usize {
-        let is_fde = self.header.event_type == EventType::FORMAT_DESCRIPTION_EVENT as u8;
+        let is_fde = self.header.event_type.0 == EventType::FORMAT_DESCRIPTION_EVENT as u8;
         let mut len = S(0);
 
         len += S(BinlogEventHeader::len(version));
@@ -696,14 +882,14 @@ impl BinlogStruct for Event {
 }
 
 /// The binlog event header starts each event and is 19 bytes long assuming binlog version >= 4.
-#[derive(Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct BinlogEventHeader {
     /// Seconds since unix epoch.
     pub timestamp: u32,
     /// Binlog Event Type.
     ///
     /// This field contains raw value. Use [`Self::get_event_type()`] to get the actual event type.
-    pub event_type: u8,
+    pub event_type: RawField<u8, UnknownEventType, EventType>,
     /// Server-id of the originating mysql-server.
     ///
     /// Used to filter out events in circular replication.
@@ -715,52 +901,16 @@ pub struct BinlogEventHeader {
     /// Binlog Event Flag.
     ///
     /// This field contains raw value. Use [`Self::get_flags()`] to get the actual flags.
-    pub flags: u16,
+    pub flags: RawFlags<EventFlags>,
 }
 
 impl BinlogEventHeader {
     /// Binlog event header length for version >= 4.
     pub const LEN: usize = 19;
 
-    /// Returns either parsed event type, or raw value if event type is unknown.
-    pub fn get_event_type(&self) -> Result<EventType, u8> {
-        EventType::try_from(self.event_type)
-    }
-
-    /// Returns parsed flags. Unknown bits will be dropped.
-    pub fn get_flags(&self) -> EventFlags {
-        EventFlags::from_bits_truncate(self.flags)
-    }
-
     /// Returns binlog event header length.
     pub fn len(_version: BinlogVersion) -> usize {
         Self::LEN
-    }
-}
-
-impl fmt::Debug for BinlogEventHeader {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("BinlogEventHeader")
-            .field("timestamp", &self.timestamp)
-            .field(
-                "event_type",
-                &match self.get_event_type() {
-                    Ok(event_type) => format!("{:?}", event_type),
-                    Err(id) => format!("Unknown event type with id {}", id),
-                },
-            )
-            .field("server_id", &self.server_id)
-            .field("event_size", &self.event_size)
-            .field("log_pos", &self.log_pos)
-            .field(
-                "flags",
-                &format!(
-                    "{:?} (Unknown flags: {:016b})",
-                    self.get_flags(),
-                    self.flags & (std::u16::MAX ^ EventFlags::all().bits())
-                ),
-            )
-            .finish()
     }
 }
 
@@ -771,7 +921,6 @@ impl BinlogStruct for BinlogEventHeader {
     fn read<T: Read>(
         _event_size: usize,
         _fde: &FormatDescriptionEvent,
-        _version: BinlogVersion,
         mut input: T,
     ) -> io::Result<Self> {
         let timestamp = input.read_u32::<LittleEndian>()?;
@@ -783,21 +932,21 @@ impl BinlogStruct for BinlogEventHeader {
 
         Ok(Self {
             timestamp,
-            event_type,
+            event_type: RawField::new(event_type),
             server_id,
             event_size,
             log_pos,
-            flags,
+            flags: RawFlags(flags),
         })
     }
 
     fn write<T: Write>(&self, _version: BinlogVersion, mut output: T) -> io::Result<()> {
         output.write_u32::<LittleEndian>(self.timestamp)?;
-        output.write_u8(self.event_type)?;
+        output.write_u8(self.event_type.0)?;
         output.write_u32::<LittleEndian>(self.server_id)?;
         output.write_u32::<LittleEndian>(self.event_size)?;
         output.write_u32::<LittleEndian>(self.log_pos)?;
-        output.write_u16::<LittleEndian>(self.flags)?;
+        output.write_u16::<LittleEndian>(self.flags.0)?;
         Ok(())
     }
 
@@ -807,10 +956,10 @@ impl BinlogStruct for BinlogEventHeader {
 }
 
 /// Binlog event footer.
-#[derive(Clone, Copy, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
 pub struct BinlogEventFooter {
     /// Raw checksum algorithm description.
-    pub checksum_alg: Option<u8>,
+    pub checksum_alg: Option<RawField<u8, UnknownChecksumAlg, BinlogChecksumAlg>>,
 }
 
 impl BinlogEventFooter {
@@ -822,10 +971,8 @@ impl BinlogEventFooter {
     pub const CHECKSUM_VERSION_PRODUCT: (u8, u8, u8) = (5, 6, 1);
 
     /// Returns parsed checksum algorithm, or raw value if algorithm is unknown.
-    pub fn get_checksum_alg(&self) -> Result<Option<BinlogChecksumAlg>, u8> {
-        self.checksum_alg
-            .map(BinlogChecksumAlg::try_from)
-            .transpose()
+    pub fn get_checksum_alg(&self) -> Result<Option<BinlogChecksumAlg>, UnknownChecksumAlg> {
+        self.checksum_alg.as_ref().map(RawField::get).transpose()
     }
 
     /// Reads binlog event footer from the given buffer.
@@ -851,44 +998,64 @@ impl BinlogEventFooter {
             None
         };
 
-        Ok(Self { checksum_alg })
+        Ok(Self {
+            checksum_alg: checksum_alg.map(RawField::new),
+        })
     }
 }
 
 impl Default for BinlogEventFooter {
     fn default() -> Self {
         BinlogEventFooter {
-            checksum_alg: Some(BinlogChecksumAlg::BINLOG_CHECKSUM_ALG_OFF as u8),
+            checksum_alg: Some(RawField::new(
+                BinlogChecksumAlg::BINLOG_CHECKSUM_ALG_OFF as u8,
+            )),
         }
     }
 }
 
-impl fmt::Debug for BinlogEventFooter {
+/// A wrapper for 50-bytes array.
+#[derive(Clone)]
+pub struct RawServerVersion(pub [u8; FormatDescriptionEvent::SERVER_VER_LEN]);
+
+impl fmt::Debug for RawServerVersion {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("BinlogEventFooter")
-            .field(
-                "checksum_alg",
-                &match self.get_checksum_alg() {
-                    Ok(alg) => format!("{:?}", alg),
-                    Err(x) => format!("Unknown checksum algorithm {}", x),
-                },
-            )
-            .finish()
+        (&self.0[..]).fmt(f)
+    }
+}
+
+impl AsRef<[u8]> for RawServerVersion {
+    fn as_ref(&self) -> &[u8] {
+        &self.0[..]
+    }
+}
+
+impl PartialEq for RawServerVersion {
+    fn eq(&self, other: &Self) -> bool {
+        &self.0[..] == &other.0[..]
+    }
+}
+
+impl Eq for RawServerVersion {}
+
+impl Hash for RawServerVersion {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        (&self.0[..]).hash(state);
     }
 }
 
 /// A format description event is the first event of a binlog for binlog-version 4.
 ///
 /// It describes how the other events are layed out.
-#[derive(Clone)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct FormatDescriptionEvent {
     /// Version of this binlog format.
-    pub binlog_version: u16,
+    pub binlog_version: RawField<u16, UnknownBinlogVersion, BinlogVersion>,
 
     /// Version of the MySQL Server that created the binlog (len=50).
     ///
     /// The string is evaluted to apply work-arounds in the slave.
-    pub server_version: [u8; FormatDescriptionEvent::SERVER_VER_LEN],
+    pub server_version: RawText<RawServerVersion>,
 
     /// Seconds since Unix epoch when the binlog was created.
     pub create_timestamp: u32,
@@ -971,27 +1138,12 @@ impl FormatDescriptionEvent {
     /// Creates format description event suitable for `FormatDescriptionEvent::read`.
     pub fn new(binlog_version: BinlogVersion) -> Self {
         Self {
-            binlog_version: binlog_version as u16,
-            server_version: [0_u8; Self::SERVER_VER_LEN],
+            binlog_version: RawField::new(binlog_version as u16),
+            server_version: RawText(RawServerVersion([0_u8; Self::SERVER_VER_LEN])),
             create_timestamp: 0,
             event_type_header_lengths: Vec::new(),
             footer: Default::default(),
         }
-    }
-
-    /// Returns either parsed binlog version, or raw value if version is unknown.
-    pub fn get_binlog_version(&self) -> Result<BinlogVersion, u16> {
-        BinlogVersion::try_from(self.binlog_version)
-    }
-
-    /// Returns the `mysql_server_version` field value as a string.
-    pub fn get_server_version(&self) -> Cow<str> {
-        let null_pos = self
-            .server_version
-            .iter()
-            .position(|x| *x == 0)
-            .unwrap_or(self.server_version.len());
-        String::from_utf8_lossy(&self.server_version[..null_pos])
     }
 
     /// Returns header length for the given event type, if defined.
@@ -1049,45 +1201,12 @@ impl FormatDescriptionEvent {
     }
 }
 
-impl fmt::Debug for FormatDescriptionEvent {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("FormatDescriptionEvent")
-            .field("binlog_version", &self.binlog_version)
-            .field("mysql_server_version", &self.get_server_version())
-            .field("create_timestamp", &self.create_timestamp)
-            .field("event_type_header_lengths", &self.event_type_header_lengths)
-            .field("footer", &self.footer)
-            .finish()
-    }
-}
-
-impl PartialEq for FormatDescriptionEvent {
-    fn eq(&self, other: &Self) -> bool {
-        self.binlog_version == other.binlog_version
-            && &self.server_version[..] == &other.server_version[..]
-            && self.create_timestamp == other.create_timestamp
-            && self.event_type_header_lengths == other.event_type_header_lengths
-    }
-}
-
-impl Eq for FormatDescriptionEvent {}
-
-impl Hash for FormatDescriptionEvent {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.binlog_version.hash(state);
-        (&self.server_version[..]).hash(state);
-        self.create_timestamp.hash(state);
-        self.event_type_header_lengths.hash(state);
-    }
-}
-
 impl BinlogStruct for FormatDescriptionEvent {
     const EVENT_TYPE: Option<EventType> = Some(EventType::FORMAT_DESCRIPTION_EVENT);
 
     fn read<T: Read>(
         event_size: usize,
         _fde: &FormatDescriptionEvent,
-        _version: BinlogVersion,
         mut input: T,
     ) -> io::Result<Self> {
         let mut input = input.limit(S(event_size) - S(BinlogEventHeader::LEN));
@@ -1105,8 +1224,8 @@ impl BinlogStruct for FormatDescriptionEvent {
         input.read_exact(&mut event_type_header_lengths)?;
 
         Ok(Self {
-            binlog_version,
-            server_version,
+            binlog_version: RawField::new(binlog_version),
+            server_version: RawText(RawServerVersion(server_version)),
             create_timestamp,
             event_type_header_lengths,
             footer: Default::default(),
@@ -1116,8 +1235,8 @@ impl BinlogStruct for FormatDescriptionEvent {
     fn write<T: Write>(&self, version: BinlogVersion, mut output: T) -> io::Result<()> {
         let mut output = output.limit(S(self.len(version)));
 
-        output.write_u16::<LittleEndian>(self.binlog_version)?;
-        output.write_all(&self.server_version)?;
+        output.write_u16::<LittleEndian>(self.binlog_version.0)?;
+        output.write_all(&(self.server_version.0).0)?;
         output.write_u32::<LittleEndian>(self.create_timestamp)?;
         output.write_u8(BinlogEventHeader::LEN as u8)?;
         output.write_all(&self.event_type_header_lengths)?;
@@ -1140,7 +1259,7 @@ impl BinlogStruct for FormatDescriptionEvent {
 
 /// The rotate event is added to the binlog as last event
 /// to tell the reader what binlog to request next.
-#[derive(Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct RotateEvent {
     // post-header
     /// Only available if binlog version > 1 (zero otherwise).
@@ -1148,14 +1267,7 @@ pub struct RotateEvent {
 
     // payload
     /// Name of the next binlog.
-    pub name: Vec<u8>,
-}
-
-impl RotateEvent {
-    /// Returns the `name` field value as a string.
-    pub fn get_name(&self) -> Cow<str> {
-        String::from_utf8_lossy(&self.name[..])
-    }
+    pub name: RawText,
 }
 
 impl BinlogStruct for RotateEvent {
@@ -1163,10 +1275,10 @@ impl BinlogStruct for RotateEvent {
 
     fn read<T: Read>(
         event_size: usize,
-        _fde: &FormatDescriptionEvent,
-        version: BinlogVersion,
+        fde: &FormatDescriptionEvent,
         mut input: T,
     ) -> io::Result<Self> {
+        let version = fde.binlog_version.get().unwrap_or(BinlogVersion::Version4);
         let mut input = input.limit(S(event_size) - S(BinlogEventHeader::len(version)));
 
         let position = input.read_u64::<LittleEndian>()?;
@@ -1174,14 +1286,17 @@ impl BinlogStruct for RotateEvent {
         let mut name = vec![0_u8; input.get_limit()];
         input.read_exact(&mut name)?;
 
-        Ok(Self { position, name })
+        Ok(Self {
+            position,
+            name: RawText(name),
+        })
     }
 
     fn write<T: Write>(&self, version: BinlogVersion, mut output: T) -> io::Result<()> {
         let mut output = output.limit(S(self.len(version)));
 
         output.write_u64::<LittleEndian>(self.position)?;
-        output.write_all(&self.name)?;
+        output.write_all(&self.name.0)?;
 
         Ok(())
     }
@@ -1190,24 +1305,15 @@ impl BinlogStruct for RotateEvent {
         let mut len = S(0);
 
         len += S(8);
-        len += S(self.name.len());
+        len += S(self.name.0.len());
 
         min(len.0, u32::MAX as usize - BinlogEventHeader::len(version))
     }
 }
 
-impl fmt::Debug for RotateEvent {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("RotateEvent")
-            .field("position", &self.position)
-            .field("name", &self.get_name())
-            .finish()
-    }
-}
-
 /// A query event is created for each query that modifies the database, unless the query
 /// is logged row-based.
-#[derive(Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct QueryEvent {
     // post-header fields
     /// The ID of the thread that issued this statement. It is needed for temporary tables.
@@ -1225,33 +1331,11 @@ pub struct QueryEvent {
     /// by the value of the variable. Please consult the MySql documentation.
     ///
     /// Only available if binlog version >= 4 (empty otherwise).
-    pub status_vars: Vec<u8>,
+    pub status_vars: StatusVars,
     /// The currently selected database name (`schema-length` bytes).
-    pub schema: Vec<u8>,
+    pub schema: RawText,
     /// The SQL query.
-    pub query: Vec<u8>,
-}
-
-impl QueryEvent {
-    pub fn status_vars_iter(&self) -> StatusVarsIterator {
-        StatusVarsIterator::new(&self.status_vars[..])
-    }
-
-    /// Returns raw value of a status var by its key.
-    pub fn get_status_var(&self, needle: StatusVarKey) -> Option<&[u8]> {
-        self.status_vars_iter()
-            .find_map(|(key, val)| if key == needle { Some(val) } else { None })
-    }
-
-    /// Returns the `schema` field value as a string.
-    pub fn get_schema(&self) -> Cow<str> {
-        String::from_utf8_lossy(&self.schema[..])
-    }
-
-    /// Returns the `query` field value as a string.
-    pub fn get_query(&self) -> Cow<str> {
-        String::from_utf8_lossy(&self.query[..])
-    }
+    pub query: RawText,
 }
 
 impl BinlogStruct for QueryEvent {
@@ -1260,9 +1344,9 @@ impl BinlogStruct for QueryEvent {
     fn read<T: Read>(
         event_size: usize,
         fde: &FormatDescriptionEvent,
-        version: BinlogVersion,
         mut input: T,
     ) -> io::Result<Self> {
+        let version = fde.binlog_version.get().unwrap_or(BinlogVersion::Version4);
         let mut input = input.limit(S(event_size) - S(BinlogEventHeader::len(version)));
 
         let post_header_len = fde.get_event_type_header_length(Self::EVENT_TYPE.unwrap());
@@ -1297,17 +1381,17 @@ impl BinlogStruct for QueryEvent {
             thread_id,
             execution_time,
             error_code,
-            status_vars,
-            schema,
-            query,
+            status_vars: StatusVars(status_vars),
+            schema: RawText(schema),
+            query: RawText(query),
         })
     }
 
     fn write<T: Write>(&self, version: BinlogVersion, mut output: T) -> io::Result<()> {
         let mut output = output.limit(S(self.len(version)));
 
-        let schema_len = min(self.schema.len(), u8::MAX as usize);
-        let status_vars_len = min(self.status_vars.len(), u16::MAX as usize);
+        let schema_len = min(self.schema.0.len(), u8::MAX as usize);
+        let status_vars_len = min(self.status_vars.0.len(), u16::MAX as usize);
 
         output.write_u32::<LittleEndian>(self.thread_id)?;
         output.write_u32::<LittleEndian>(self.execution_time)?;
@@ -1316,10 +1400,10 @@ impl BinlogStruct for QueryEvent {
         output.write_u16::<LittleEndian>(status_vars_len as u16)?;
         output
             .limit(S(status_vars_len))
-            .write_all(&self.status_vars)?;
-        output.limit(S(schema_len)).write_all(&self.schema)?;
+            .write_all(&self.status_vars.0)?;
+        output.limit(S(schema_len)).write_all(&self.schema.0)?;
         output.write_u8(0)?;
-        output.write_all(&self.query)?;
+        output.write_all(&self.query.0)?;
 
         Ok(())
     }
@@ -1332,25 +1416,12 @@ impl BinlogStruct for QueryEvent {
         len += S(1);
         len += S(2);
         len += S(2);
-        len += S(min(self.status_vars.len(), u16::MAX as usize));
-        len += S(min(self.schema.len(), u8::MAX as usize));
+        len += S(min(self.status_vars.0.len(), u16::MAX as usize));
+        len += S(min(self.schema.0.len(), u8::MAX as usize));
         len += S(1);
-        len += S(self.query.len());
+        len += S(self.query.0.len());
 
         min(len.0, u32::MAX as usize - BinlogEventHeader::len(version))
-    }
-}
-
-impl fmt::Debug for QueryEvent {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("QueryEvent")
-            .field("thread_id", &self.thread_id)
-            .field("execution_time", &self.execution_time)
-            .field("error_code", &self.error_code)
-            .field("status_vars", &self.status_vars_iter())
-            .field("schema", &self.get_schema())
-            .field("query", &self.get_query())
-            .finish()
     }
 }
 
@@ -1476,6 +1547,223 @@ impl TryFrom<u8> for StatusVarKey {
     }
 }
 
+/// Status variable value.
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+pub enum StatusVarVal<'a> {
+    Flags2(RawFlags<crate::constants::Flags2>),
+    SqlMode(RawFlags<crate::constants::SqlMode>),
+    /// Ignored by this implementation.
+    Catalog(&'a [u8]),
+    AutoIncrement {
+        increment: u16,
+        offset: u16,
+    },
+    Charset {
+        charset_client: u16,
+        collation_connection: u16,
+        collation_server: u16,
+    },
+    /// Will be empty if timezone length is `0`.
+    TimeZone(RawText<&'a [u8]>),
+    /// Will be empty if timezone length is `0`.
+    CatalogNz(RawText<&'a [u8]>),
+    LcTimeNames(u16),
+    CharsetDatabase(u16),
+    TableMapForUpdate(u64),
+    MasterDataWritten([u8; 4]),
+    Invoker {
+        username: RawText<&'a [u8]>,
+        hostname: RawText<&'a [u8]>,
+    },
+    UpdatedDbNames(Vec<RawText<&'a [u8]>>),
+    Microseconds(u32),
+    /// Ignored.
+    CommitTs(&'a [u8]),
+    /// Ignored.
+    CommitTs2(&'a [u8]),
+    /// `0` is interpreted as `false` and everything else as `true`.
+    ExplicitDefaultsForTimestamp(bool),
+    DdlLoggedWithXid(u64),
+    DefaultCollationForUtf8mb4(u16),
+    SqlRequirePrimaryKey(u8),
+    DefaultTableEncryption(u8),
+}
+
+/// Raw status variable.
+#[derive(Clone, Eq, PartialEq, Hash)]
+pub struct StatusVar<'a> {
+    /// Status variable key.
+    key: StatusVarKey,
+    /// Raw value of a status variable. Use `Self::get_value`.
+    value: &'a [u8],
+}
+
+impl StatusVar<'_> {
+    /// Returns parsed value of this status variable, or raw value in case of error.
+    pub fn get_value(&self) -> Result<StatusVarVal, &[u8]> {
+        match self.key {
+            StatusVarKey::Flags2 => {
+                let mut read = self.value;
+                read.read_u32::<LittleEndian>()
+                    .map(RawFlags)
+                    .map(StatusVarVal::Flags2)
+                    .map_err(|_| self.value)
+            }
+            StatusVarKey::SqlMode => {
+                let mut read = self.value;
+                read.read_u64::<LittleEndian>()
+                    .map(RawFlags)
+                    .map(StatusVarVal::SqlMode)
+                    .map_err(|_| self.value)
+            }
+            StatusVarKey::Catalog => Ok(StatusVarVal::Catalog(self.value)),
+            StatusVarKey::AutoIncrement => {
+                let mut read = self.value;
+                let increment = read.read_u16::<LittleEndian>().map_err(|_| self.value)?;
+                let offset = read.read_u16::<LittleEndian>().map_err(|_| self.value)?;
+                Ok(StatusVarVal::AutoIncrement { increment, offset })
+            }
+            StatusVarKey::Charset => {
+                let mut read = self.value;
+                let charset_client = read.read_u16::<LittleEndian>().map_err(|_| self.value)?;
+                let collation_connection =
+                    read.read_u16::<LittleEndian>().map_err(|_| self.value)?;
+                let collation_server = read.read_u16::<LittleEndian>().map_err(|_| self.value)?;
+                Ok(StatusVarVal::Charset {
+                    charset_client,
+                    collation_connection,
+                    collation_server,
+                })
+            }
+            StatusVarKey::TimeZone => {
+                let mut read = self.value;
+                let len = read.read_u8().map_err(|_| self.value)? as usize;
+                let text = read.get(..len).ok_or(self.value)?;
+                Ok(StatusVarVal::TimeZone(RawText(text)))
+            }
+            StatusVarKey::CatalogNz => {
+                let mut read = self.value;
+                let len = read.read_u8().map_err(|_| self.value)? as usize;
+                let text = read.get(..len).ok_or(self.value)?;
+                Ok(StatusVarVal::CatalogNz(RawText(text)))
+            }
+            StatusVarKey::LcTimeNames => {
+                let mut read = self.value;
+                let val = read.read_u16::<LittleEndian>().map_err(|_| self.value)?;
+                Ok(StatusVarVal::LcTimeNames(val))
+            }
+            StatusVarKey::CharsetDatabase => {
+                let mut read = self.value;
+                let val = read.read_u16::<LittleEndian>().map_err(|_| self.value)?;
+                Ok(StatusVarVal::CharsetDatabase(val))
+            }
+            StatusVarKey::TableMapForUpdate => {
+                let mut read = self.value;
+                let val = read.read_u64::<LittleEndian>().map_err(|_| self.value)?;
+                Ok(StatusVarVal::TableMapForUpdate(val))
+            }
+            StatusVarKey::MasterDataWritten => {
+                let mut read = self.value;
+                let mut val = [0u8; 4];
+                read.read_exact(&mut val).map_err(|_| self.value)?;
+                Ok(StatusVarVal::MasterDataWritten(val))
+            }
+            StatusVarKey::Invoker => {
+                let mut read = self.value;
+
+                let len = read.read_u8().map_err(|_| self.value)? as usize;
+                let username = read.get(..len).ok_or(self.value)?;
+                read = &read[len..];
+
+                let len = read.read_u8().map_err(|_| self.value)? as usize;
+                let hostname = read.get(..len).ok_or(self.value)?;
+
+                Ok(StatusVarVal::Invoker {
+                    username: RawText(username),
+                    hostname: RawText(hostname),
+                })
+            }
+            StatusVarKey::UpdatedDbNames => {
+                let mut read = self.value;
+                let count = read.read_u8().map_err(|_| self.value)? as usize;
+                let mut names = Vec::with_capacity(count);
+
+                for _ in 0..count {
+                    let index = read.iter().position(|x| *x == 0).ok_or(self.value)?;
+                    names.push(RawText(&read[..index]));
+                    read = &read[index..];
+                }
+
+                Ok(StatusVarVal::UpdatedDbNames(names))
+            }
+            StatusVarKey::Microseconds => {
+                let mut read = self.value;
+                let val = read.read_u32::<LittleEndian>().map_err(|_| self.value)?;
+                Ok(StatusVarVal::Microseconds(val))
+            }
+            StatusVarKey::CommitTs => Ok(StatusVarVal::CommitTs(self.value)),
+            StatusVarKey::CommitTs2 => Ok(StatusVarVal::CommitTs2(self.value)),
+            StatusVarKey::ExplicitDefaultsForTimestamp => {
+                let mut read = self.value;
+                let val = read.read_u8().map_err(|_| self.value)?;
+                Ok(StatusVarVal::ExplicitDefaultsForTimestamp(val != 0))
+            }
+            StatusVarKey::DdlLoggedWithXid => {
+                let mut read = self.value;
+                let val = read.read_u64::<LittleEndian>().map_err(|_| self.value)?;
+                Ok(StatusVarVal::DdlLoggedWithXid(val))
+            }
+            StatusVarKey::DefaultCollationForUtf8mb4 => {
+                let mut read = self.value;
+                let val = read.read_u16::<LittleEndian>().map_err(|_| self.value)?;
+                Ok(StatusVarVal::DefaultCollationForUtf8mb4(val))
+            }
+            StatusVarKey::SqlRequirePrimaryKey => {
+                let mut read = self.value;
+                let val = read.read_u8().map_err(|_| self.value)?;
+                Ok(StatusVarVal::SqlRequirePrimaryKey(val))
+            }
+            StatusVarKey::DefaultTableEncryption => {
+                let mut read = self.value;
+                let val = read.read_u8().map_err(|_| self.value)?;
+                Ok(StatusVarVal::DefaultTableEncryption(val))
+            }
+        }
+    }
+}
+
+impl fmt::Debug for StatusVar<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("StatusVar")
+            .field("key", &self.key)
+            .field("value", &self.get_value())
+            .finish()
+    }
+}
+
+/// Status variables of a QueryEvent.
+#[derive(Clone, Eq, PartialEq, Hash)]
+pub struct StatusVars(pub Vec<u8>);
+
+impl StatusVars {
+    /// Returns an iterator over QueryEvent status variables.
+    pub fn iter(&self) -> StatusVarsIterator<'_> {
+        StatusVarsIterator::new(&self.0)
+    }
+
+    /// Returns raw value of a status variable by key.
+    pub fn get_status_var(&self, needle: StatusVarKey) -> Option<StatusVar> {
+        self.iter()
+            .find_map(|var| if var.key == needle { Some(var) } else { None })
+    }
+}
+
+impl fmt::Debug for StatusVars {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.iter().fmt(f)
+    }
+}
+
 /// Iterator over status vars of a `QueryEvent`.
 ///
 /// It will stop iteration if vars can't be parsed.
@@ -1502,7 +1790,7 @@ impl fmt::Debug for StatusVarsIterator<'_> {
 }
 
 impl<'a> Iterator for StatusVarsIterator<'a> {
-    type Item = (StatusVarKey, &'a [u8]);
+    type Item = StatusVar<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let key = *self.status_vars.get(self.pos)?;
@@ -1523,7 +1811,7 @@ impl<'a> Iterator for StatusVarsIterator<'a> {
             }};
         }
 
-        let val = match key {
+        let value = match key {
             StatusVarKey::Flags2 => get_fixed!(4),
             StatusVarKey::SqlMode => get_fixed!(8),
             StatusVarKey::Catalog => get_var!(1),
@@ -1561,7 +1849,7 @@ impl<'a> Iterator for StatusVarsIterator<'a> {
             StatusVarKey::DefaultTableEncryption => get_fixed!(1),
         };
 
-        Some((key, val))
+        Some(StatusVar { key, value })
     }
 }
 
@@ -1571,737 +1859,6 @@ bitflags! {
         // If the SEMI_SYNC_ACK_REQ flag is set the master waits for a Semi Sync ACK packet
         // from the slave before it sends the next event.
         const SEMI_SYNC_ACK_REQ = 0x01;
-    }
-}
-
-bitflags! {
-    /// Empty flags of a `LoadEvent`.
-    pub struct EmptyFlags: u8 {
-        const FIELD_TERM_EMPTY = 0x01;
-        const ENCLOSED_EMPTY   = 0x02;
-        const LINE_TERM_EMPTY  = 0x04;
-        const LINE_START_EMPTY = 0x08;
-        const ESCAPE_EMPTY     = 0x10;
-    }
-}
-
-bitflags! {
-    /// Opt flags of a `LoadEvent`.
-    pub struct OptFlags: u8 {
-        const DUMPFILE_FLAG     = 0x01;
-        const OPT_ENCLOSED_FLAG = 0x02;
-        const REPLACE_FLAG      = 0x04;
-        const IGNORE_FLAG       = 0x08;
-    }
-}
-
-/// Load event.
-///
-/// Used for LOAD DATA INFILE statements from MySQL 3.23 to 4.0.0.
-#[derive(Clone, Eq, PartialEq, Hash)]
-pub struct LoadEvent {
-    pub thread_id: u32,
-    pub exec_time: u32,
-    pub skip_lines: u32,
-    pub field_term: u8,
-    pub enclosed_by: u8,
-    pub line_term: u8,
-    pub line_start: u8,
-    pub escaped_by: u8,
-    pub opt_flags: u8,
-    pub empty_flags: u8,
-    pub field_names: Vec<Vec<u8>>,
-    pub table_name: Vec<u8>,
-    pub schema_name: Vec<u8>,
-    pub file_name: Vec<u8>,
-}
-
-impl fmt::Debug for LoadEvent {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("LoadEvent")
-            .field("thread_id", &self.thread_id)
-            .field("exec_time", &self.exec_time)
-            .field("skip_lines", &self.skip_lines)
-            .field("field_term", &self.get_field_term())
-            .field("enclosed_by", &self.get_enclosed_by())
-            .field("line_term", &self.get_line_term())
-            .field("line_start", &self.get_line_start())
-            .field("escaped_by", &self.get_escaped_by())
-            .field("opt_flags", &{
-                let flags = self.opt_flags;
-                format!(
-                    "{:?} (Unknown flags: {:08b})",
-                    flags,
-                    self.opt_flags & (std::u8::MAX ^ OptFlags::all().bits())
-                )
-            })
-            .field("empty_flags", &{
-                let flags = self.empty_flags;
-                format!(
-                    "{:?} (Unknown flags: {:08b})",
-                    flags,
-                    self.empty_flags & (std::u8::MAX ^ EmptyFlags::all().bits())
-                )
-            })
-            .field(
-                "field_names",
-                &self
-                    .field_names
-                    .iter()
-                    .map(|name| String::from_utf8_lossy(name))
-                    .collect::<Vec<_>>(),
-            )
-            .field("table_name", &self.get_table_name())
-            .field("schema_name", &self.get_schema_name())
-            .field("file_name", &self.get_file_name())
-            .finish()
-    }
-}
-
-impl BinlogStruct for LoadEvent {
-    const EVENT_TYPE: Option<EventType> = Some(EventType::LOAD_EVENT);
-
-    fn read<T: Read>(
-        event_size: usize,
-        _fde: &FormatDescriptionEvent,
-        version: BinlogVersion,
-        mut input: T,
-    ) -> io::Result<Self> {
-        let mut input = input.limit(S(event_size) - S(BinlogEventHeader::len(version)));
-
-        let thread_id = input.read_u32::<LittleEndian>()?;
-        let exec_time = input.read_u32::<LittleEndian>()?;
-        let skip_lines = input.read_u32::<LittleEndian>()?;
-        let table_name_len = input.read_u8()? as usize;
-        let schema_len = input.read_u8()? as usize;
-        let num_fields = input.read_u32::<LittleEndian>()? as usize;
-
-        let field_term = input.read_u8()?;
-        let enclosed_by = input.read_u8()?;
-        let line_term = input.read_u8()?;
-        let line_start = input.read_u8()?;
-        let escaped_by = input.read_u8()?;
-        let opt_flags = input.read_u8()?;
-        let empty_flags = input.read_u8()?;
-
-        let mut field_name_lengths = vec![0_u8; num_fields];
-        input.read_exact(&mut field_name_lengths[..])?;
-
-        let field_names = {
-            let mut field_names = Vec::with_capacity(num_fields);
-
-            for i in 0..num_fields {
-                let len = field_name_lengths[i] as usize;
-                let mut field_name = vec![0_u8; len];
-                input.read_exact(&mut field_name)?;
-                input.read_u8()?; // skip null
-                field_names.push(field_name);
-            }
-
-            field_names
-        };
-
-        let mut table_name = vec![0_u8; table_name_len];
-        input.read_exact(&mut table_name)?;
-        input.read_u8()?; // skip null
-
-        let mut schema_name = vec![0_u8; schema_len];
-        input.read_exact(&mut schema_name)?;
-        input.read_u8()?; // skip null
-
-        let mut file_name = vec![0_u8; input.get_limit() - 1];
-        input.read_exact(&mut file_name)?;
-        input.read_u8()?; // skip null
-
-        Ok(Self {
-            thread_id,
-            exec_time,
-            skip_lines,
-            field_term,
-            enclosed_by,
-            line_term,
-            line_start,
-            escaped_by,
-            opt_flags,
-            empty_flags,
-            field_names,
-            table_name,
-            schema_name,
-            file_name,
-        })
-    }
-
-    /// Writes a [`LOAD_EVENT`] to the given stream.
-    ///
-    /// Will write `self.len()` bytes.
-    fn write<T: Write>(&self, version: BinlogVersion, mut output: T) -> io::Result<()> {
-        let mut output = output.limit(S(self.len(version)));
-
-        let table_len = min(self.table_name.len(), u8::MAX as usize);
-        let schema_len = min(self.schema_name.len(), u8::MAX as usize);
-
-        output.write_u32::<LittleEndian>(self.thread_id)?;
-        output.write_u32::<LittleEndian>(self.exec_time)?;
-        output.write_u32::<LittleEndian>(self.skip_lines)?;
-        output.write_u8(table_len as u8)?;
-        output.write_u8(schema_len as u8)?;
-        output.write_u32::<LittleEndian>(self.field_names.len() as u32)?;
-
-        output.write_u8(self.field_term)?;
-        output.write_u8(self.enclosed_by)?;
-        output.write_u8(self.line_term)?;
-        output.write_u8(self.line_start)?;
-        output.write_u8(self.escaped_by)?;
-        output.write_u8(self.opt_flags)?;
-        output.write_u8(self.empty_flags)?;
-
-        for field_name in self.field_names.iter() {
-            output.write_u8(min(field_name.len(), u8::MAX as usize) as u8)?;
-        }
-
-        for field_name in self.field_names.iter() {
-            output.limit(S(u8::MAX as usize)).write_all(&field_name)?;
-            output.write_u8(0)?;
-        }
-
-        output.limit(S(table_len)).write_all(&self.table_name)?;
-        output.write_u8(0)?;
-
-        output.limit(S(schema_len)).write_all(&self.schema_name)?;
-        output.write_u8(0)?;
-
-        output.write_all(&self.file_name)?;
-        output.write_u8(0)?;
-
-        Ok(())
-    }
-
-    /// Returns length of this load event in bytes.
-    fn len(&self, version: BinlogVersion) -> usize {
-        let table_name_len = min(self.table_name.len(), u8::MAX as usize);
-        let schema_len = min(self.schema_name.len(), u8::MAX as usize);
-        let num_fields = min(self.field_names.len(), u32::MAX as usize);
-
-        let mut len = S(0);
-
-        len += S(4);
-        len += S(4);
-        len += S(4);
-        len += S(1);
-        len += S(1);
-        len += S(4);
-
-        len += S(1);
-        len += S(1);
-        len += S(1);
-        len += S(1);
-        len += S(1);
-        len += S(1);
-        len += S(1);
-
-        len += S(num_fields);
-        len += S(self
-            .field_names
-            .iter()
-            .take(num_fields)
-            .map(Vec::len)
-            .map(|len| min(len, u8::MAX as usize))
-            .sum::<usize>());
-        len += S(num_fields);
-        len += S(table_name_len);
-        len += S(1);
-        len += S(schema_len);
-        len += S(1);
-        len += S(self.file_name.len());
-        len += S(1);
-
-        min(len.0, u32::MAX as usize - BinlogEventHeader::len(version))
-    }
-}
-
-impl LoadEvent {
-    /// Returns a he `field_term` field as a character.
-    pub fn get_field_term(&self) -> char {
-        char::from(self.field_term)
-    }
-
-    /// Returns a e `enclosed_by` field as a character.
-    pub fn get_enclosed_by(&self) -> char {
-        char::from(self.enclosed_by)
-    }
-
-    /// Returns the `line_term` field as a character.
-    pub fn get_line_term(&self) -> char {
-        char::from(self.line_term)
-    }
-
-    /// Returns a he `line_start` field as a character.
-    pub fn get_line_start(&self) -> char {
-        char::from(self.line_start)
-    }
-
-    /// Returns a he `escaped_by` field as a character.
-    pub fn get_escaped_by(&self) -> char {
-        char::from(self.escaped_by)
-    }
-
-    /// Returns the given field name as a string.
-    pub fn get_field_name(&self, index: usize) -> Option<Cow<str>> {
-        self.field_names
-            .get(index)
-            .map(|field_name| String::from_utf8_lossy(&field_name[..]))
-    }
-
-    /// Returns the `table_name` field value as a string.
-    pub fn get_table_name(&self) -> Cow<str> {
-        String::from_utf8_lossy(&self.table_name[..])
-    }
-
-    /// Returns the `schema_name` field value as a string.
-    pub fn get_schema_name(&self) -> Cow<str> {
-        String::from_utf8_lossy(&self.schema_name[..])
-    }
-
-    /// Returns the `file_name` field value as a string.
-    pub fn get_file_name(&self) -> Cow<str> {
-        String::from_utf8_lossy(&self.file_name[..])
-    }
-
-    /// Returns parsed opt flags of this load event. Unknown bits will be dropped.
-    pub fn get_opt_flags(&self) -> OptFlags {
-        OptFlags::from_bits_truncate(self.opt_flags)
-    }
-
-    /// Returns parsed empty flags of this load event. Unknown bits will be dropped.
-    pub fn get_empty_flags(&self) -> EmptyFlags {
-        EmptyFlags::from_bits_truncate(self.empty_flags)
-    }
-}
-
-/// New load event.
-///
-/// Used for LOAD DATA INFILE statements from MySql 4.0.0 to 5.0.3.
-#[derive(Clone, Eq, PartialEq, Hash)]
-pub struct NewLoadEvent {
-    pub thread_id: u32,
-    pub exec_time: u32,
-    pub skip_lines: u32,
-
-    pub field_term: Vec<u8>,
-    pub enclosed_by: Vec<u8>,
-    pub line_term: Vec<u8>,
-    pub line_start: Vec<u8>,
-    pub escaped_by: Vec<u8>,
-    pub opt_flags: u8,
-
-    pub field_names: Vec<Vec<u8>>,
-    pub table_name: Vec<u8>,
-    pub schema_name: Vec<u8>,
-    pub file_name: Vec<u8>,
-}
-
-impl fmt::Debug for NewLoadEvent {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("NewLoadEvent")
-            .field("thread_id", &self.thread_id)
-            .field("exec_time", &self.exec_time)
-            .field("skip_lines", &self.skip_lines)
-            .field("field_term", &self.get_field_term())
-            .field("enclosed_by", &self.get_enclosed_by())
-            .field("line_term", &self.get_line_term())
-            .field("line_start", &self.get_line_start())
-            .field("escaped_by", &self.get_escaped_by())
-            .field("opt_flags", &{
-                let flags = self.opt_flags;
-                format!(
-                    "{:?} (Unknown flags: {:08b})",
-                    flags,
-                    self.opt_flags & (std::u8::MAX ^ OptFlags::all().bits())
-                )
-            })
-            .field(
-                "field_names",
-                &self
-                    .field_names
-                    .iter()
-                    .map(|name| String::from_utf8_lossy(name))
-                    .collect::<Vec<_>>(),
-            )
-            .field("table_name", &self.get_table_name())
-            .field("schema_name", &self.get_schema_name())
-            .field("file_name", &self.get_file_name())
-            .finish()
-    }
-}
-
-impl BinlogStruct for NewLoadEvent {
-    const EVENT_TYPE: Option<EventType> = Some(EventType::NEW_LOAD_EVENT);
-
-    /// Reads a [`NEW_LOAD_EVENT`] from the given stream.
-    ///
-    /// Will read `event_size - BinlogEventHeader::LEN` bytes.
-    fn read<T: Read>(
-        event_size: usize,
-        _fde: &FormatDescriptionEvent,
-        version: BinlogVersion,
-        mut input: T,
-    ) -> io::Result<Self> {
-        let mut input = input.limit(S(event_size) - S(BinlogEventHeader::len(version)));
-
-        let slave_proxy_id = input.read_u32::<LittleEndian>()?;
-        let exec_time = input.read_u32::<LittleEndian>()?;
-        let skip_lines = input.read_u32::<LittleEndian>()?;
-        let table_name_len = input.read_u8()? as usize;
-        let schema_len = input.read_u8()? as usize;
-        let num_fields = input.read_u32::<LittleEndian>()? as usize;
-
-        macro_rules! len_enc {
-            () => {{
-                let len = input.read_u8()? as usize;
-                len_enc!(len)
-            }};
-            ($len:expr) => {{
-                let mut val = vec![0_u8; $len as usize];
-                input.read_exact(&mut val[..])?;
-                val
-            }};
-        }
-
-        let field_term = len_enc!();
-        let enclosed_by = len_enc!();
-        let line_term = len_enc!();
-        let line_start = len_enc!();
-        let escaped_by = len_enc!();
-
-        let opt_flags = input.read_u8()?;
-
-        let field_name_lengths = len_enc!(num_fields);
-
-        let field_names = {
-            let mut field_names = Vec::with_capacity(num_fields);
-
-            for i in 0..num_fields {
-                let field_name = len_enc!(field_name_lengths[i]);
-                input.read_u8()?; // skip null
-                field_names.push(field_name);
-            }
-
-            field_names
-        };
-
-        let table_name = len_enc!(table_name_len);
-        input.read_u8()?; // skip null
-
-        let schema_name = len_enc!(schema_len);
-        input.read_u8()?; // skip null
-
-        let file_name = len_enc!(input.get_limit());
-
-        Ok(Self {
-            thread_id: slave_proxy_id,
-            exec_time,
-            skip_lines,
-            field_term,
-            enclosed_by,
-            line_term,
-            line_start,
-            escaped_by,
-            opt_flags,
-            field_names,
-            table_name,
-            schema_name,
-            file_name,
-        })
-    }
-
-    /// Writes a [`NEW_LOAD_EVENT`] to the given stream.
-    ///
-    /// Will write `self.len()` bytes.
-    fn write<T: Write>(&self, version: BinlogVersion, mut output: T) -> io::Result<()> {
-        let mut output = output.limit(S(self.len(version)));
-
-        output.write_u32::<LittleEndian>(self.thread_id)?;
-        output.write_u32::<LittleEndian>(self.exec_time)?;
-        output.write_u32::<LittleEndian>(self.skip_lines)?;
-        output.write_u8(min(self.table_name.len(), u8::MAX as usize) as u8)?;
-        output.write_u8(min(self.schema_name.len(), u8::MAX as usize) as u8)?;
-        output.write_u32::<LittleEndian>(self.field_names.len() as u32)?;
-
-        macro_rules! len_enc {
-            ($field:expr) => {{
-                let field_len = min($field.len(), u8::MAX as usize);
-                output.write_u8(field_len as u8)?;
-                output.limit(S(field_len)).write_all(&$field)?;
-            }};
-        }
-
-        len_enc!(self.field_term);
-        len_enc!(self.enclosed_by);
-        len_enc!(self.line_term);
-        len_enc!(self.line_start);
-        len_enc!(self.escaped_by);
-
-        output.write_u8(self.opt_flags)?;
-
-        for field_name in self.field_names.iter() {
-            output.write_u8(min(field_name.len(), u8::MAX as usize) as u8)?;
-        }
-
-        for field_name in self.field_names.iter() {
-            output.limit(S(u8::MAX as usize)).write_all(&field_name)?;
-            output.write_u8(0)?;
-        }
-
-        output
-            .limit(S(u8::MAX as usize))
-            .write_all(&self.table_name)?;
-        output.write_u8(0)?;
-
-        output
-            .limit(S(u8::MAX as usize))
-            .write_all(&self.schema_name)?;
-        output.write_u8(0)?;
-
-        output.write_all(&self.file_name)?;
-
-        Ok(())
-    }
-
-    /// Returns length of this load event in bytes.
-    fn len(&self, version: BinlogVersion) -> usize {
-        let num_fields = min(self.field_names.len(), u32::MAX as usize);
-
-        let mut len = S(0);
-
-        len += S(4);
-        len += S(4);
-        len += S(4);
-        len += S(1);
-        len += S(1);
-        len += S(4);
-
-        len += S(1);
-        len += S(min(self.field_term.len(), u8::MAX as usize));
-        len += S(1);
-        len += S(min(self.enclosed_by.len(), u8::MAX as usize));
-        len += S(1);
-        len += S(min(self.line_term.len(), u8::MAX as usize));
-        len += S(1);
-        len += S(min(self.line_start.len(), u8::MAX as usize));
-        len += S(1);
-        len += S(min(self.escaped_by.len(), u8::MAX as usize));
-        len += S(1);
-
-        len += S(num_fields);
-        len += S(self
-            .field_names
-            .iter()
-            .take(num_fields)
-            .map(Vec::len)
-            .map(|len| min(len, u8::MAX as usize))
-            .sum::<usize>());
-        len += S(num_fields);
-        len += S(min(self.table_name.len(), u8::MAX as usize));
-        len += S(1);
-        len += S(min(self.schema_name.len(), u8::MAX as usize));
-        len += S(1);
-        len += S(self.file_name.len());
-
-        min(len.0, u32::MAX as usize - BinlogEventHeader::len(version))
-    }
-}
-
-impl NewLoadEvent {
-    /// Returns a he `field_term` field as a string (lossy converted).
-    pub fn get_field_term(&self) -> Cow<str> {
-        String::from_utf8_lossy(&self.field_term)
-    }
-
-    /// Returns a e `enclosed_by` field as a string (lossy converted).
-    pub fn get_enclosed_by(&self) -> Cow<str> {
-        String::from_utf8_lossy(&self.enclosed_by)
-    }
-
-    /// Returns the `line_term` field as a string (lossy converted).
-    pub fn get_line_term(&self) -> Cow<str> {
-        String::from_utf8_lossy(&self.line_term)
-    }
-
-    /// Returns a he `line_start` field as a string (lossy converted).
-    pub fn get_line_start(&self) -> Cow<str> {
-        String::from_utf8_lossy(&self.line_start)
-    }
-
-    /// Returns a he `escaped_by` field as a string (lossy converted).
-    pub fn get_escaped_by(&self) -> Cow<str> {
-        String::from_utf8_lossy(&self.escaped_by)
-    }
-
-    /// Returns the given field name as a string.
-    pub fn get_field_name(&self, index: usize) -> Option<Cow<str>> {
-        self.field_names
-            .get(index)
-            .map(|field_name| String::from_utf8_lossy(&field_name[..]))
-    }
-
-    /// Returns the `table_name` field value as a string.
-    pub fn get_table_name(&self) -> Cow<str> {
-        String::from_utf8_lossy(&self.table_name[..])
-    }
-
-    /// Returns the `schema_name` field value as a string.
-    pub fn get_schema_name(&self) -> Cow<str> {
-        String::from_utf8_lossy(&self.schema_name[..])
-    }
-
-    /// Returns the `file_name` field value as a string.
-    pub fn get_file_name(&self) -> Cow<str> {
-        String::from_utf8_lossy(&self.file_name[..])
-    }
-
-    /// Returns parsed opt flags of this load event. Unknown bits will be dropped.
-    pub fn get_opt_flags(&self) -> OptFlags {
-        OptFlags::from_bits_truncate(self.opt_flags)
-    }
-}
-
-/// Create file event.
-///
-/// Used for LOAD DATA INFILE statements in MySQL 4.0 and 4.1.
-#[derive(Debug, Clone, Eq, PartialEq, Hash)]
-pub struct CreateFileEvent {
-    pub file_id: u32,
-    pub block_data: Vec<u8>,
-}
-
-impl BinlogStruct for CreateFileEvent {
-    const EVENT_TYPE: Option<EventType> = Some(EventType::CREATE_FILE_EVENT);
-
-    fn read<T: Read>(
-        event_size: usize,
-        _fde: &FormatDescriptionEvent,
-        version: BinlogVersion,
-        mut input: T,
-    ) -> io::Result<Self> {
-        let mut input = input.limit(S(event_size) - S(BinlogEventHeader::len(version)));
-
-        let file_id = input.read_u32::<LittleEndian>()?;
-
-        let mut block_data = vec![0_u8; input.get_limit()];
-        input.read_exact(&mut block_data)?;
-
-        Ok(Self {
-            file_id,
-            block_data,
-        })
-    }
-
-    fn write<T: Write>(&self, version: BinlogVersion, mut output: T) -> io::Result<()> {
-        let mut output = output.limit(S(self.len(version)));
-
-        output.write_u32::<LittleEndian>(self.file_id)?;
-        output.write_all(&self.block_data)?;
-
-        Ok(())
-    }
-
-    /// Returns length of this load event in bytes.
-    fn len(&self, version: BinlogVersion) -> usize {
-        let mut len = S(0);
-
-        len += S(4);
-        len += S(self.block_data.len());
-
-        min(len.0, u32::MAX as usize - BinlogEventHeader::len(version))
-    }
-}
-
-/// Append block event.
-///
-/// Used for LOAD DATA INFILE statements as of MySQL 4.0.
-#[derive(Debug, Clone, Eq, PartialEq, Hash)]
-pub struct AppendBlockEvent {
-    pub file_id: u32,
-    pub block_data: Vec<u8>,
-}
-
-impl BinlogStruct for AppendBlockEvent {
-    const EVENT_TYPE: Option<EventType> = Some(EventType::APPEND_BLOCK_EVENT);
-
-    fn read<T: Read>(
-        event_size: usize,
-        _fde: &FormatDescriptionEvent,
-        version: BinlogVersion,
-        mut input: T,
-    ) -> io::Result<Self> {
-        let mut input = input.limit(S(event_size) - S(BinlogEventHeader::len(version)));
-
-        let file_id = input.read_u32::<LittleEndian>()?;
-
-        let mut block_data = vec![0_u8; input.get_limit()];
-        input.read_exact(&mut block_data)?;
-
-        Ok(Self {
-            file_id,
-            block_data,
-        })
-    }
-
-    fn write<T: Write>(&self, version: BinlogVersion, mut output: T) -> io::Result<()> {
-        let mut output = output.limit(S(self.len(version)));
-
-        output.write_u32::<LittleEndian>(self.file_id)?;
-        output.write_all(&self.block_data)?;
-
-        Ok(())
-    }
-
-    /// Returns length of this load event in bytes.
-    fn len(&self, version: BinlogVersion) -> usize {
-        let mut len = S(0);
-
-        len += S(4);
-        len += S(self.block_data.len());
-
-        min(len.0, u32::MAX as usize - BinlogEventHeader::len(version))
-    }
-}
-
-/// Exec load event.
-///
-/// Used for LOAD DATA INFILE statements in 4.0 and 4.1.
-#[derive(Debug, Clone, Eq, PartialEq, Hash)]
-pub struct ExecLoadEvent {
-    pub file_id: u32,
-}
-
-impl BinlogStruct for ExecLoadEvent {
-    const EVENT_TYPE: Option<EventType> = Some(EventType::EXEC_LOAD_EVENT);
-
-    fn read<T: Read>(
-        event_size: usize,
-        _fde: &FormatDescriptionEvent,
-        version: BinlogVersion,
-        mut input: T,
-    ) -> io::Result<Self> {
-        let mut input = input.limit(S(event_size) - S(BinlogEventHeader::len(version)));
-        let file_id = input.read_u32::<LittleEndian>()?;
-
-        if input.get_limit() > 0 {
-            return Err(Error::new(Other, "bytes remaining on stream"));
-        }
-
-        Ok(Self { file_id })
-    }
-
-    fn write<T: Write>(&self, _version: BinlogVersion, mut output: T) -> io::Result<()> {
-        output.write_u32::<LittleEndian>(self.file_id)?;
-        Ok(())
-    }
-
-    /// Returns length of this load event in bytes.
-    fn len(&self, _version: BinlogVersion) -> usize {
-        4
     }
 }
 
@@ -2319,10 +1876,10 @@ impl BinlogStruct for BeginLoadQueryEvent {
 
     fn read<T: Read>(
         event_size: usize,
-        _fde: &FormatDescriptionEvent,
-        version: BinlogVersion,
+        fde: &FormatDescriptionEvent,
         mut input: T,
     ) -> io::Result<Self> {
+        let version = fde.binlog_version.get().unwrap_or(BinlogVersion::Version4);
         let mut input = input.limit(S(event_size) - S(BinlogEventHeader::len(version)));
 
         let file_id = input.read_u32::<LittleEndian>()?;
@@ -2366,15 +1923,26 @@ pub enum LoadDuplicateHandling {
     LOAD_DUP_REPLACE,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, thiserror::Error)]
+#[error("Unknown duplicate handling variant {}", _0)]
+#[repr(transparent)]
+pub struct UnknownDuplicateHandling(pub u8);
+
+impl From<UnknownDuplicateHandling> for u8 {
+    fn from(x: UnknownDuplicateHandling) -> Self {
+        x.0
+    }
+}
+
 impl TryFrom<u8> for LoadDuplicateHandling {
-    type Error = u8;
+    type Error = UnknownDuplicateHandling;
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         match value {
             0 => Ok(Self::LOAD_DUP_ERROR),
             1 => Ok(Self::LOAD_DUP_IGNORE),
             2 => Ok(Self::LOAD_DUP_REPLACE),
-            _ => Err(value),
+            x => Err(UnknownDuplicateHandling(x)),
         }
     }
 }
@@ -2385,7 +1953,7 @@ impl TryFrom<u8> for LoadDuplicateHandling {
 ///
 /// It similar to Query_log_event but before executing the query it substitutes original filename
 /// in LOAD DATA query with name of temporary file.
-#[derive(Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct ExecuteLoadQueryEvent {
     // post-header
     pub thread_id: u32,
@@ -2393,8 +1961,8 @@ pub struct ExecuteLoadQueryEvent {
     pub error_code: u16,
 
     pub status_vars: Vec<u8>,
-    pub schema: Vec<u8>,
-    pub query: Vec<u8>,
+    pub schema: RawText,
+    pub query: RawText,
 
     // payload
     /// File_id of a temporary file.
@@ -2404,41 +1972,7 @@ pub struct ExecuteLoadQueryEvent {
     /// Pointer to the end of this part of query
     pub end_pos: u32,
     /// How to handle duplicates.
-    pub dup_handling: u8,
-}
-
-impl ExecuteLoadQueryEvent {
-    /// Returns the `schema` field as a string (lossy converted).
-    pub fn get_schema(&self) -> Cow<str> {
-        String::from_utf8_lossy(&self.schema)
-    }
-
-    /// Returns the `query` field as a string (lossy converted).
-    pub fn get_query(&self) -> Cow<str> {
-        String::from_utf8_lossy(&self.query)
-    }
-
-    /// Get duplicate handling.
-    pub fn get_dup_handling(&self) -> Result<LoadDuplicateHandling, u8> {
-        LoadDuplicateHandling::try_from(self.dup_handling)
-    }
-}
-
-impl fmt::Debug for ExecuteLoadQueryEvent {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("ExecuteLoadQueryEvent")
-            .field("thread_id", &self.thread_id)
-            .field("execution_time", &self.execution_time)
-            .field("error_code", &self.error_code)
-            .field("status_vars", &self.status_vars)
-            .field("schema", &self.get_schema())
-            .field("query", &self.get_query())
-            .field("file_id", &self.file_id)
-            .field("start_pos", &self.start_pos)
-            .field("end_pos", &self.end_pos)
-            .field("dup_handling_flags", &self.dup_handling)
-            .finish()
-    }
+    pub dup_handling: RawField<u8, UnknownDuplicateHandling, LoadDuplicateHandling>,
 }
 
 impl BinlogStruct for ExecuteLoadQueryEvent {
@@ -2446,13 +1980,13 @@ impl BinlogStruct for ExecuteLoadQueryEvent {
 
     fn read<T: Read>(
         event_size: usize,
-        _fde: &FormatDescriptionEvent,
-        version: BinlogVersion,
+        fde: &FormatDescriptionEvent,
         mut input: T,
     ) -> io::Result<Self>
     where
         Self: Sized,
     {
+        let version = fde.binlog_version.get().unwrap_or(BinlogVersion::Version4);
         let mut input = input.limit(S(event_size) - S(BinlogEventHeader::len(version)));
 
         let thread_id = input.read_u32::<LittleEndian>()?;
@@ -2480,12 +2014,12 @@ impl BinlogStruct for ExecuteLoadQueryEvent {
             execution_time,
             error_code,
             status_vars,
-            schema,
+            schema: RawText(schema),
             file_id,
             start_pos,
             end_pos,
-            dup_handling,
-            query,
+            dup_handling: RawField::new(dup_handling),
+            query: RawText(query),
         })
     }
 
@@ -2494,19 +2028,21 @@ impl BinlogStruct for ExecuteLoadQueryEvent {
 
         output.write_u32::<LittleEndian>(self.thread_id)?;
         output.write_u32::<LittleEndian>(self.execution_time)?;
-        output.write_u8(min(self.schema.len(), u8::MAX as usize) as u8)?;
+        output.write_u8(min(self.schema.0.len(), u8::MAX as usize) as u8)?;
         output.write_u16::<LittleEndian>(self.error_code)?;
         output.write_u16::<LittleEndian>(min(self.status_vars.len(), u16::MAX as usize) as u16)?;
         output.write_u32::<LittleEndian>(self.file_id)?;
         output.write_u32::<LittleEndian>(self.start_pos)?;
         output.write_u32::<LittleEndian>(self.end_pos)?;
-        output.write_u8(self.dup_handling)?;
+        output.write_u8(self.dup_handling.0)?;
         output
             .limit(S(u16::MAX as usize))
             .write_all(&self.status_vars)?;
-        output.limit(S(u8::MAX as usize)).write_all(&self.schema)?;
+        output
+            .limit(S(u8::MAX as usize))
+            .write_all(&self.schema.0)?;
         output.write_u8(0)?;
-        output.write_all(&self.query)?;
+        output.write_all(&self.query.0)?;
 
         Ok(())
     }
@@ -2524,53 +2060,11 @@ impl BinlogStruct for ExecuteLoadQueryEvent {
         len += S(4); // end_pos
         len += S(1); // dup_handling_flags
         len += S(min(self.status_vars.len(), u16::MAX as usize - 13)); // status_vars
-        len += S(min(self.schema.len(), u8::MAX as usize)); // db_len
+        len += S(min(self.schema.0.len(), u8::MAX as usize)); // db_len
         len += S(1); // null-byte
-        len += S(self.query.len());
+        len += S(self.query.0.len());
 
         min(len.0, u32::MAX as usize - BinlogEventHeader::len(version))
-    }
-}
-
-/// Delete file event.
-///
-/// Used for LOAD DATA INFILE statements as of MySQL 4.0.
-///
-/// Created when the LOAD_DATA query fails on the master for some reason, and the slave should
-/// be notified to abort the load.
-#[derive(Debug, Clone, Eq, PartialEq, Hash)]
-pub struct DeleteFileEvent {
-    pub file_id: u32,
-}
-
-impl BinlogStruct for DeleteFileEvent {
-    const EVENT_TYPE: Option<EventType> = Some(EventType::DELETE_FILE_EVENT);
-
-    fn read<T: Read>(
-        event_size: usize,
-        _fde: &FormatDescriptionEvent,
-        version: BinlogVersion,
-        mut input: T,
-    ) -> io::Result<Self>
-    where
-        Self: Sized,
-    {
-        let mut input = input.limit(S(event_size) - S(BinlogEventHeader::len(version)));
-        let file_id = input.read_u32::<LittleEndian>()?;
-
-        if input.get_limit() > 0 {
-            return Err(Error::new(Other, "bytes remaining on stream"));
-        }
-
-        Ok(Self { file_id })
-    }
-
-    fn write<T: Write>(&self, _version: BinlogVersion, mut output: T) -> io::Result<()> {
-        output.write_u32::<LittleEndian>(self.file_id)
-    }
-
-    fn len(&self, _version: BinlogVersion) -> usize {
-        4
     }
 }
 
@@ -2593,13 +2087,13 @@ impl BinlogStruct for RandEvent {
 
     fn read<T: Read>(
         event_size: usize,
-        _fde: &FormatDescriptionEvent,
-        version: BinlogVersion,
+        fde: &FormatDescriptionEvent,
         mut input: T,
     ) -> io::Result<Self>
     where
         Self: Sized,
     {
+        let version = fde.binlog_version.get().unwrap_or(BinlogVersion::Version4);
         let mut input = input.limit(S(event_size) - S(BinlogEventHeader::len(version)));
 
         let seed1 = input.read_u64::<LittleEndian>()?;
@@ -2638,12 +2132,12 @@ impl BinlogStruct for XidEvent {
     fn read<T: Read>(
         event_size: usize,
         fde: &FormatDescriptionEvent,
-        version: BinlogVersion,
         mut input: T,
     ) -> io::Result<Self>
     where
         Self: Sized,
     {
+        let version = fde.binlog_version.get().unwrap_or(BinlogVersion::Version4);
         let mut input = input.limit(S(event_size) - S(BinlogEventHeader::len(version)));
 
         let post_header_len = fde.get_event_type_header_length(Self::EVENT_TYPE.unwrap());
@@ -2682,15 +2176,26 @@ pub enum IntvarEventType {
     INSERT_ID_EVENT,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, thiserror::Error)]
+#[error("Unknown intvar event type {}", _0)]
+#[repr(transparent)]
+pub struct UnknownIntvarEventType(pub u8);
+
+impl From<UnknownIntvarEventType> for u8 {
+    fn from(x: UnknownIntvarEventType) -> Self {
+        x.0
+    }
+}
+
 impl TryFrom<u8> for IntvarEventType {
-    type Error = u8;
+    type Error = UnknownIntvarEventType;
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         match value {
             0 => Ok(Self::INVALID_INT_EVENT),
             1 => Ok(Self::LAST_INSERT_ID_EVENT),
             2 => Ok(Self::INSERT_ID_EVENT),
-            x => Err(x),
+            x => Err(UnknownIntvarEventType(x)),
         }
     }
 }
@@ -2701,35 +2206,11 @@ impl TryFrom<u8> for IntvarEventType {
 /// precedes other events for the statement. This is written only before a QUERY_EVENT
 /// and is not used with row-based logging. An INTVAR_EVENT is written with a "subtype"
 /// in the event data part.
-#[derive(Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct IntvarEvent {
-    /// Contains raw value.
-    ///
-    /// Use `Self::get_type` function.
-    pub subtype: u8,
+    /// Subtype of this event.
+    pub subtype: RawField<u8, UnknownIntvarEventType, IntvarEventType>,
     pub value: u64,
-}
-
-impl IntvarEvent {
-    /// Returns parsed subtype of this event, or raw value if subtype is unknown.
-    pub fn get_type(&self) -> Result<IntvarEventType, u8> {
-        IntvarEventType::try_from(self.subtype)
-    }
-}
-
-impl fmt::Debug for IntvarEvent {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("IntvarEvent")
-            .field(
-                "subtype",
-                &match self.get_type() {
-                    Ok(subtype) => format!("{:?}", subtype),
-                    Err(raw) => format!("Unknown event subtype {}", raw),
-                },
-            )
-            .field("value", &self.value)
-            .finish()
-    }
 }
 
 impl BinlogStruct for IntvarEvent {
@@ -2738,12 +2219,12 @@ impl BinlogStruct for IntvarEvent {
     fn read<T: Read>(
         event_size: usize,
         fde: &FormatDescriptionEvent,
-        version: BinlogVersion,
         mut input: T,
     ) -> io::Result<Self>
     where
         Self: Sized,
     {
+        let version = fde.binlog_version.get().unwrap_or(BinlogVersion::Version4);
         let mut input = input.limit(S(event_size) - S(BinlogEventHeader::len(version)));
 
         let post_header_len = fde.get_event_type_header_length(Self::EVENT_TYPE.unwrap());
@@ -2759,11 +2240,14 @@ impl BinlogStruct for IntvarEvent {
             return Err(Error::new(Other, "bytes remaining on stream"));
         }
 
-        Ok(Self { subtype, value })
+        Ok(Self {
+            subtype: RawField::new(subtype),
+            value,
+        })
     }
 
     fn write<T: Write>(&self, _version: BinlogVersion, mut output: T) -> io::Result<()> {
-        output.write_u8(self.subtype)?;
+        output.write_u8(self.subtype.0)?;
         output.write_u64::<LittleEndian>(self.value)?;
         Ok(())
     }
@@ -2773,7 +2257,9 @@ impl BinlogStruct for IntvarEvent {
     }
 }
 
-bitflags! {
+my_bitflags! {
+    UserVarFlags, u8,
+
     /// Flags of a user variable.
     pub struct UserVarFlags: u8 {
         const UNSIGNED = 0x01;
@@ -2789,18 +2275,14 @@ bitflags! {
 /// # Notes on `BinlogEvent` implementation
 ///
 /// * it won't try to read/write anything except `name` and `is_null` if `is_null` is `true`
-#[derive(Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct UserVarEvent {
     /// User variable name.
-    ///
-    /// This field contains raw value. Use `Self::get_name` to parse it as UTF8.
-    pub name: Vec<u8>,
+    pub name: RawText,
     /// `true` if value is `NULL`.
     pub is_null: bool,
     /// Type of a value.
-    ///
-    /// Contains raw value. Use `Self::get_type` to parse it.
-    pub value_type: i8,
+    pub value_type: RawField<i8, UnknownItemResultType, ItemResult>,
     /// Character set of a value. Will be `0` if `is_null` is `true`.
     pub charset: u32,
     /// Value of a user variable. Will be empty if `is_null` is `true`.
@@ -2808,50 +2290,7 @@ pub struct UserVarEvent {
     /// Flags of a user variable. Will be `0` if `is_null` is `true`.
     ///
     /// This field contains raw value. Use `Self::get_flags` to parse it.
-    pub flags: u8,
-}
-
-impl UserVarEvent {
-    /// Returns variable name as string.
-    pub fn get_name(&self) -> Cow<str> {
-        String::from_utf8_lossy(&self.name[..])
-    }
-
-    /// Returns type of a value, or raw value if type is invalid
-    /// (not in {`STRING_RESULT`, `REAL_RESULT`, `DECIMAL_RESULT`, `INT_RESULT`}).
-    pub fn get_type(&self) -> Result<ItemResult, i8> {
-        match ItemResult::try_from(self.value_type) {
-            Ok(x @ ItemResult::STRING_RESULT) => Ok(x),
-            Ok(x @ ItemResult::REAL_RESULT) => Ok(x),
-            Ok(x @ ItemResult::INT_RESULT) => Ok(x),
-            Ok(x @ ItemResult::DECIMAL_RESULT) => Ok(x),
-            _ => Err(self.value_type),
-        }
-    }
-
-    /// Returns parsed flags of a value, unknown bits will be dropped.
-    pub fn get_flags(&self) -> UserVarFlags {
-        UserVarFlags::from_bits_truncate(self.flags)
-    }
-}
-
-impl fmt::Debug for UserVarEvent {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("UserVarEvent")
-            .field("name", &self.get_name())
-            .field("is_null", &self.is_null)
-            .field(
-                "value_type",
-                &match self.get_type() {
-                    Ok(value_type) => format!("{:?}", value_type),
-                    Err(raw) => format!("Invalid value type {}", raw),
-                },
-            )
-            .field("charset", &self.charset)
-            .field("value", &self.value)
-            .field("flags", &self.flags)
-            .finish()
-    }
+    pub flags: RawFlags<UserVarFlags>,
 }
 
 impl BinlogStruct for UserVarEvent {
@@ -2859,13 +2298,13 @@ impl BinlogStruct for UserVarEvent {
 
     fn read<T: Read>(
         event_size: usize,
-        _fde: &FormatDescriptionEvent,
-        version: BinlogVersion,
+        fde: &FormatDescriptionEvent,
         mut input: T,
     ) -> io::Result<Self>
     where
         Self: Sized,
     {
+        let version = fde.binlog_version.get().unwrap_or(BinlogVersion::Version4);
         let mut input = input.limit(S(event_size) - S(BinlogEventHeader::len(version)));
 
         let name_len = input.read_u32::<LittleEndian>()? as usize;
@@ -2875,12 +2314,12 @@ impl BinlogStruct for UserVarEvent {
 
         if is_null {
             return Ok(Self {
-                name,
+                name: RawText(name),
                 is_null,
-                value_type: ItemResult::STRING_RESULT as i8,
+                value_type: RawField::new(ItemResult::STRING_RESULT as i8),
                 charset: 63,
                 value: Vec::new(),
-                flags: UserVarFlags::empty().bits(),
+                flags: RawFlags(UserVarFlags::empty().bits()),
             });
         }
 
@@ -2902,27 +2341,27 @@ impl BinlogStruct for UserVarEvent {
         }
 
         Ok(Self {
-            name,
+            name: RawText(name),
             is_null,
-            value_type,
+            value_type: RawField::new(value_type),
             charset,
             value,
-            flags,
+            flags: RawFlags(flags),
         })
     }
 
     fn write<T: Write>(&self, version: BinlogVersion, mut output: T) -> io::Result<()> {
         let mut output = output.limit(S(self.len(version)));
 
-        output.write_u32::<LittleEndian>(self.name.len() as u32)?;
-        output.write_all(&self.name)?;
+        output.write_u32::<LittleEndian>(self.name.0.len() as u32)?;
+        output.write_all(&self.name.0)?;
         output.write_u8(self.is_null as u8)?;
         if !self.is_null {
-            output.write_i8(self.value_type)?;
+            output.write_i8(self.value_type.0)?;
             output.write_u32::<LittleEndian>(self.charset)?;
             output.write_u32::<LittleEndian>(self.value.len() as u32)?;
             output.write_all(&self.value)?;
-            output.write_u8(self.flags)?;
+            output.write_u8(self.flags.0)?;
         }
         Ok(())
     }
@@ -2931,7 +2370,7 @@ impl BinlogStruct for UserVarEvent {
         let mut len = S(0);
 
         len += S(4);
-        len += S(min(self.name.len(), u32::MAX as usize));
+        len += S(min(self.name.0.len(), u32::MAX as usize));
         len += S(1);
 
         if !self.is_null {
@@ -2957,14 +2396,25 @@ pub enum IncidentType {
     INCIDENT_LOST_EVENTS = 1,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, thiserror::Error)]
+#[error("Unknown item incident type {}", _0)]
+#[repr(transparent)]
+pub struct UnknownIncidentType(pub u16);
+
+impl From<UnknownIncidentType> for u16 {
+    fn from(x: UnknownIncidentType) -> Self {
+        x.0
+    }
+}
+
 impl TryFrom<u16> for IncidentType {
-    type Error = u16;
+    type Error = UnknownIncidentType;
 
     fn try_from(value: u16) -> Result<Self, Self::Error> {
         match value {
             0 => Ok(Self::INCIDENT_NONE),
             1 => Ok(Self::INCIDENT_LOST_EVENTS),
-            x => Err(x),
+            x => Err(UnknownIncidentType(x)),
         }
     }
 }
@@ -2973,37 +2423,10 @@ impl TryFrom<u16> for IncidentType {
 ///
 /// It notifies the slave that something happened on the master that might cause data
 /// to be in an inconsistent state.
-#[derive(Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct IncidentEvent {
-    pub incident_type: u16,
-    pub message: Vec<u8>,
-}
-
-impl IncidentEvent {
-    /// Returns parsed incident type, or raw value if type is unknown.
-    pub fn get_type(&self) -> Result<IncidentType, u16> {
-        IncidentType::try_from(self.incident_type)
-    }
-
-    /// Returns event messages as string (using lossy conversion).
-    pub fn get_message(&self) -> Cow<str> {
-        String::from_utf8_lossy(&self.message)
-    }
-}
-
-impl fmt::Debug for IncidentEvent {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("IncidentEvent")
-            .field(
-                "incident_type",
-                &match self.get_type() {
-                    Ok(incident_type) => format!("{:?}", incident_type),
-                    Err(raw) => format!("Unknown incident type {}", raw),
-                },
-            )
-            .field("message", &self.get_message())
-            .finish()
-    }
+    pub incident_type: RawField<u16, UnknownIncidentType, IncidentType>,
+    pub message: RawText,
 }
 
 impl BinlogStruct for IncidentEvent {
@@ -3011,13 +2434,13 @@ impl BinlogStruct for IncidentEvent {
 
     fn read<T: Read>(
         event_size: usize,
-        _fde: &FormatDescriptionEvent,
-        version: BinlogVersion,
+        fde: &FormatDescriptionEvent,
         mut input: T,
     ) -> io::Result<Self>
     where
         Self: Sized,
     {
+        let version = fde.binlog_version.get().unwrap_or(BinlogVersion::Version4);
         let mut input = input.limit(S(event_size) - S(BinlogEventHeader::len(version)));
 
         let incident_type = input.read_u16::<LittleEndian>()?;
@@ -3030,16 +2453,18 @@ impl BinlogStruct for IncidentEvent {
         }
 
         Ok(Self {
-            incident_type,
-            message,
+            incident_type: RawField::new(incident_type),
+            message: RawText(message),
         })
     }
 
     fn write<T: Write>(&self, version: BinlogVersion, mut output: T) -> io::Result<()> {
         let mut output = output.limit(S(self.len(version)));
-        output.write_u16::<LittleEndian>(self.incident_type)?;
-        output.write_u8(min(self.message.len(), u8::MAX as usize) as u8)?;
-        output.limit(S(u8::MAX as usize)).write_all(&self.message)?;
+        output.write_u16::<LittleEndian>(self.incident_type.0)?;
+        output.write_u8(min(self.message.0.len(), u8::MAX as usize) as u8)?;
+        output
+            .limit(S(u8::MAX as usize))
+            .write_all(&self.message.0)?;
         Ok(())
     }
 
@@ -3047,8 +2472,8 @@ impl BinlogStruct for IncidentEvent {
         let mut len = S(0);
 
         len += S(2);
-        len += S(min(self.message.len(), u8::MAX as usize));
-        len += S(self.message.len());
+        len += S(1);
+        len += S(min(self.message.0.len(), u8::MAX as usize));
 
         min(len.0, u32::MAX as usize - BinlogEventHeader::len(version))
     }
@@ -3076,7 +2501,7 @@ impl ColumnType {
 ///
 /// In row-based mode, every row operation event is preceded by a Table_map_event which maps
 /// a table definition to a number.
-#[derive(Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct TableMapEvent {
     // post-header
     /// The number that identifies the table.
@@ -3090,13 +2515,13 @@ pub struct TableMapEvent {
     /// The name of the database in which the table resides.
     ///
     /// Length must be <= 64 bytes.
-    pub database_name: Vec<u8>,
+    pub database_name: RawText,
     /// The name of the table.
     ///
     /// Length must be <= 64 bytes.
-    pub table_name: Vec<u8>,
+    pub table_name: RawText,
     /// The type of each column in the table, listed from left to right.
-    pub columns_type: Vec<u8>,
+    pub columns_type: RawSeq<u8, UnknownColumnType, ColumnType>,
     /// For each column from left to right, a chunk of data who's length and semantics depends
     /// on the type of the column.
     pub columns_metadata: Vec<u8>,
@@ -3106,34 +2531,15 @@ pub struct TableMapEvent {
     /// The flag for the first column from the left is in the least-significant bit
     /// of the first byte, the second is in the second least significant bit of the first byte,
     /// the ninth is in the least significant bit of the second byte, and so on.
-    pub null_bitmask: Vec<u8>,
+    pub null_bitmask: BitVec<Lsb0, u8>,
     /// Optional metadata.
     pub optional_metadata: Vec<u8>,
 }
 
 impl TableMapEvent {
-    /// Returns database name as string (lossy converted).
-    pub fn get_database_name(&self) -> Cow<str> {
-        String::from_utf8_lossy(&self.database_name)
-    }
-
-    /// Returns table name as string (lossy converted).
-    pub fn get_table_name(&self) -> Cow<str> {
-        String::from_utf8_lossy(&self.table_name)
-    }
-
     /// Returns columns count in this event.
     pub fn get_columns_count(&self) -> usize {
-        self.columns_type.len()
-    }
-
-    /// Returns parsed type for the given column, or raw value if type is unknown.
-    ///
-    /// Returns `None` if column index is out of bounds.
-    pub fn get_column_type(&self, col_idx: usize) -> Option<Result<ColumnType, UnknownColumnType>> {
-        self.columns_type
-            .get(col_idx)
-            .map(|col_type| ColumnType::try_from(*col_type))
+        self.columns_type.0.len()
     }
 
     /// Returns metadata for the given column.
@@ -3141,56 +2547,17 @@ impl TableMapEvent {
     /// Returns `None` if column index is out of bounds or if offset couldn't be calculated
     /// (e.g. because of unknown column type between `0` and `col_idx`).
     pub fn get_column_metadata(&self, col_idx: usize) -> Option<&[u8]> {
-        let col_type = self.get_column_type(col_idx)?.ok()?;
+        let col_type = self.columns_type.get(col_idx)?.ok()?;
         let metadata_len = col_type.get_metadata_len();
 
         let mut offset = 0;
 
         for _ in 0..col_idx {
-            let ty = self.get_column_type(col_idx)?.ok()?;
+            let ty = self.columns_type.get(col_idx)?.ok()?;
             offset += ty.get_metadata_len();
         }
 
         self.columns_metadata.get(offset..(offset + metadata_len))
-    }
-}
-
-impl fmt::Debug for TableMapEvent {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("TableMapEvent")
-            .field("table_id", &self.table_id)
-            .field("flags", &self.flags)
-            .field("database_name", &self.get_database_name())
-            .field("table_name", &self.get_table_name())
-            .field(
-                "columns_type",
-                &self
-                    .columns_type
-                    .iter()
-                    .map(|ty| match ColumnType::try_from(*ty) {
-                        Ok(column_type) => format!("{:?}", column_type),
-                        Err(raw) => format!("Unknown column type {:?}", raw),
-                    }),
-            )
-            .field("columns_metadata", &self.columns_metadata)
-            .field("null_bitmask", &{
-                let mut out = String::with_capacity(8 * self.null_bitmask.len());
-                'outer: for byte in &self.null_bitmask {
-                    for bit in 0..8 {
-                        if out.len() == self.columns_type.len() {
-                            break 'outer;
-                        }
-                        if (byte >> bit) & 1_u8 == 1_u8 {
-                            out.push('1');
-                        } else {
-                            out.push('0');
-                        }
-                    }
-                }
-                out
-            })
-            .field("optional_metadata", &self.optional_metadata)
-            .finish()
     }
 }
 
@@ -3200,12 +2567,12 @@ impl BinlogStruct for TableMapEvent {
     fn read<T: Read>(
         event_size: usize,
         fde: &FormatDescriptionEvent,
-        version: BinlogVersion,
         mut input: T,
     ) -> io::Result<Self>
     where
         Self: Sized,
     {
+        let version = fde.binlog_version.get().unwrap_or(BinlogVersion::Version4);
         let mut input = input.limit(S(event_size) - S(BinlogEventHeader::len(version)));
 
         let table_id = if 6 == fde.get_event_type_header_length(Self::EVENT_TYPE.unwrap()) {
@@ -3241,12 +2608,15 @@ impl BinlogStruct for TableMapEvent {
         let mut optional_metadata = vec![0_u8; input.get_limit()];
         input.read_exact(&mut optional_metadata)?;
 
+        let mut null_bitmask = BitVec::from_vec(null_bitmask);
+        null_bitmask.truncate(columns_count as usize);
+
         Ok(Self {
             table_id,
             flags,
-            database_name,
-            table_name,
-            columns_type,
+            database_name: RawText(database_name),
+            table_name: RawText(table_name),
+            columns_type: RawSeq::new(columns_type),
             columns_metadata,
             null_bitmask,
             optional_metadata,
@@ -3258,20 +2628,20 @@ impl BinlogStruct for TableMapEvent {
 
         output.write_u48::<LittleEndian>(self.table_id)?;
         output.write_u16::<LittleEndian>(self.flags)?;
-        output.write_u8(min(self.database_name.len(), u8::MAX as usize) as u8)?;
+        output.write_u8(min(self.database_name.0.len(), u8::MAX as usize) as u8)?;
         output
             .limit(S(u8::MAX as usize))
-            .write_all(&self.database_name)?;
+            .write_all(&self.database_name.0)?;
         output.write_u8(0)?;
-        output.write_u8(min(self.table_name.len(), u8::MAX as usize) as u8)?;
+        output.write_u8(min(self.table_name.0.len(), u8::MAX as usize) as u8)?;
         output
             .limit(S(u8::MAX as usize))
-            .write_all(&self.table_name)?;
+            .write_all(&self.table_name.0)?;
         output.write_u8(0)?;
         output.write_lenenc_int(self.get_columns_count() as u64)?;
-        output.write_all(&self.columns_type)?;
+        output.write_all(&self.columns_type.0)?;
         output.write_lenenc_str(&self.columns_metadata)?;
-        output.write_all(&self.null_bitmask)?;
+        output.write_all(self.null_bitmask.as_raw_slice())?;
         output.write_all(&self.optional_metadata)?;
 
         Ok(())
@@ -3283,10 +2653,10 @@ impl BinlogStruct for TableMapEvent {
         len += S(6);
         len += S(2);
         len += S(1);
-        len += S(min(self.database_name.len(), u8::MAX as usize));
+        len += S(min(self.database_name.0.len(), u8::MAX as usize));
         len += S(1);
         len += S(1);
-        len += S(min(self.table_name.len(), u8::MAX as usize));
+        len += S(min(self.table_name.0.len(), u8::MAX as usize));
         len += S(1);
         len += S(crate::misc::lenenc_int_len(self.get_columns_count() as u64) as usize);
         len += S(self.get_columns_count());
@@ -3298,24 +2668,9 @@ impl BinlogStruct for TableMapEvent {
     }
 }
 /// Query that caused the following `ROWS_EVENT`.
-#[derive(Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct RowsQueryEvent {
-    pub query: Vec<u8>,
-}
-
-impl RowsQueryEvent {
-    /// Returns query as string (lossy converted).
-    pub fn get_query(&self) -> Cow<str> {
-        String::from_utf8_lossy(&self.query)
-    }
-}
-
-impl fmt::Debug for RowsQueryEvent {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("RowsQueryEvent")
-            .field("query", &self.get_query())
-            .finish()
-    }
+    pub query: RawText,
 }
 
 impl BinlogStruct for RowsQueryEvent {
@@ -3323,27 +2678,29 @@ impl BinlogStruct for RowsQueryEvent {
 
     fn read<T: Read>(
         event_size: usize,
-        _fde: &FormatDescriptionEvent,
-        version: BinlogVersion,
+        fde: &FormatDescriptionEvent,
         mut input: T,
     ) -> io::Result<Self>
     where
         Self: Sized,
     {
+        let version = fde.binlog_version.get().unwrap_or(BinlogVersion::Version4);
         let mut input = input.limit(S(event_size) - S(BinlogEventHeader::len(version)));
 
         input.read_u8()?; // ignore length
         let mut query = vec![0_u8; input.get_limit()];
         input.read_exact(&mut query)?;
 
-        Ok(Self { query })
+        Ok(Self {
+            query: RawText(query),
+        })
     }
 
     fn write<T: Write>(&self, version: BinlogVersion, mut output: T) -> io::Result<()> {
         let mut output = output.limit(S(self.len(version)));
 
-        output.write_u8(min(self.query.len(), u8::MAX as usize) as u8)?;
-        output.write_all(&self.query)?;
+        output.write_u8(min(self.query.0.len(), u8::MAX as usize) as u8)?;
+        output.write_all(&self.query.0)?;
 
         Ok(())
     }
@@ -3352,15 +2709,17 @@ impl BinlogStruct for RowsQueryEvent {
         let mut len = S(0);
 
         len += S(1);
-        len += S(self.query.len());
+        len += S(self.query.0.len());
 
         min(len.0, u32::MAX as usize - BinlogEventHeader::len(version))
     }
 }
 
-bitflags! {
+my_bitflags! {
+    RowsEventFlags, u16,
+
     /// Rows event flags.
-    pub struct RowsEventFalgs: u16 {
+    pub struct RowsEventFlags: u16 {
         /// Last event of a statement.
         const STMT_END = 0x0001;
         /// No foreign key checks.
@@ -3374,7 +2733,7 @@ bitflags! {
 }
 
 /// Common base structure for all row-containing binary log events.
-#[derive(Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct RowsEvent {
     /// Table identifier.
     ///
@@ -3383,7 +2742,7 @@ pub struct RowsEvent {
     /// Otherwise it refers to a table defined by `TABLE_MAP_EVENT`.
     pub table_id: u64,
     /// Raw rows event flags (see `RowsEventFalgs`).
-    pub flags: u16,
+    pub flags: RawFlags<RowsEventFlags>,
     /// Raw extra data.
     pub extra_data: Vec<u8>,
     /// Number of columns.
@@ -3392,12 +2751,12 @@ pub struct RowsEvent {
     /// per column.
     ///
     /// Will be empty for WRITE events.
-    pub columns_before_image: Option<Vec<u8>>,
+    pub columns_before_image: Option<BitVec<Lsb0, u8>>,
     /// For WRITE and UPDATE only. Bit-field indicating whether each column is used
     /// in the `UPDATE_ROWS_EVENT` and `WRITE_ROWS_EVENT` after-image; one bit per column.
     ///
     /// Will be empty for DELETE events.
-    pub columns_after_image: Option<Vec<u8>>,
+    pub columns_after_image: Option<BitVec<Lsb0, u8>>,
     /// A sequence of zero or more rows. The end is determined by the size of the event.
     ///
     /// Each row has the following format:
@@ -3415,11 +2774,6 @@ pub struct RowsEvent {
 }
 
 impl RowsEvent {
-    /// Returns parsed flags of this event. Unknown bits will be dropped.
-    pub fn get_flags(&self) -> RowsEventFalgs {
-        RowsEventFalgs::from_bits_truncate(self.flags)
-    }
-
     /// Reads an event from the given stream.
     ///
     /// This function will be used in `BinlogStruct` implementations for derived events.
@@ -3486,11 +2840,19 @@ impl RowsEvent {
 
         Ok(Self {
             table_id,
-            flags,
+            flags: RawFlags(flags),
             extra_data,
             num_columns,
-            columns_before_image,
-            columns_after_image,
+            columns_before_image: columns_before_image.map(|val| {
+                let mut bitvec = BitVec::from_vec(val);
+                bitvec.truncate(num_columns as usize);
+                bitvec
+            }),
+            columns_after_image: columns_after_image.map(|val| {
+                let mut bitvec = BitVec::from_vec(val);
+                bitvec.truncate(num_columns as usize);
+                bitvec
+            }),
             rows_data,
         })
     }
@@ -3502,7 +2864,7 @@ impl RowsEvent {
         let mut output = output.limit(S(self.len(version)));
 
         output.write_u48::<LittleEndian>(self.table_id)?;
-        output.write_u16::<LittleEndian>(self.flags)?;
+        output.write_u16::<LittleEndian>(self.flags.0)?;
         output.write_u16::<LittleEndian>(min(
             self.extra_data.len().saturating_add(2),
             u16::MAX as usize,
@@ -3519,13 +2881,13 @@ impl RowsEvent {
             output.write_all(
                 self.columns_before_image
                     .as_ref()
-                    .map(|x| x.as_ref())
+                    .map(|x| x.as_raw_slice())
                     .unwrap_or_default(),
             )?;
             output.write_all(
                 self.columns_after_image
                     .as_ref()
-                    .map(|x| x.as_ref())
+                    .map(|x| x.as_raw_slice())
                     .unwrap_or_default(),
             )?;
 
@@ -3562,52 +2924,20 @@ impl RowsEvent {
     }
 }
 
-impl fmt::Debug for RowsEvent {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("RowsEvent")
-            .field("table_id", &self.table_id)
-            .field(
-                "flags",
-                &format!(
-                    "{:?} (Unknown flags: {:016b})",
-                    self.get_flags(),
-                    self.flags & (std::u16::MAX ^ RowsEventFalgs::all().bits())
-                ),
-            )
-            .field("extra_data", &self.extra_data)
-            .field("num_columns", &self.num_columns)
-            .field("columns_before_image", &self.columns_before_image)
-            .field("columns_after_image", &self.columns_after_image)
-            .field("rows_data", &self.rows_data)
-            .finish()
-    }
-}
-
 /// Write rows event.
 ///
 /// Used for row-based binary logging. Contains the row data to insert.
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
-pub struct WriteRowsEvent(RowsEvent);
-
-impl WriteRowsEvent {
-    /// Returns parsed flags of this event. Unknown bits will be dropped.
-    pub fn get_flags(&self) -> RowsEventFalgs {
-        self.0.get_flags()
-    }
-}
+pub struct WriteRowsEvent(pub RowsEvent);
 
 impl BinlogStruct for WriteRowsEvent {
     const EVENT_TYPE: Option<EventType> = Some(EventType::WRITE_ROWS_EVENT);
 
-    fn read<T: Read>(
-        event_size: usize,
-        fde: &FormatDescriptionEvent,
-        version: BinlogVersion,
-        input: T,
-    ) -> io::Result<Self>
+    fn read<T: Read>(event_size: usize, fde: &FormatDescriptionEvent, input: T) -> io::Result<Self>
     where
         Self: Sized,
     {
+        let version = fde.binlog_version.get().unwrap_or(BinlogVersion::Version4);
         Ok(Self(RowsEvent::read(
             Self::EVENT_TYPE.unwrap(),
             event_size,
@@ -3631,27 +2961,16 @@ impl BinlogStruct for WriteRowsEvent {
 /// Used for row-based binary logging. Contains as much data as needed to identify
 /// a row + the data to change.
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
-pub struct UpdateRowsEvent(RowsEvent);
-
-impl UpdateRowsEvent {
-    /// Returns parsed flags of this event. Unknown bits will be dropped.
-    pub fn get_flags(&self) -> RowsEventFalgs {
-        self.0.get_flags()
-    }
-}
+pub struct UpdateRowsEvent(pub RowsEvent);
 
 impl BinlogStruct for UpdateRowsEvent {
     const EVENT_TYPE: Option<EventType> = Some(EventType::UPDATE_ROWS_EVENT);
 
-    fn read<T: Read>(
-        event_size: usize,
-        fde: &FormatDescriptionEvent,
-        version: BinlogVersion,
-        input: T,
-    ) -> io::Result<Self>
+    fn read<T: Read>(event_size: usize, fde: &FormatDescriptionEvent, input: T) -> io::Result<Self>
     where
         Self: Sized,
     {
+        let version = fde.binlog_version.get().unwrap_or(BinlogVersion::Version4);
         Ok(Self(RowsEvent::read(
             Self::EVENT_TYPE.unwrap(),
             event_size,
@@ -3674,27 +2993,16 @@ impl BinlogStruct for UpdateRowsEvent {
 ///
 /// Used for row-based binary logging. Contains as much data as needed to identify a row.
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
-pub struct DeleteRowsEvent(RowsEvent);
-
-impl DeleteRowsEvent {
-    /// Returns parsed flags of this event. Unknown bits will be dropped.
-    pub fn get_flags(&self) -> RowsEventFalgs {
-        self.0.get_flags()
-    }
-}
+pub struct DeleteRowsEvent(pub RowsEvent);
 
 impl BinlogStruct for DeleteRowsEvent {
     const EVENT_TYPE: Option<EventType> = Some(EventType::DELETE_ROWS_EVENT);
 
-    fn read<T: Read>(
-        event_size: usize,
-        fde: &FormatDescriptionEvent,
-        version: BinlogVersion,
-        input: T,
-    ) -> io::Result<Self>
+    fn read<T: Read>(event_size: usize, fde: &FormatDescriptionEvent, input: T) -> io::Result<Self>
     where
         Self: Sized,
     {
+        let version = fde.binlog_version.get().unwrap_or(BinlogVersion::Version4);
         Ok(Self(RowsEvent::read(
             Self::EVENT_TYPE.unwrap(),
             event_size,
@@ -3841,7 +3149,6 @@ mod tests {
         let binlog_file_header = BinlogFileHeader::read(
             4,
             &FormatDescriptionEvent::new(BinlogVersion::Version4),
-            BinlogVersion::Version4,
             BINLOG_FILE,
         )?;
         binlog_file_header.write(BinlogVersion::Version4, &mut output)?;
@@ -3867,11 +3174,11 @@ mod tests {
                         ev.header,
                         BinlogEventHeader {
                             timestamp: 1253783036,
-                            event_type: 15,
+                            event_type: RawField::new(15),
                             server_id: 1,
                             event_size: 94,
                             log_pos: 98,
-                            flags: 0,
+                            flags: RawFlags(0),
                         }
                     );
                 }
@@ -3879,209 +3186,209 @@ mod tests {
                     ev.header,
                     BinlogEventHeader {
                         timestamp: 1253783037,
-                        event_type: 2,
+                        event_type: RawField::new(2),
                         server_id: 1,
                         event_size: 100,
                         log_pos: 198,
-                        flags: 0,
+                        flags: RawFlags(0),
                     }
                 ),
                 2 => assert_eq!(
                     ev.header,
                     BinlogEventHeader {
                         timestamp: 1253783037,
-                        event_type: 2,
+                        event_type: RawField::new(2),
                         server_id: 1,
                         event_size: 101,
                         log_pos: 299,
-                        flags: 0,
+                        flags: RawFlags(0),
                     }
                 ),
                 3 => assert_eq!(
                     ev.header,
                     BinlogEventHeader {
                         timestamp: 1253783037,
-                        event_type: 2,
+                        event_type: RawField::new(2),
                         server_id: 1,
                         event_size: 69,
                         log_pos: 368,
-                        flags: 8,
+                        flags: RawFlags(8),
                     }
                 ),
                 4 => assert_eq!(
                     ev.header,
                     BinlogEventHeader {
                         timestamp: 1253783037,
-                        event_type: 2,
+                        event_type: RawField::new(2),
                         server_id: 1,
                         event_size: 92,
                         log_pos: 460,
-                        flags: 0,
+                        flags: RawFlags(0),
                     }
                 ),
                 5 => assert_eq!(
                     ev.header,
                     BinlogEventHeader {
                         timestamp: 1253783037,
-                        event_type: 2,
+                        event_type: RawField::new(2),
                         server_id: 1,
                         event_size: 93,
                         log_pos: 553,
-                        flags: 0,
+                        flags: RawFlags(0),
                     }
                 ),
                 6 => assert_eq!(
                     ev.header,
                     BinlogEventHeader {
                         timestamp: 1253783037,
-                        event_type: 16,
+                        event_type: RawField::new(16),
                         server_id: 1,
                         event_size: 27,
                         log_pos: 580,
-                        flags: 0,
+                        flags: RawFlags(0),
                     }
                 ),
                 7 => assert_eq!(
                     ev.header,
                     BinlogEventHeader {
                         timestamp: 1253783037,
-                        event_type: 2,
+                        event_type: RawField::new(2),
                         server_id: 1,
                         event_size: 100,
                         log_pos: 680,
-                        flags: 0,
+                        flags: RawFlags(0),
                     }
                 ),
                 8 => assert_eq!(
                     ev.header,
                     BinlogEventHeader {
                         timestamp: 1253783037,
-                        event_type: 2,
+                        event_type: RawField::new(2),
                         server_id: 1,
                         event_size: 101,
                         log_pos: 781,
-                        flags: 0,
+                        flags: RawFlags(0),
                     }
                 ),
                 9 => assert_eq!(
                     ev.header,
                     BinlogEventHeader {
                         timestamp: 1253783037,
-                        event_type: 2,
+                        event_type: RawField::new(2),
                         server_id: 1,
                         event_size: 69,
                         log_pos: 850,
-                        flags: 8,
+                        flags: RawFlags(8),
                     }
                 ),
                 10 => assert_eq!(
                     ev.header,
                     BinlogEventHeader {
                         timestamp: 1253783037,
-                        event_type: 2,
+                        event_type: RawField::new(2),
                         server_id: 1,
                         event_size: 92,
                         log_pos: 942,
-                        flags: 0,
+                        flags: RawFlags(0),
                     }
                 ),
                 11 => assert_eq!(
                     ev.header,
                     BinlogEventHeader {
                         timestamp: 1253783037,
-                        event_type: 2,
+                        event_type: RawField::new(2),
                         server_id: 1,
                         event_size: 93,
                         log_pos: 1035,
-                        flags: 0,
+                        flags: RawFlags(0),
                     }
                 ),
                 12 => assert_eq!(
                     ev.header,
                     BinlogEventHeader {
                         timestamp: 1253783037,
-                        event_type: 2,
+                        event_type: RawField::new(2),
                         server_id: 1,
                         event_size: 72,
                         log_pos: 1107,
-                        flags: 8,
+                        flags: RawFlags(8),
                     }
                 ),
                 13 => assert_eq!(
                     ev.header,
                     BinlogEventHeader {
                         timestamp: 1253783037,
-                        event_type: 2,
+                        event_type: RawField::new(2),
                         server_id: 1,
                         event_size: 97,
                         log_pos: 1204,
-                        flags: 0,
+                        flags: RawFlags(0),
                     }
                 ),
                 14 => assert_eq!(
                     ev.header,
                     BinlogEventHeader {
                         timestamp: 1253783037,
-                        event_type: 2,
+                        event_type: RawField::new(2),
                         server_id: 1,
                         event_size: 98,
                         log_pos: 1302,
-                        flags: 0,
+                        flags: RawFlags(0),
                     }
                 ),
                 15 => assert_eq!(
                     ev.header,
                     BinlogEventHeader {
                         timestamp: 1253783037,
-                        event_type: 2,
+                        event_type: RawField::new(2),
                         server_id: 1,
                         event_size: 69,
                         log_pos: 1371,
-                        flags: 8,
+                        flags: RawFlags(8),
                     }
                 ),
                 16 => assert_eq!(
                     ev.header,
                     BinlogEventHeader {
                         timestamp: 1253783037,
-                        event_type: 2,
+                        event_type: RawField::new(2),
                         server_id: 1,
                         event_size: 92,
                         log_pos: 1463,
-                        flags: 0,
+                        flags: RawFlags(0),
                     }
                 ),
                 17 => assert_eq!(
                     ev.header,
                     BinlogEventHeader {
                         timestamp: 1253783037,
-                        event_type: 2,
+                        event_type: RawField::new(2),
                         server_id: 1,
                         event_size: 93,
                         log_pos: 1556,
-                        flags: 0,
+                        flags: RawFlags(0),
                     }
                 ),
                 18 => assert_eq!(
                     ev.header,
                     BinlogEventHeader {
                         timestamp: 1253783037,
-                        event_type: 2,
+                        event_type: RawField::new(2),
                         server_id: 1,
                         event_size: 70,
                         log_pos: 1626,
-                        flags: 8,
+                        flags: RawFlags(8),
                     }
                 ),
                 19 => assert_eq!(
                     ev.header,
                     BinlogEventHeader {
                         timestamp: 1253783037,
-                        event_type: 4,
+                        event_type: RawField::new(4),
                         server_id: 1,
                         event_size: 44,
                         log_pos: 1670,
-                        flags: 0,
+                        flags: RawFlags(0),
                     }
                 ),
                 _ => panic!("too many"),
@@ -4126,8 +3433,10 @@ mod tests {
                 let ev = ev?;
                 let ev_end = ev_pos + ev.header.event_size as usize;
                 let binlog_version = binlog_file
+                    .reader
                     .fde
-                    .get_binlog_version()
+                    .binlog_version
+                    .get()
                     .unwrap_or(BinlogVersion::Version4);
 
                 let mut output = Vec::new();
@@ -4138,7 +3447,7 @@ mod tests {
                     Ok(event) => event.unwrap(),
                     Err(err)
                         if err.kind() == std::io::ErrorKind::Other
-                            && ev.header.get_event_type() == Ok(EventType::XID_EVENT)
+                            && ev.header.event_type.get() == Ok(EventType::XID_EVENT)
                             && ev.header.event_size == 0x26
                             && *file_name == "./test-data/binlogs/ver_5_1-wl2325_r.001" =>
                     {

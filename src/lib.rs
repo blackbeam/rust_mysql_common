@@ -59,6 +59,34 @@ extern crate lazy_static;
 #[cfg(feature = "nightly")]
 extern crate test;
 
+macro_rules! my_bitflags {
+    ($name:ident, $ty:path, $($def:tt)*) => {
+        impl $crate::Bitflags for $name {
+            type Repr = $ty;
+
+            fn all() -> Self {
+                $name::all()
+            }
+            fn bits(&self) -> Self::Repr {
+                $name::bits(&self)
+            }
+            fn from_bits_truncate(bits: Self::Repr) -> Self {
+                $name::from_bits_truncate(bits)
+            }
+        }
+
+        bitflags! { $($def)* }
+    };
+}
+
+pub trait Bitflags: Copy {
+    type Repr: Copy + num_traits::PrimInt;
+
+    fn all() -> Self;
+    fn bits(&self) -> Self::Repr;
+    fn from_bits_truncate(bits: Self::Repr) -> Self;
+}
+
 pub use bigdecimal;
 pub use chrono;
 pub use num_bigint;
