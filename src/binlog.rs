@@ -565,7 +565,7 @@ pub enum EventData {
     UpdateRowsEvent(UpdateRowsEvent),
     DeleteRowsEvent(DeleteRowsEvent),
     /// Not yet implemented.
-    GtidEvent(Vec<u8>),
+    GtidEvent(GtidEvent),
     /// Not yet implemented.
     AnonymousGtidEvent(Vec<u8>),
     /// Not yet implemented.
@@ -617,7 +617,7 @@ impl EventData {
             EventData::WriteRowsEvent(ev) => ev.write(version, output),
             EventData::UpdateRowsEvent(ev) => ev.write(version, output),
             EventData::DeleteRowsEvent(ev) => ev.write(version, output),
-            EventData::GtidEvent(ev) => output.write_all(&ev),
+            EventData::GtidEvent(ev) => ev.write(version, output),
             EventData::AnonymousGtidEvent(ev) => output.write_all(&ev),
             EventData::PreviousGtidsEvent(ev) => output.write_all(&ev),
             EventData::TransactionContextEvent(ev) => output.write_all(&ev),
@@ -745,7 +745,7 @@ impl Event {
             WRITE_ROWS_EVENT => EventData::WriteRowsEvent(self.read_event()?),
             UPDATE_ROWS_EVENT => EventData::UpdateRowsEvent(self.read_event()?),
             DELETE_ROWS_EVENT => EventData::DeleteRowsEvent(self.read_event()?),
-            GTID_EVENT => EventData::GtidEvent(self.data.clone()),
+            GTID_EVENT => EventData::GtidEvent(self.read_event()?),
             ANONYMOUS_GTID_EVENT => EventData::AnonymousGtidEvent(self.data.clone()),
             PREVIOUS_GTIDS_EVENT => EventData::PreviousGtidsEvent(self.data.clone()),
             TRANSACTION_CONTEXT_EVENT => EventData::TransactionContextEvent(self.data.clone()),
@@ -763,7 +763,19 @@ impl Event {
 
         let mut hasher = crc32fast::Hasher::new();
         let mut header = [0_u8; BinlogEventHeader::LEN];
-        self.header
+        let mut header_struct = self.header.clone();
+        if header_struct
+            .flags
+            .get()
+            .contains(EventFlags::LOG_EVENT_BINLOG_IN_USE_F)
+        {
+            // In case this is a Format_description_log_event, we need to clear
+            // the LOG_EVENT_BINLOG_IN_USE_F flag before computing the checksum,
+            // since the flag will be cleared when the binlog is closed.
+            // On verification, the flag is dropped before computing the checksum too.
+            header_struct.flags.0 &= !(EventFlags::LOG_EVENT_BINLOG_IN_USE_F.bits());
+        }
+        header_struct
             .write(
                 self.fde
                     .binlog_version
@@ -849,7 +861,7 @@ impl BinlogStruct for Event {
                 if is_fde {
                     output.write_u8(alg as u8)?;
                 }
-                if alg != BinlogChecksumAlg::BINLOG_CHECKSUM_ALG_OFF || is_fde {
+                if alg == BinlogChecksumAlg::BINLOG_CHECKSUM_ALG_CRC32 || is_fde {
                     output.write_u32::<LittleEndian>(self.calc_checksum(alg))?;
                 }
             }
@@ -886,9 +898,7 @@ impl BinlogStruct for Event {
 pub struct BinlogEventHeader {
     /// Seconds since unix epoch.
     pub timestamp: u32,
-    /// Binlog Event Type.
-    ///
-    /// This field contains raw value. Use [`Self::get_event_type()`] to get the actual event type.
+    /// Raw event Type.
     pub event_type: RawField<u8, UnknownEventType, EventType>,
     /// Server-id of the originating mysql-server.
     ///
@@ -1144,6 +1154,11 @@ impl FormatDescriptionEvent {
             event_type_header_lengths: Vec::new(),
             footer: Default::default(),
         }
+    }
+
+    /// Returns a parsed MySql version.
+    pub fn split_version(&self) -> (u8, u8, u8) {
+        crate::misc::split_version(&self.server_version.0)
     }
 
     /// Returns header length for the given event type, if defined.
@@ -3021,6 +3036,259 @@ impl BinlogStruct for DeleteRowsEvent {
     }
 }
 
+my_bitflags! {
+    GtidFlags, u8,
+
+    /// Gtid event flags.
+    pub struct GtidFlags: u8 {
+        /// Transaction may have changes logged with SBR.
+        ///
+        /// In 5.6, 5.7.0-5.7.18, and 8.0.0-8.0.1, this flag is always set.
+        /// Starting in 5.7.19 and 8.0.2, this flag is cleared if the transaction
+        /// only contains row events. It is set if any part of the transaction is
+        /// written in statement format.
+        const MAY_HAVE_SBR = 0x01;
+    }
+}
+
+/// Group number of a Gtid event.
+#[repr(transparent)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub struct Gno(u64);
+
+impl Gno {
+    pub const MIN_GNO: u64 = 1;
+    pub const MAX_GNO: u64 = 9223372036854775807;
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, thiserror::Error)]
+#[error(
+    "Group number {} is out of range [{}, {}]",
+    _0,
+    Gno::MIN_GNO,
+    Gno::MAX_GNO
+)]
+#[repr(transparent)]
+pub struct InvalidGno(pub u64);
+
+impl From<InvalidGno> for u64 {
+    fn from(x: InvalidGno) -> Self {
+        x.0
+    }
+}
+
+impl TryFrom<u64> for Gno {
+    type Error = InvalidGno;
+
+    fn try_from(value: u64) -> Result<Self, Self::Error> {
+        if Self::MIN_GNO <= value && value <= Self::MAX_GNO {
+            Ok(Self(value))
+        } else {
+            Err(InvalidGno(value))
+        }
+    }
+}
+
+/// GTID stands for Global Transaction IDentifier.
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+pub struct GtidEvent {
+    /// Raw flags value.
+    pub flags: RawFlags<GtidFlags>,
+    /// UUID representing the SID.
+    pub sid: [u8; Self::ENCODED_SID_LENGTH],
+    /// Group number, second component of GTID.
+    pub gno: RawField<u64, InvalidGno, Gno>,
+    /// The transaction's logical timestamp
+    pub last_committed: i64,
+    /// The transaction's logical timestamp.
+    ///
+    /// If it isn't `0` then it must be greater than `last_committed` timestamp.
+    pub sequence_number: i64,
+    /// Timestamp when the transaction was committed on the originating master.
+    pub original_commit_timestamp: u64,
+    /// Timestamp when the transaction was committed on the nearest master.
+    pub immediate_commit_timestamp: u64,
+    /// The length of the transaction in bytes.
+    pub tx_length: u64,
+    /// The version of the server where the transaction was originally executed.
+    pub original_server_version: u32,
+    /// The version of the immediate server.
+    pub immediate_server_version: u32,
+}
+
+impl GtidEvent {
+    pub const POST_HEADER_LENGTH: usize = 1 + Self::ENCODED_SID_LENGTH + 8 + 1 + 16;
+    pub const ENCODED_SID_LENGTH: usize = 16;
+    pub const LOGICAL_TIMESTAMP_TYPECODE: u8 = 2;
+    pub const IMMEDIATE_COMMIT_TIMESTAMP_LENGTH: usize = 7;
+    pub const ORIGINAL_COMMIT_TIMESTAMP_LENGTH: usize = 7;
+    pub const UNDEFINED_SERVER_VERSION: u32 = 999_999;
+    pub const IMMEDIATE_SERVER_VERSION_LENGTH: usize = 4;
+}
+
+impl BinlogStruct for GtidEvent {
+    const EVENT_TYPE: Option<EventType> = Some(EventType::GTID_EVENT);
+
+    fn read<T: Read>(
+        event_size: usize,
+        fde: &FormatDescriptionEvent,
+        mut input: T,
+    ) -> io::Result<Self>
+    where
+        Self: Sized,
+    {
+        let mut input = input.limit(
+            S(event_size)
+                - S(BinlogEventHeader::len(
+                    fde.binlog_version.get().unwrap_or(BinlogVersion::Version4),
+                )),
+        );
+
+        let flags = input.read_u8()?;
+
+        let mut sid = [0_u8; Self::ENCODED_SID_LENGTH];
+        input.read_exact(&mut sid)?;
+
+        let gno = input.read_u64::<LittleEndian>()?;
+
+        let mut last_committed = 0;
+        let mut sequence_number = 0;
+        let mut immediate_commit_timestamp = 0;
+        let mut original_commit_timestamp = 0;
+        let mut tx_length = 0;
+
+        let mut original_server_version = Self::UNDEFINED_SERVER_VERSION;
+        let mut immediate_server_version = Self::UNDEFINED_SERVER_VERSION;
+
+        // Will be false for MySql 5.6
+        if input.get_limit() > 0 {
+            let lc_typecode = input.read_u8()?;
+
+            // Will be false for MySql <= 5.7.4
+            if lc_typecode == Self::LOGICAL_TIMESTAMP_TYPECODE {
+                last_committed = input.read_i64::<LittleEndian>()?;
+                sequence_number = input.read_i64::<LittleEndian>()?;
+
+                if input.get_limit() > Self::IMMEDIATE_COMMIT_TIMESTAMP_LENGTH {
+                    immediate_commit_timestamp =
+                        input.read_uint::<LittleEndian>(Self::IMMEDIATE_COMMIT_TIMESTAMP_LENGTH)?;
+                    if immediate_commit_timestamp & (1 << 55) != 0 {
+                        immediate_commit_timestamp &= !(1 << 55);
+                        original_commit_timestamp = input
+                            .read_uint::<LittleEndian>(Self::IMMEDIATE_COMMIT_TIMESTAMP_LENGTH)?;
+                    }
+                } else {
+                    // The transaction originated in the previous server
+                    original_commit_timestamp = immediate_commit_timestamp;
+                }
+
+                if input.get_limit() > 0 {
+                    tx_length = input.read_lenenc_int()?;
+                }
+
+                original_server_version = Self::UNDEFINED_SERVER_VERSION;
+                immediate_server_version = Self::UNDEFINED_SERVER_VERSION;
+                if input.get_limit() > Self::IMMEDIATE_SERVER_VERSION_LENGTH {
+                    immediate_server_version = input.read_u32::<LittleEndian>()?;
+                    if immediate_server_version & (1 << 31) != 0 {
+                        immediate_server_version &= !(1 << 31);
+                        original_server_version = input.read_u32::<LittleEndian>()?;
+                    } else {
+                        original_server_version = immediate_server_version;
+                    }
+                }
+            }
+        }
+
+        Ok(Self {
+            flags: RawFlags(flags),
+            sid,
+            gno: RawField::new(gno),
+            last_committed,
+            sequence_number,
+            original_commit_timestamp,
+            immediate_commit_timestamp,
+            tx_length,
+            original_server_version,
+            immediate_server_version,
+        })
+    }
+
+    fn write<T: Write>(&self, version: BinlogVersion, mut output: T) -> io::Result<()> {
+        let mut output = output.limit(S(self.len(version)));
+
+        output.write_u8(self.flags.0)?;
+        output.write_all(&self.sid)?;
+        output.write_u64::<LittleEndian>(self.gno.0)?;
+        output.write_u8(Self::LOGICAL_TIMESTAMP_TYPECODE)?;
+        output.write_i64::<LittleEndian>(self.last_committed)?;
+        output.write_i64::<LittleEndian>(self.sequence_number)?;
+
+        let mut immediate_commit_timestamp_with_flag = self.immediate_commit_timestamp;
+
+        if self.immediate_commit_timestamp != self.original_commit_timestamp {
+            immediate_commit_timestamp_with_flag |= 1 << 55;
+        } else {
+            immediate_commit_timestamp_with_flag &= !(1 << 55);
+        }
+
+        output.write_uint::<LittleEndian>(
+            immediate_commit_timestamp_with_flag,
+            Self::IMMEDIATE_COMMIT_TIMESTAMP_LENGTH,
+        )?;
+
+        if self.immediate_commit_timestamp != self.original_commit_timestamp {
+            output.write_uint::<LittleEndian>(
+                self.original_commit_timestamp,
+                Self::ORIGINAL_COMMIT_TIMESTAMP_LENGTH,
+            )?;
+        }
+
+        output.write_lenenc_int(self.tx_length)?;
+
+        let mut immediate_server_version_with_flag = self.immediate_server_version;
+
+        if self.immediate_server_version != self.original_server_version {
+            immediate_server_version_with_flag |= 1 << 31;
+        } else {
+            immediate_server_version_with_flag &= !(1 << 31);
+        }
+
+        output.write_u32::<LittleEndian>(immediate_server_version_with_flag)?;
+
+        if self.immediate_server_version != self.original_server_version {
+            output.write_u32::<LittleEndian>(self.original_server_version)?;
+        }
+
+        Ok(())
+    }
+
+    fn len(&self, version: BinlogVersion) -> usize {
+        let mut len = S(0);
+
+        // post header
+        len += S(1); // flags
+        len += S(Self::ENCODED_SID_LENGTH); // sid
+        len += S(8); // gno
+        len += S(1); // lc_typecode
+        len += S(8); // last_committed
+        len += S(8); // sequence_number
+
+        len += S(7); // immediate_commit_timestamp
+        if self.immediate_commit_timestamp != self.original_commit_timestamp {
+            len += S(7); // original_commit_timestamp
+        }
+
+        len += S(crate::misc::lenenc_int_len(self.tx_length as u64) as usize); // tx_length
+        len += S(4); // immediate_server_version
+        if self.immediate_server_version != self.original_server_version {
+            len += S(4); // original_server_version
+        }
+
+        min(len.0, u32::MAX as usize - BinlogEventHeader::len(version))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::io;
@@ -3410,21 +3678,15 @@ mod tests {
 
     #[test]
     fn binlog_event_roundtrip() -> io::Result<()> {
-        let files = [
-            "./test-data/binlogs/bug32407.001",
-            "./test-data/binlogs/bug11747887-bin.000003",
-            "./test-data/binlogs/update-full-row.binlog",
-            "./test-data/binlogs/update-partial-row.binlog",
-            "./test-data/binlogs/ver_5_1_23.001",
-            "./test-data/binlogs/ver_5_1-wl2325_r.001",
-            "./test-data/binlogs/ver_5_1-wl2325_s.001",
-            "./test-data/binlogs/ver_trunk_row_v2.001",
-            "./test-data/binlogs/write-full-row.binlog",
-            "./test-data/binlogs/write-partial-row.binlog",
-        ];
+        const PATH: &str = "./test-data/binlogs";
 
-        'outer: for file_name in &files {
-            let file_data = std::fs::read(file_name)?;
+        let binlogs = std::fs::read_dir(PATH)?
+            .filter_map(|path| path.ok())
+            .map(|entry| entry.path())
+            .filter(|path| path.file_name().is_some());
+
+        'outer: for file_path in binlogs {
+            let file_data = std::fs::read(dbg!(&file_path))?;
             let mut binlog_file = BinlogFile::new(BinlogVersion::Version4, &file_data[..])?;
 
             let mut ev_pos = 4;
@@ -3441,7 +3703,6 @@ mod tests {
 
                 let mut output = Vec::new();
                 ev.write(binlog_version, &mut output)?;
-                assert_eq!(output, &file_data[ev_pos..ev_end]);
 
                 let event = match ev.read_data() {
                     Ok(event) => event.unwrap(),
@@ -3449,13 +3710,24 @@ mod tests {
                         if err.kind() == std::io::ErrorKind::Other
                             && ev.header.event_type.get() == Ok(EventType::XID_EVENT)
                             && ev.header.event_size == 0x26
-                            && *file_name == "./test-data/binlogs/ver_5_1-wl2325_r.001" =>
+                            && file_path.file_name().unwrap() == "ver_5_1-wl2325_r.001" =>
                     {
-                        // Testfile contains broken xid event.
+                        // ver_5_1-wl2325_r.001 testfile contains broken xid event.
+                        continue 'outer;
+                    }
+                    Err(err)
+                        if err.kind() == std::io::ErrorKind::UnexpectedEof
+                            && ev.header.event_type.get() == Ok(EventType::QUERY_EVENT)
+                            && ev.header.event_size == 171
+                            && file_path.file_name().unwrap() == "corrupt-relay-bin.000624" =>
+                    {
+                        // corrupt-relay-bin.000624 testfile contains broken query event.
                         continue 'outer;
                     }
                     other => other.transpose().unwrap()?,
                 };
+
+                assert_eq!(output, &file_data[ev_pos..ev_end]);
 
                 output = Vec::new();
                 event.write(binlog_version, &mut output)?;
@@ -3464,6 +3736,19 @@ mod tests {
                     // Server may or may not write the flags field, but we will always write it.
                     assert_eq!(&output[..ev.data.len()], &ev.data[..]);
                     assert!(output.len() == ev.data.len() || output.len() == ev.data.len() + 1);
+                } else if matches!(event, EventData::GtidEvent(_))
+                    && ev.fde.split_version() < (5, 7, 0)
+                {
+                    // MySql 5.6 does not write TS_TYPE and following post-header fields
+                    assert_eq!(
+                        &output[..GtidEvent::POST_HEADER_LENGTH - 1 - 16],
+                        &ev.data[..]
+                    );
+                } else if matches!(event, EventData::GtidEvent(_))
+                    && ev.fde.split_version() < (5, 8, 0)
+                {
+                    // MySql 5.7 contains only post-header in this event
+                    assert_eq!(&output[..GtidEvent::POST_HEADER_LENGTH], &ev.data[..]);
                 } else {
                     assert_eq!(output, ev.data);
                 }
