@@ -567,7 +567,7 @@ pub enum EventData {
     /// Not yet implemented.
     GtidEvent(GtidEvent),
     /// Not yet implemented.
-    AnonymousGtidEvent(Vec<u8>),
+    AnonymousGtidEvent(AnonymousGtidEvent),
     /// Not yet implemented.
     PreviousGtidsEvent(Vec<u8>),
     /// Not yet implemented.
@@ -618,7 +618,7 @@ impl EventData {
             EventData::UpdateRowsEvent(ev) => ev.write(version, output),
             EventData::DeleteRowsEvent(ev) => ev.write(version, output),
             EventData::GtidEvent(ev) => ev.write(version, output),
-            EventData::AnonymousGtidEvent(ev) => output.write_all(&ev),
+            EventData::AnonymousGtidEvent(ev) => ev.write(version, output),
             EventData::PreviousGtidsEvent(ev) => output.write_all(&ev),
             EventData::TransactionContextEvent(ev) => output.write_all(&ev),
             EventData::ViewChangeEvent(ev) => output.write_all(&ev),
@@ -746,7 +746,7 @@ impl Event {
             UPDATE_ROWS_EVENT => EventData::UpdateRowsEvent(self.read_event()?),
             DELETE_ROWS_EVENT => EventData::DeleteRowsEvent(self.read_event()?),
             GTID_EVENT => EventData::GtidEvent(self.read_event()?),
-            ANONYMOUS_GTID_EVENT => EventData::AnonymousGtidEvent(self.data.clone()),
+            ANONYMOUS_GTID_EVENT => EventData::AnonymousGtidEvent(self.read_event()?),
             PREVIOUS_GTIDS_EVENT => EventData::PreviousGtidsEvent(self.data.clone()),
             TRANSACTION_CONTEXT_EVENT => EventData::TransactionContextEvent(self.data.clone()),
             VIEW_CHANGE_EVENT => EventData::ViewChangeEvent(self.data.clone()),
@@ -3052,6 +3052,8 @@ my_bitflags! {
 }
 
 /// Group number of a Gtid event.
+///
+/// Should be between `MIN_GNO` and `MAX_GNO` for GtidEvent and `0` for AnonymousGtidEvent.
 #[repr(transparent)]
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct Gno(u64);
@@ -3081,7 +3083,7 @@ impl TryFrom<u64> for Gno {
     type Error = InvalidGno;
 
     fn try_from(value: u64) -> Result<Self, Self::Error> {
-        if Self::MIN_GNO <= value && value <= Self::MAX_GNO {
+        if value == 0 || (Self::MIN_GNO <= value && value <= Self::MAX_GNO) {
             Ok(Self(value))
         } else {
             Err(InvalidGno(value))
@@ -3097,6 +3099,10 @@ pub struct GtidEvent {
     /// UUID representing the SID.
     pub sid: [u8; Self::ENCODED_SID_LENGTH],
     /// Group number, second component of GTID.
+    ///
+    ///
+    /// Should be an integer between `MIN_GNO` and `MAX_GNO` for GtidEvent
+    /// or `0` for AnonymousGtidEvent.
     pub gno: RawField<u64, InvalidGno, Gno>,
     /// The transaction's logical timestamp
     pub last_committed: i64,
@@ -3169,17 +3175,17 @@ impl BinlogStruct for GtidEvent {
                 last_committed = input.read_i64::<LittleEndian>()?;
                 sequence_number = input.read_i64::<LittleEndian>()?;
 
-                if input.get_limit() > Self::IMMEDIATE_COMMIT_TIMESTAMP_LENGTH {
+                if input.get_limit() >= Self::IMMEDIATE_COMMIT_TIMESTAMP_LENGTH {
                     immediate_commit_timestamp =
                         input.read_uint::<LittleEndian>(Self::IMMEDIATE_COMMIT_TIMESTAMP_LENGTH)?;
                     if immediate_commit_timestamp & (1 << 55) != 0 {
                         immediate_commit_timestamp &= !(1 << 55);
                         original_commit_timestamp = input
                             .read_uint::<LittleEndian>(Self::IMMEDIATE_COMMIT_TIMESTAMP_LENGTH)?;
+                    } else {
+                        // The transaction originated in the previous server
+                        original_commit_timestamp = immediate_commit_timestamp;
                     }
-                } else {
-                    // The transaction originated in the previous server
-                    original_commit_timestamp = immediate_commit_timestamp;
                 }
 
                 if input.get_limit() > 0 {
@@ -3188,7 +3194,7 @@ impl BinlogStruct for GtidEvent {
 
                 original_server_version = Self::UNDEFINED_SERVER_VERSION;
                 immediate_server_version = Self::UNDEFINED_SERVER_VERSION;
-                if input.get_limit() > Self::IMMEDIATE_SERVER_VERSION_LENGTH {
+                if input.get_limit() >= Self::IMMEDIATE_SERVER_VERSION_LENGTH {
                     immediate_server_version = input.read_u32::<LittleEndian>()?;
                     if immediate_server_version & (1 << 31) != 0 {
                         immediate_server_version &= !(1 << 31);
@@ -3286,6 +3292,30 @@ impl BinlogStruct for GtidEvent {
         }
 
         min(len.0, u32::MAX as usize - BinlogEventHeader::len(version))
+    }
+}
+
+/// Anonymous GTID event.
+#[repr(transparent)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+pub struct AnonymousGtidEvent(pub GtidEvent);
+
+impl BinlogStruct for AnonymousGtidEvent {
+    const EVENT_TYPE: Option<EventType> = Some(EventType::ANONYMOUS_GTID_EVENT);
+
+    fn read<T: Read>(event_size: usize, fde: &FormatDescriptionEvent, input: T) -> io::Result<Self>
+    where
+        Self: Sized,
+    {
+        GtidEvent::read(event_size, fde, input).map(Self)
+    }
+
+    fn write<T: Write>(&self, version: BinlogVersion, output: T) -> io::Result<()> {
+        self.0.write(version, output)
+    }
+
+    fn len(&self, version: BinlogVersion) -> usize {
+        self.0.len(version)
     }
 }
 
@@ -3686,7 +3716,7 @@ mod tests {
             .filter(|path| path.file_name().is_some());
 
         'outer: for file_path in binlogs {
-            let file_data = std::fs::read(dbg!(&file_path))?;
+            let file_data = std::fs::read(&file_path)?;
             let mut binlog_file = BinlogFile::new(BinlogVersion::Version4, &file_data[..])?;
 
             let mut ev_pos = 4;
@@ -3736,7 +3766,8 @@ mod tests {
                     // Server may or may not write the flags field, but we will always write it.
                     assert_eq!(&output[..ev.data.len()], &ev.data[..]);
                     assert!(output.len() == ev.data.len() || output.len() == ev.data.len() + 1);
-                } else if matches!(event, EventData::GtidEvent(_))
+                } else if (matches!(event, EventData::GtidEvent(_))
+                    || matches!(event, EventData::AnonymousGtidEvent(_)))
                     && ev.fde.split_version() < (5, 7, 0)
                 {
                     // MySql 5.6 does not write TS_TYPE and following post-header fields
@@ -3744,7 +3775,8 @@ mod tests {
                         &output[..GtidEvent::POST_HEADER_LENGTH - 1 - 16],
                         &ev.data[..]
                     );
-                } else if matches!(event, EventData::GtidEvent(_))
+                } else if (matches!(event, EventData::GtidEvent(_))
+                    || matches!(event, EventData::AnonymousGtidEvent(_)))
                     && ev.fde.split_version() < (5, 8, 0)
                 {
                     // MySql 5.7 contains only post-header in this event
