@@ -2084,16 +2084,12 @@ impl<'a> ComBinlogDumpGtid<'a> {
         len += S(4); // binlog-filename-len
         len += S(min(u32::MAX as usize, self.filename.len())); // binlog-filename
         len += S(8); // binlog-pos
-        if self
-            .get_flags()
-            .contains(BinlogDumpFlags::BINLOG_THROUGH_GTID)
-        {
-            len += S(4); // data-size
-            len += S(min(
-                u32::MAX as usize,
-                self.sid_blocks.iter().map(SidBlock::len).sum(),
-            )); // data
-        }
+        len += S(4); // data-size
+        len += S(8); // n_sids
+        len += S(min(
+            u32::MAX as usize - 8,
+            self.sid_blocks.iter().map(SidBlock::len).sum(),
+        )); // data
 
         len.0
     }
@@ -2107,23 +2103,18 @@ impl MySerialize for ComBinlogDumpGtid<'_> {
         buf.put_u32_str(&self.filename);
         buf.put_u64_le(self.pos);
 
-        if self
-            .get_flags()
-            .contains(BinlogDumpFlags::BINLOG_THROUGH_GTID)
-        {
-            let n_sids = min(u32::MAX as usize, self.sid_blocks.len());
+        let n_sids = min(u64::MAX, self.sid_blocks.len() as u64);
 
-            let mut data_len = S(4);
-            for block in &self.sid_blocks {
-                data_len += S(block.len());
-            }
+        let mut data_len = S(8);
+        for block in &self.sid_blocks {
+            data_len += S(block.len());
+        }
 
-            buf.put_u32_le(data_len.0 as u32);
-            buf.put_u32_le(n_sids as u32);
+        buf.put_u32_le(data_len.0 as u32);
+        buf.put_u64_le(n_sids);
 
-            for sid_block in &self.sid_blocks {
-                sid_block.serialize(&mut *buf);
-            }
+        for sid_block in &self.sid_blocks {
+            sid_block.serialize(&mut *buf);
         }
     }
 }
@@ -2147,18 +2138,15 @@ impl<'de> MyDeserialize<'de> for ComBinlogDumpGtid<'de> {
         let pos = buf.checked_eat_u64_le().ok_or_else(unexpected_buf_eof)?;
 
         let mut sid_blocks = Vec::new();
-        if BinlogDumpFlags::from_bits_truncate(flags).contains(BinlogDumpFlags::BINLOG_THROUGH_GTID)
-        {
-            let data_len = buf.checked_eat_u32_le().ok_or_else(unexpected_buf_eof)? as usize;
-            if data_len > 0 {
-                sbuf = buf
-                    .checked_eat_buf(data_len)
-                    .ok_or_else(unexpected_buf_eof)?;
-                let n_sids = sbuf.checked_eat_u32_le().ok_or_else(unexpected_buf_eof)? as usize;
-                sid_blocks.reserve(n_sids);
-                for _ in 0..n_sids {
-                    sid_blocks.push(SidBlock::deserialize((), &mut sbuf)?);
-                }
+        let data_len = buf.checked_eat_u32_le().ok_or_else(unexpected_buf_eof)? as usize;
+        if data_len > 0 {
+            sbuf = buf
+                .checked_eat_buf(data_len)
+                .ok_or_else(unexpected_buf_eof)?;
+            let n_sids = sbuf.checked_eat_u64_le().ok_or_else(unexpected_buf_eof)? as usize;
+            sid_blocks.reserve(n_sids);
+            for _ in 0..n_sids {
+                sid_blocks.push(SidBlock::deserialize((), &mut sbuf)?);
             }
         }
 
@@ -2297,16 +2285,12 @@ mod test {
             let mut cmd = ComBinlogDumpGtid::new(server_id, filename).with_pos(pos);
             cmd.flags = flags;
 
-            if BinlogDumpFlags::from_bits_truncate(flags)
-                .contains(BinlogDumpFlags::BINLOG_THROUGH_GTID)
-            {
-                for i in 0..sid_blocks {
-                    let mut block = SidBlock::new([i as u8; 16]);
-                    for j in 0..i {
-                        block = block.with_interval((i, j));
-                    }
-                    cmd = cmd.with_sid_block(block);
+            for i in 0..sid_blocks {
+                let mut block = SidBlock::new([i as u8; 16]);
+                for j in 0..i {
+                    block = block.with_interval((i, j));
                 }
+                cmd = cmd.with_sid_block(block);
             }
 
             let mut output = Vec::new();
