@@ -1050,17 +1050,19 @@ pub struct HandshakeResponse {
 }
 
 impl HandshakeResponse {
+    /// Builds a payload following [Protocol::HandshakeResponse41](https://dev.mysql.com/doc/internals/en/connection-phase-packets.html#packet-Protocol::HandshakeResponse) specification
+    /// If db_name is Some but client flags are missing CLIENT_CONNECT_WITH_DB,
+    /// that flag will be appended automatically
     pub fn new(
         scramble_buf: &Option<impl AsRef<[u8]>>,
         server_version: (u16, u16, u16),
         user: Option<&str>,
         db_name: Option<&str>,
         auth_plugin: &AuthPlugin<'_>,
-        client_flags: CapabilityFlags,
+        mut client_flags: CapabilityFlags,
         connect_attributes: &HashMap<String, String>,
     ) -> HandshakeResponse {
         let scramble = scramble_buf.as_ref().map(|x| x.as_ref()).unwrap_or(&[]);
-        let database = db_name.unwrap_or("");
 
         let collation = if server_version >= (5, 5, 3) {
             UTF8MB4_GENERAL_CI
@@ -1068,17 +1070,35 @@ impl HandshakeResponse {
             UTF8_GENERAL_CI
         };
 
+        if let Some(_) = db_name {
+            client_flags = client_flags | CapabilityFlags::CLIENT_CONNECT_WITH_DB;
+        }
+
         let mut data = Vec::with_capacity(1024);
         data.write_u32::<LE>(client_flags.bits()).unwrap();
-        data.resize(data.len() + 4, 0);
+        data.extend_from_slice(&[0x00, 0x00, 0x00, 0x01]);
         data.push(collation as u8);
         data.resize(data.len() + 23, 0);
         data.extend_from_slice(user.unwrap_or("").as_bytes());
         data.push(0);
-        data.push(scramble.len() as u8);
-        data.extend_from_slice(scramble);
-        data.extend_from_slice(database.as_bytes());
-        data.push(0);
+
+        if client_flags.contains(CapabilityFlags::CLIENT_PLUGIN_AUTH_LENENC_CLIENT_DATA) {
+            data.write_lenenc_int(scramble.len() as u64).unwrap();
+            data.extend_from_slice(scramble);
+        } else if client_flags.contains(CapabilityFlags::CLIENT_SECURE_CONNECTION) {
+            data.push(scramble.len() as u8);
+            data.extend_from_slice(scramble);
+        } else {
+            data.extend_from_slice(scramble);
+            data.push(0);
+        }
+
+        if client_flags.contains(CapabilityFlags::CLIENT_CONNECT_WITH_DB) {
+            let database = db_name.unwrap_or("");
+            data.extend_from_slice(database.as_bytes());
+            data.push(0);
+        }
+
         if client_flags.contains(CapabilityFlags::CLIENT_PLUGIN_AUTH) {
             data.extend_from_slice(auth_plugin.as_bytes());
             data.push(0);
@@ -1451,11 +1471,12 @@ mod test {
     use super::{
         column_from_payload, parse_auth_more_data, parse_auth_switch_request, parse_err_packet,
         parse_handshake_packet, parse_local_infile_packet, parse_ok_packet, parse_stmt_packet,
-        OkPacketKind, SessionStateChange,
+        AuthPlugin, HandshakeResponse, OkPacketKind, SessionStateChange,
     };
     use crate::constants::{
         CapabilityFlags, ColumnFlags, ColumnType, StatusFlags, UTF8_GENERAL_CI,
     };
+    use std::collections::HashMap;
 
     #[test]
     fn should_parse_local_infile_packet() {
@@ -1704,5 +1725,105 @@ mod test {
         assert_eq!(ok_packet.warnings(), 0);
         assert_eq!(ok_packet.info_ref(), None);
         assert_eq!(ok_packet.session_state_info(), None);
+    }
+
+    #[test]
+    fn should_build_handshake_response() {
+        let flags_without_db_name = CapabilityFlags::from_bits_truncate(0x81bea205);
+
+        let actual = HandshakeResponse::new(
+            &Some(&[]),
+            (5u16, 5, 5),
+            Some("root"),
+            None,
+            &AuthPlugin::MysqlNativePassword,
+            flags_without_db_name,
+            &HashMap::new(),
+        )
+        .into();
+
+        let expected: Vec<u8> = [
+            0x05, 0xa2, 0xbe, 0x81, // client capabilities
+            0x00, 0x00, 0x00, 0x01, // max packet
+            0x2d, // charset
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // reserved
+            0x72, 0x6f, 0x6f, 0x74, 0x00, // username=root
+            0x00, // blank scramble
+            0x6d, 0x79, 0x73, 0x71, 0x6c, 0x5f, 0x6e, 0x61, 0x74, 0x69, 0x76, 0x65, 0x5f, 0x70,
+            0x61, 0x73, 0x73, 0x77, 0x6f, 0x72, 0x64, 0x00, // mysql_native_password
+            0x00,
+        ]
+        .to_vec();
+
+        assert_eq!(expected, actual);
+
+        let flags_with_db_name = flags_without_db_name | CapabilityFlags::CLIENT_CONNECT_WITH_DB;
+        let actual = HandshakeResponse::new(
+            &Some(&[]),
+            (5u16, 5, 5),
+            Some("root"),
+            Some("mydb"),
+            &AuthPlugin::MysqlNativePassword,
+            flags_with_db_name,
+            &HashMap::new(),
+        )
+        .into();
+
+        let expected: Vec<u8> = [
+            0x0d, 0xa2, 0xbe, 0x81, // client capabilities
+            0x00, 0x00, 0x00, 0x01, // max packet
+            0x2d, // charset
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // reserved
+            0x72, 0x6f, 0x6f, 0x74, 0x00, // username=root
+            0x00, // blank scramble
+            0x6d, 0x79, 0x64, 0x62, 0x00, // dbname
+            0x6d, 0x79, 0x73, 0x71, 0x6c, 0x5f, 0x6e, 0x61, 0x74, 0x69, 0x76, 0x65, 0x5f, 0x70,
+            0x61, 0x73, 0x73, 0x77, 0x6f, 0x72, 0x64, 0x00, // mysql_native_password
+            0x00,
+        ]
+        .to_vec();
+
+        assert_eq!(expected, actual);
+
+        let actual = HandshakeResponse::new(
+            &Some(&[]),
+            (5u16, 5, 5),
+            Some("root"),
+            Some("mydb"),
+            &AuthPlugin::MysqlNativePassword,
+            flags_without_db_name,
+            &HashMap::new(),
+        )
+        .into();
+        assert_eq!(expected, actual);
+
+        let actual = HandshakeResponse::new(
+            &Some(&[]),
+            (5u16, 5, 5),
+            Some("root"),
+            None,
+            &AuthPlugin::MysqlNativePassword,
+            flags_with_db_name,
+            &HashMap::new(),
+        )
+        .into();
+
+        let expected: Vec<u8> = [
+            0x0d, 0xa2, 0xbe, 0x81, // client capabilities
+            0x00, 0x00, 0x00, 0x01, // max packet
+            0x2d, // charset
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // reserved
+            0x72, 0x6f, 0x6f, 0x74, 0x00, // username=root
+            0x00, // blank db_name
+            0x00, // blank scramble
+            0x6d, 0x79, 0x73, 0x71, 0x6c, 0x5f, 0x6e, 0x61, 0x74, 0x69, 0x76, 0x65, 0x5f, 0x70,
+            0x61, 0x73, 0x73, 0x77, 0x6f, 0x72, 0x64, 0x00, // mysql_native_password
+            0x00,
+        ]
+        .to_vec();
+        assert_eq!(expected, actual);
     }
 }
