@@ -52,41 +52,11 @@
 //! [1]: https://dev.mysql.com/doc/internals/en/binary-protocol-value.html
 #![cfg_attr(feature = "nightly", feature(test, const_fn))]
 
-#[macro_use]
-extern crate bitflags;
-#[macro_use]
-extern crate lazy_static;
 #[cfg(feature = "nightly")]
 extern crate test;
 
-macro_rules! my_bitflags {
-    ($name:ident, $ty:path, $($def:tt)*) => {
-        impl $crate::Bitflags for $name {
-            type Repr = $ty;
-
-            fn all() -> Self {
-                $name::all()
-            }
-            fn bits(&self) -> Self::Repr {
-                $name::bits(&self)
-            }
-            fn from_bits_truncate(bits: Self::Repr) -> Self {
-                $name::from_bits_truncate(bits)
-            }
-        }
-
-        bitflags! { $($def)* }
-    };
-}
-
-pub trait Bitflags: Copy {
-    type Repr: Copy + num_traits::PrimInt;
-
-    fn all() -> Self;
-    fn bits(&self) -> Self::Repr;
-    fn from_bits_truncate(bits: Self::Repr) -> Self;
-}
-
+#[macro_use]
+pub mod bitflags_ext;
 pub use bigdecimal;
 pub use chrono;
 pub use num_bigint;

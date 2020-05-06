@@ -33,7 +33,7 @@ use crate::{
     value::{ClientSide, SerializationSide, Value},
 };
 
-lazy_static! {
+lazy_static::lazy_static! {
     static ref MARIADB_VERSION_RE: Regex =
         Regex::new(r"^5.5.5-(\d{1,2})\.(\d{1,2})\.(\d{1,3})-MariaDB").unwrap();
     static ref VERSION_RE: Regex = Regex::new(r"^(\d{1,2})\.(\d{1,2})\.(\d{1,3})(.*)").unwrap();
@@ -351,6 +351,21 @@ impl OkPacketKind for ResultSetTerminator {
             info: &[],
             session_state_info: &[],
         })
+    }
+}
+
+/// This packet terminates a binlog network stream.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
+pub struct NetworkStreamTerminator;
+
+impl OkPacketKind for NetworkStreamTerminator {
+    const HEADER: u8 = 0xFE;
+
+    fn parse_body<'de>(
+        flags: CapabilityFlags,
+        buf: &mut ParseBuf<'de>,
+    ) -> io::Result<OkPacketBody<'de>> {
+        ResultSetTerminator::parse_body(flags, buf)
     }
 }
 
@@ -1801,7 +1816,9 @@ impl fmt::Debug for ComTableDump<'_> {
     }
 }
 
-bitflags! {
+my_bitflags! {
+    BinlogDumpFlags, u16,
+
     /// Empty flags of a `LoadEvent`.
     pub struct BinlogDumpFlags: u16 {
         /// If there is no more event to send a EOF_Packet instead of blocking the connection
@@ -1818,8 +1835,8 @@ pub struct ComBinlogDump<'a> {
     pub pos: u32,
     /// Command flags (empty by default).
     ///
-    /// This field contains raw value. Use `Self::get_flags` to parse it.
-    pub flags: u16,
+    /// Only `BINLOG_DUMP_NON_BLOCK` is supported for this command.
+    pub flags: BinlogDumpFlags,
     /// Server id of this slave.
     pub server_id: u32,
     /// Filename of the binlog on the master.
@@ -1831,12 +1848,12 @@ pub struct ComBinlogDump<'a> {
 
 impl<'a> ComBinlogDump<'a> {
     /// Creates new instance with default values for `pos` and `flags`.
-    pub fn new(server_id: u32, filename: impl Into<Cow<'a, [u8]>>) -> Self {
+    pub fn new(server_id: u32) -> Self {
         Self {
             pos: 0,
-            flags: 0,
+            flags: BinlogDumpFlags::empty(),
             server_id,
-            filename: filename.into(),
+            filename: Cow::Owned(vec![]),
         }
     }
 
@@ -1847,12 +1864,22 @@ impl<'a> ComBinlogDump<'a> {
 
     /// Returns parsed `flags` field with unknown bits truncated.
     pub fn get_flags(&self) -> BinlogDumpFlags {
-        BinlogDumpFlags::from_bits_truncate(self.flags)
+        self.flags
+    }
+
+    /// Defines filename for this instance.
+    pub fn with_filename<'b>(self, filename: impl Into<Cow<'b, [u8]>>) -> ComBinlogDump<'b> {
+        ComBinlogDump {
+            pos: self.pos,
+            flags: self.flags,
+            server_id: self.server_id,
+            filename: filename.into(),
+        }
     }
 
     /// Defines flags for this instance.
     pub fn with_flags(mut self, flags: BinlogDumpFlags) -> Self {
-        self.flags = flags.bits();
+        self.flags = flags;
         self
     }
 
@@ -1880,7 +1907,7 @@ impl MySerialize for ComBinlogDump<'_> {
     fn serialize(&self, buf: &mut Vec<u8>) {
         buf.put_u8(Command::COM_BINLOG_DUMP as u8);
         buf.put_u32_le(self.pos);
-        buf.put_u16_le(self.flags);
+        buf.put_u16_le(self.flags.bits());
         buf.put_u32_le(self.server_id);
         buf.put_slice(&self.filename);
     }
@@ -1906,7 +1933,7 @@ impl<'de> MyDeserialize<'de> for ComBinlogDump<'de> {
 
         Ok(Self {
             pos,
-            flags,
+            flags: BinlogDumpFlags::from_bits_truncate(flags),
             server_id,
             filename: Cow::Borrowed(filename),
         })
@@ -1917,14 +1944,7 @@ impl fmt::Debug for ComBinlogDump<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ComBinlogDump")
             .field("pos", &self.pos)
-            .field("flags", &{
-                let flags = self.flags;
-                format!(
-                    "{:?} (Unknown flags: {:016b}",
-                    flags,
-                    self.flags & (u16::MAX ^ BinlogDumpFlags::all().bits())
-                )
-            })
+            .field("flags", &self.flags)
             .field("server_id", &self.server_id)
             .field("filename", &self.get_filename())
             .finish()
@@ -2012,7 +2032,7 @@ impl<'de> MyDeserialize<'de> for SidBlock {
 #[derive(Clone, Eq, PartialEq, Hash)]
 pub struct ComBinlogDumpGtid<'a> {
     /// Command flags (empty by default).
-    pub flags: u16,
+    pub flags: BinlogDumpFlags,
     /// Server id of this slave.
     pub server_id: u32,
     /// Filename of the binlog on the master.
@@ -2030,18 +2050,19 @@ pub struct ComBinlogDumpGtid<'a> {
     ///
     /// # Note
     ///
-    /// Serialization will truncate serialized value if its length is greater than 2^32 - 1 bytes.
+    /// Serialization will return an error if lenght of a serialized value
+    /// is greater than 2^32 - 1 bytes.
     pub sid_blocks: Vec<SidBlock>,
 }
 
 impl<'a> ComBinlogDumpGtid<'a> {
     /// Creates new instance with default values for `pos`, `data` and `flags` fields.
-    pub fn new(server_id: u32, filename: impl Into<Cow<'a, [u8]>>) -> Self {
+    pub fn new(server_id: u32) -> Self {
         Self {
             pos: 0,
-            flags: 0,
+            flags: BinlogDumpFlags::empty(),
             server_id,
-            filename: filename.into(),
+            filename: Cow::Owned(vec![]),
             sid_blocks: Default::default(),
         }
     }
@@ -2053,12 +2074,23 @@ impl<'a> ComBinlogDumpGtid<'a> {
 
     /// Returns parsed `flags` field with unknown bits truncated.
     pub fn get_flags(&self) -> BinlogDumpFlags {
-        BinlogDumpFlags::from_bits_truncate(self.flags)
+        self.flags
+    }
+
+    /// Defines filename for this instance.
+    pub fn with_filename<'b>(self, filename: impl Into<Cow<'b, [u8]>>) -> ComBinlogDumpGtid<'b> {
+        ComBinlogDumpGtid {
+            flags: self.flags,
+            server_id: self.server_id,
+            filename: filename.into(),
+            pos: self.pos,
+            sid_blocks: self.sid_blocks,
+        }
     }
 
     /// Defines flags for this instance.
     pub fn with_flags(mut self, flags: BinlogDumpFlags) -> Self {
-        self.flags = flags.bits();
+        self.flags = flags;
         self
     }
 
@@ -2069,8 +2101,11 @@ impl<'a> ComBinlogDumpGtid<'a> {
     }
 
     /// Adds SID block to this instance.
-    pub fn with_sid_block(mut self, block: SidBlock) -> Self {
-        self.sid_blocks.push(block);
+    pub fn with_sid_blocks<T>(mut self, sid_blocks: T) -> Self
+    where
+        T: IntoIterator<Item = SidBlock>,
+    {
+        self.sid_blocks = sid_blocks.into_iter().collect();
         self
     }
 
@@ -2098,7 +2133,7 @@ impl<'a> ComBinlogDumpGtid<'a> {
 impl MySerialize for ComBinlogDumpGtid<'_> {
     fn serialize(&self, buf: &mut Vec<u8>) {
         buf.put_u8(Command::COM_BINLOG_DUMP_GTID as u8);
-        buf.put_u16_le(self.flags);
+        buf.put_u16_le(self.flags.bits());
         buf.put_u32_le(self.server_id);
         buf.put_u32_str(&self.filename);
         buf.put_u64_le(self.pos);
@@ -2151,7 +2186,7 @@ impl<'de> MyDeserialize<'de> for ComBinlogDumpGtid<'de> {
         }
 
         Ok(Self {
-            flags,
+            flags: BinlogDumpFlags::from_bits_truncate(flags),
             server_id,
             filename: Cow::Borrowed(filename),
             pos,
@@ -2164,21 +2199,13 @@ impl fmt::Debug for ComBinlogDumpGtid<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ComBinlogDumpGtid")
             .field("pos", &self.pos)
-            .field("flags", &{
-                let flags = self.flags;
-                format!(
-                    "{:?} (Unknown flags: {:016b})",
-                    flags,
-                    self.flags & (u16::MAX ^ BinlogDumpFlags::all().bits())
-                )
-            })
+            .field("flags", &self.flags)
             .field("server_id", &self.server_id)
             .field("filename", &self.get_filename())
             .field("sid_blocks", &self.sid_blocks)
             .finish()
     }
 }
-
 /// Each Semi Sync Binlog Event with the `SEMI_SYNC_ACK_REQ` flag set the slave has to acknowledge
 /// with Semi-Sync ACK packet.
 pub struct SemiSyncAckPacket<'a> {
@@ -2234,8 +2261,8 @@ mod test {
             pos: u32,
             flags: u16,
         ) {
-            let mut cmd = ComBinlogDump::new(server_id, filename).with_pos(pos);
-            cmd.flags = flags;
+            let mut cmd = ComBinlogDump::new(server_id).with_filename(filename).with_pos(pos);
+            cmd.flags = crate::packets::BinlogDumpFlags::from_bits_truncate(flags);
 
             let mut output = Vec::new();
             cmd.serialize(&mut output);
@@ -2280,18 +2307,21 @@ mod test {
             server_id: u32,
             filename: Vec<u8>,
             pos: u64,
-            sid_blocks in 0_u64..1024,
+            n_sid_blocks in 0_u64..1024,
         ) {
-            let mut cmd = ComBinlogDumpGtid::new(server_id, filename).with_pos(pos);
-            cmd.flags = flags;
+            let mut cmd = ComBinlogDumpGtid::new(server_id).with_filename(filename).with_pos(pos);
+            cmd.flags = crate::packets::BinlogDumpFlags::from_bits_truncate(flags);
 
-            for i in 0..sid_blocks {
+            let mut sid_blocks = Vec::new();
+            for i in 0..n_sid_blocks {
                 let mut block = SidBlock::new([i as u8; 16]);
                 for j in 0..i {
                     block = block.with_interval((i, j));
                 }
-                cmd = cmd.with_sid_block(block);
+                sid_blocks.push(block);
             }
+
+            cmd = cmd.with_sid_blocks(sid_blocks);
 
             let mut output = Vec::new();
             cmd.serialize(&mut output);

@@ -14,11 +14,9 @@
 
 use bitvec::{order::Lsb0, vec::BitVec};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use num_traits::{Bounded, PrimInt};
 use saturating::Saturating as S;
 
 use std::{
-    borrow::Cow,
     cmp::min,
     convert::TryFrom,
     fmt,
@@ -28,141 +26,13 @@ use std::{
         ErrorKind::{InvalidData, Other, UnexpectedEof},
         Read, Write,
     },
-    marker::PhantomData,
 };
 
 use crate::{
     constants::{ColumnType, ItemResult, UnknownColumnType, UnknownItemResultType},
     io::{ReadMysqlExt, WriteMysqlExt},
-    misc::{LimitRead, LimitWrite},
-    Bitflags,
+    misc::{LimitRead, LimitWrite, RawField, RawFlags, RawSeq, RawText},
 };
-
-/// Wrapper for a raw value of a particular type.
-#[derive(Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
-#[repr(transparent)]
-pub struct RawField<T, E, V>(pub T, PhantomData<(E, V)>);
-
-impl<T: Copy, U: Into<T>, V: TryFrom<T, Error = U>> RawField<T, U, V> {
-    /// Creates a new wrapper.
-    pub fn new(t: T) -> Self {
-        Self(t, PhantomData)
-    }
-
-    /// Returns either parsed value of this field, or raw value in case of an error.
-    pub fn get(&self) -> Result<V, U> {
-        V::try_from(self.0)
-    }
-}
-
-impl<T: fmt::Debug, U: fmt::Debug, V: fmt::Debug> fmt::Debug for RawField<T, U, V>
-where
-    T: Copy,
-    U: Into<T>,
-    V: TryFrom<T, Error = U>,
-{
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match V::try_from(self.0) {
-            Ok(u) => u.fmt(f),
-            Err(t) => write!(
-                f,
-                "Unknown value for type {}: {:?}",
-                std::any::type_name::<U>(),
-                t
-            ),
-        }
-    }
-}
-
-/// Wrapper for a sequence of values of a particular type.
-#[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
-#[repr(transparent)]
-pub struct RawSeq<T, U, V>(pub Vec<T>, PhantomData<(U, V)>);
-
-impl<T: Copy, U: Into<T>, V: TryFrom<T, Error = U>> RawSeq<T, U, V> {
-    /// Creates a new wrapper.
-    pub fn new(t: Vec<T>) -> Self {
-        Self(t, PhantomData)
-    }
-
-    /// Returns either parsed value at the given index, or raw value in case of an error.
-    pub fn get(&self, index: usize) -> Option<Result<V, U>> {
-        self.0.get(index).copied().map(V::try_from)
-    }
-
-    /// Returns a length of this sequence.
-    pub fn len(&self) -> usize {
-        self.0.len()
-    }
-}
-
-impl<T: fmt::Debug, U: fmt::Debug, V: fmt::Debug> fmt::Debug for RawSeq<T, U, V>
-where
-    T: Copy,
-    U: Into<T>,
-    V: TryFrom<T, Error = U>,
-{
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0
-            .iter()
-            .copied()
-            .map(RawField::<T, U, V>::new)
-            .collect::<Vec<_>>()
-            .fmt(f)
-    }
-}
-
-/// Wrapper for raw flags value.
-#[derive(Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
-pub struct RawFlags<T: Bitflags>(pub T::Repr);
-
-impl<T: Bitflags> RawFlags<T> {
-    /// Returns parsed flags. Unknown bits will be truncated.
-    pub fn get(&self) -> T {
-        T::from_bits_truncate(self.0)
-    }
-}
-
-impl<T: fmt::Debug> fmt::Debug for RawFlags<T>
-where
-    T: Bitflags,
-    T::Repr: fmt::Binary,
-{
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:?}", self.get())?;
-        let unknown_bits = self.0 & (T::Repr::max_value() ^ T::all().bits());
-        if unknown_bits.count_ones() > 0 {
-            write!(
-                f,
-                " (Unknown bits: {:0width$b})",
-                unknown_bits,
-                width = T::Repr::max_value().count_ones() as usize,
-            )?
-        }
-        Ok(())
-    }
-}
-
-/// Wrapper for raw text value.
-#[derive(Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
-pub struct RawText<T = Vec<u8>>(pub T);
-
-impl<T: AsRef<[u8]>> RawText<T> {
-    /// Returns either parsed value of this field, or raw value in case of an error.
-    pub fn get(&self) -> Cow<str> {
-        let slice = self.0.as_ref();
-        match slice.iter().position(|c| *c == 0) {
-            Some(position) => String::from_utf8_lossy(&slice[..position]),
-            None => String::from_utf8_lossy(slice),
-        }
-    }
-}
-
-impl<T: AsRef<[u8]>> fmt::Debug for RawText<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.get().fmt(f)
-    }
-}
 
 /// Depending on the MySQL Version that created the binlog the format is slightly different.
 #[repr(u8)]
@@ -1868,7 +1738,9 @@ impl<'a> Iterator for StatusVarsIterator<'a> {
     }
 }
 
-bitflags! {
+my_bitflags! {
+    SemiSyncFlags, u8,
+
     /// Semi-sync binlog flags.
     pub struct SemiSyncFlags: u8 {
         // If the SEMI_SYNC_ACK_REQ flag is set the master waits for a Semi Sync ACK packet
@@ -3060,7 +2932,7 @@ pub struct Gno(u64);
 
 impl Gno {
     pub const MIN_GNO: u64 = 1;
-    pub const MAX_GNO: u64 = 9223372036854775807;
+    pub const MAX_GNO: u64 = i64::MAX as u64;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, thiserror::Error)]

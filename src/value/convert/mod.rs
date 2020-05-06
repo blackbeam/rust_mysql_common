@@ -21,7 +21,7 @@ mod bigdecimal;
 mod bigint;
 mod decimal;
 
-lazy_static! {
+lazy_static::lazy_static! {
     static ref DATETIME_RE_YMD: Regex = Regex::new(r"^\d{4}-\d{2}-\d{2}$").unwrap();
     static ref DATETIME_RE_YMD_HMS: Regex =
         Regex::new(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$").unwrap();

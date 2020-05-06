@@ -15,7 +15,9 @@ pub static MIN_COMPRESS_LENGTH: usize = 50;
 pub static UTF8_GENERAL_CI: u16 = 33;
 pub static UTF8MB4_GENERAL_CI: u16 = 45;
 
-bitflags! {
+my_bitflags! {
+    StatusFlags, u16,
+
     /// MySql server status flags
     pub struct StatusFlags: u16 {
         /// Is raised when a multi-statement transaction has been started, either explicitly,
@@ -69,7 +71,9 @@ bitflags! {
     }
 }
 
-bitflags! {
+my_bitflags! {
+    CapabilityFlags, u32,
+
     /// Client capability flags
     pub struct CapabilityFlags: u32 {
         /// Use the improved version of Old Password Authentication. Assumed to be set since 4.1.1.
@@ -300,7 +304,9 @@ bitflags! {
     }
 }
 
-bitflags! {
+my_bitflags! {
+    ColumnFlags, u16,
+
     /// MySql column flags
     pub struct ColumnFlags: u16 {
         /// Field can't be NULL.
