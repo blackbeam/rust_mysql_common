@@ -9,6 +9,7 @@
 use byteorder::{ByteOrder, LittleEndian as LE, ReadBytesExt, WriteBytesExt};
 use lexical::parse;
 use regex::bytes::Regex;
+use std::io::Cursor;
 
 use std::{borrow::Cow, cmp::max, collections::HashMap, fmt, io, marker::PhantomData, ptr};
 
@@ -1045,11 +1046,17 @@ impl<'a> HandshakePacket<'a> {
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub struct HandshakeResponse {
-    data: Vec<u8>,
+pub struct HandshakeResponse<'a> {
+    pub client_flags: CapabilityFlags,
+    pub collation: u8,
+    pub user: Option<String>,
+    pub db_name: Option<String>,
+    pub auth_plugin: AuthPlugin<'a>,
+    pub scramble: Vec<u8>,
+    pub connect_attributes: HashMap<String, String>,
 }
 
-impl HandshakeResponse {
+impl<'a> HandshakeResponse<'a> {
     /// Builds a payload following [Protocol::HandshakeResponse41](https://dev.mysql.com/doc/internals/en/connection-phase-packets.html#packet-Protocol::HandshakeResponse) specification
     /// If db_name is Some but client flags are missing CLIENT_CONNECT_WITH_DB,
     /// that flag will be appended automatically
@@ -1058,10 +1065,10 @@ impl HandshakeResponse {
         server_version: (u16, u16, u16),
         user: Option<&str>,
         db_name: Option<&str>,
-        auth_plugin: &AuthPlugin<'_>,
+        auth_plugin: AuthPlugin<'a>,
         mut client_flags: CapabilityFlags,
-        connect_attributes: &HashMap<String, String>,
-    ) -> HandshakeResponse {
+        connect_attributes: HashMap<String, String>,
+    ) -> HandshakeResponse<'a> {
         let scramble = scramble_buf.as_ref().map(|x| x.as_ref()).unwrap_or(&[]);
 
         let collation = if server_version >= (5, 5, 3) {
@@ -1074,43 +1081,160 @@ impl HandshakeResponse {
             client_flags = client_flags | CapabilityFlags::CLIENT_CONNECT_WITH_DB;
         }
 
-        let mut data = Vec::with_capacity(1024);
-        data.write_u32::<LE>(client_flags.bits()).unwrap();
-        data.extend_from_slice(&[0x00, 0x00, 0x00, 0x01]);
-        data.push(collation as u8);
-        data.resize(data.len() + 23, 0);
-        data.extend_from_slice(user.unwrap_or("").as_bytes());
-        data.push(0);
+        let db_name: Option<String> = match db_name {
+            Some(s) => Some(s.to_string()),
+            None => None,
+        };
 
-        if client_flags.contains(CapabilityFlags::CLIENT_PLUGIN_AUTH_LENENC_CLIENT_DATA) {
-            data.write_lenenc_int(scramble.len() as u64).unwrap();
-            data.extend_from_slice(scramble);
-        } else if client_flags.contains(CapabilityFlags::CLIENT_SECURE_CONNECTION) {
-            data.push(scramble.len() as u8);
-            data.extend_from_slice(scramble);
-        } else {
-            data.extend_from_slice(scramble);
-            data.push(0);
+        let user: Option<String> = match user {
+            Some(s) => Some(s.to_string()),
+            None => None,
+        };
+
+        Self {
+            scramble: scramble.to_vec(),
+            collation,
+            user,
+            db_name,
+            client_flags,
+            connect_attributes,
+            auth_plugin: auth_plugin,
+        }
+    }
+
+    pub fn parse(buf: &[u8]) -> Result<HandshakeResponse, &'static str> {
+        let mut pos: usize = 0;
+        let mut cur = Cursor::new(buf);
+
+        let cap_bits = cur.read_u32::<LE>().unwrap();
+        let client_flags = CapabilityFlags::from_bits_truncate(cap_bits);
+
+        let max_packet_size = cur.read_u32::<LE>().unwrap();
+        pos += cur.position() as usize;
+
+        let collation: u8 = buf[pos];
+        pos += 1;
+
+        pos += 23;
+
+        let mut username: Vec<char> = Vec::new();
+        while buf[pos] != '\0' as u8 {
+            username.push(buf[pos] as char);
+            pos += 1;
+        }
+        let username = match username.len() {
+            0 => None,
+            _ => Some(username.into_iter().collect()),
+        };
+
+        pos += 1;
+        let auth_len = buf[pos] as usize;
+        pos += 1;
+        let scramble = buf[pos..(pos + auth_len)].to_vec();
+
+        pos += auth_len;
+
+        let mut hs = HandshakeResponse {
+            scramble,
+            client_flags: client_flags,
+            collation,
+            user: username,
+            db_name: Some(String::new()),
+            auth_plugin: AuthPlugin::MysqlNativePassword,
+            connect_attributes: HashMap::new(),
+        };
+
+        if buf[pos..].len() == 0 {
+            return Ok(hs);
         }
 
         if client_flags.contains(CapabilityFlags::CLIENT_CONNECT_WITH_DB) {
-            let database = db_name.unwrap_or("");
-            data.extend_from_slice(database.as_bytes());
-            data.push(0);
+            let mut database: Vec<char> = Vec::new();
+            while buf[pos] != '\0' as u8 {
+                database.push(buf[pos] as char);
+                pos += 1;
+            }
+            pos += 1;
+            hs.db_name = Some(database.into_iter().collect());
         }
 
         if client_flags.contains(CapabilityFlags::CLIENT_PLUGIN_AUTH) {
-            data.extend_from_slice(auth_plugin.as_bytes());
+            let mut client_plugin_name: Vec<u8> = Vec::new();
+            while buf[pos] != '\0' as u8 {
+                client_plugin_name.push(buf[pos]);
+                pos += 1;
+            }
+            pos += 1;
+            hs.auth_plugin = AuthPlugin::from_bytes(&client_plugin_name[..]);
+        }
+
+        // TODO: read Connect Attributes
+
+        return Ok(hs);
+    }
+
+    fn as_bytes(&self) -> Vec<u8> {
+        let mut data = Vec::with_capacity(1024);
+        data.write_u32::<LE>(self.client_flags.bits()).unwrap();
+        data.extend_from_slice(&[0x00, 0x00, 0x00, 0x01]);
+        data.push(self.collation as u8);
+        data.resize(data.len() + 23, 0);
+
+        match &self.user {
+            Some(u) => data.extend_from_slice(u.as_bytes()),
+            None => (),
+        };
+
+        data.push(0);
+
+        if self
+            .client_flags
+            .contains(CapabilityFlags::CLIENT_PLUGIN_AUTH_LENENC_CLIENT_DATA)
+        {
+            data.write_lenenc_int(self.scramble.len() as u64).unwrap();
+            data.extend_from_slice(&self.scramble);
+        } else if self
+            .client_flags
+            .contains(CapabilityFlags::CLIENT_SECURE_CONNECTION)
+        {
+            data.push(self.scramble.len() as u8);
+            data.extend_from_slice(&self.scramble);
+        } else {
+            data.extend_from_slice(&self.scramble);
             data.push(0);
         }
-        if client_flags.contains(CapabilityFlags::CLIENT_CONNECT_ATTRS) {
-            let len = connect_attributes
+
+        if self
+            .client_flags
+            .contains(CapabilityFlags::CLIENT_CONNECT_WITH_DB)
+        {
+            match &self.db_name {
+                Some(u) => data.extend_from_slice(u.as_bytes()),
+                None => (),
+            };
+
+            data.push(0);
+        }
+
+        if self
+            .client_flags
+            .contains(CapabilityFlags::CLIENT_PLUGIN_AUTH)
+        {
+            data.extend_from_slice(self.auth_plugin.as_bytes());
+            data.push(0);
+        }
+        if self
+            .client_flags
+            .contains(CapabilityFlags::CLIENT_CONNECT_ATTRS)
+        {
+            let len = self
+                .connect_attributes
                 .iter()
                 .map(|(k, v)| lenenc_str_len(k) + lenenc_str_len(v))
                 .sum::<usize>();
             data.write_lenenc_int(len as u64).expect("out of memory");
 
-            for (name, value) in connect_attributes {
+            for (name, value) in &self.connect_attributes {
                 data.write_lenenc_str(name.as_bytes())
                     .expect("out of memory");
                 data.write_lenenc_str(value.as_bytes())
@@ -1118,19 +1242,21 @@ impl HandshakeResponse {
             }
         }
 
-        HandshakeResponse { data }
+        return data;
     }
 }
 
-impl AsRef<[u8]> for HandshakeResponse {
+impl<'a> AsRef<[u8]> for HandshakeResponse<'a> {
     fn as_ref(&self) -> &[u8] {
-        &self.data[..]
+        let a = self.as_bytes();
+        todo!()
+        // &a
     }
 }
 
-impl Into<Vec<u8>> for HandshakeResponse {
+impl<'a> Into<Vec<u8>> for HandshakeResponse<'a> {
     fn into(self) -> Vec<u8> {
-        self.data
+        self.as_bytes()
     }
 }
 
@@ -1825,5 +1951,64 @@ mod test {
         ]
         .to_vec();
         assert_eq!(expected, actual);
+    }
+
+    #[test]
+    fn test_parse_client_handshake_eight() {
+        let sample: Vec<u8> = [
+            0x05, 0xa6, 0xff, 0x01, 0x00, 0x00, 0x00, 0x01, 0x21, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x72, 0x6f, 0x6f, 0x74, 0x00, 0x00, 0x6d, 0x79, 0x73, 0x71,
+            0x6c, 0x5f, 0x6e, 0x61, 0x74, 0x69, 0x76, 0x65, 0x5f, 0x70, 0x61, 0x73, 0x73, 0x77,
+            0x6f, 0x72, 0x64, 0x00, 0x69, 0x03, 0x5f, 0x6f, 0x73, 0x08, 0x6f, 0x73, 0x78, 0x31,
+            0x30, 0x2e, 0x31, 0x35, 0x0c, 0x5f, 0x63, 0x6c, 0x69, 0x65, 0x6e, 0x74, 0x5f, 0x6e,
+            0x61, 0x6d, 0x65, 0x08, 0x6c, 0x69, 0x62, 0x6d, 0x79, 0x73, 0x71, 0x6c, 0x04, 0x5f,
+            0x70, 0x69, 0x64, 0x05, 0x33, 0x32, 0x37, 0x37, 0x34, 0x0f, 0x5f, 0x63, 0x6c, 0x69,
+            0x65, 0x6e, 0x74, 0x5f, 0x76, 0x65, 0x72, 0x73, 0x69, 0x6f, 0x6e, 0x06, 0x35, 0x2e,
+            0x37, 0x2e, 0x32, 0x38, 0x09, 0x5f, 0x70, 0x6c, 0x61, 0x74, 0x66, 0x6f, 0x72, 0x6d,
+            0x06, 0x78, 0x38, 0x36, 0x5f, 0x36, 0x34, 0x0c, 0x70, 0x72, 0x6f, 0x67, 0x72, 0x61,
+            0x6d, 0x5f, 0x6e, 0x61, 0x6d, 0x65, 0x05, 0x6d, 0x79, 0x73, 0x71, 0x6c,
+        ]
+        .to_vec();
+
+        let hs = HandshakeResponse::parse(&sample).unwrap();
+
+        assert_eq!(0x01ffa605, hs.client_flags);
+        assert_eq!(33, hs.collation);
+        // assert_eq!(16777216, hs.max_packet_size);
+
+        assert_eq!(Some("root"), hs.user);
+        assert_eq!(None, hs.db_name);
+        // assert_eq!("mysql_native_password", hs.client_plugin_name);
+        // assert_eq!(0, hs.auth.len());
+    }
+    #[test]
+    fn test_parse_client_handshake_eight_with_db() {
+        let sample: Vec<u8> = [
+            0x0d, 0xa6, 0xff, 0x01, 0x00, 0x00, 0x00, 0x01, 0x21, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x72, 0x6f, 0x6f, 0x74, 0x00, 0x00, 0x6d, 0x79, 0x73, 0x71,
+            0x6c, 0x00, 0x6d, 0x79, 0x73, 0x71, 0x6c, 0x5f, 0x6e, 0x61, 0x74, 0x69, 0x76, 0x65,
+            0x5f, 0x70, 0x61, 0x73, 0x73, 0x77, 0x6f, 0x72, 0x64, 0x00, 0x69, 0x03, 0x5f, 0x6f,
+            0x73, 0x08, 0x6f, 0x73, 0x78, 0x31, 0x30, 0x2e, 0x31, 0x35, 0x0c, 0x5f, 0x63, 0x6c,
+            0x69, 0x65, 0x6e, 0x74, 0x5f, 0x6e, 0x61, 0x6d, 0x65, 0x08, 0x6c, 0x69, 0x62, 0x6d,
+            0x79, 0x73, 0x71, 0x6c, 0x04, 0x5f, 0x70, 0x69, 0x64, 0x05, 0x35, 0x31, 0x30, 0x38,
+            0x39, 0x0f, 0x5f, 0x63, 0x6c, 0x69, 0x65, 0x6e, 0x74, 0x5f, 0x76, 0x65, 0x72, 0x73,
+            0x69, 0x6f, 0x6e, 0x06, 0x35, 0x2e, 0x37, 0x2e, 0x32, 0x38, 0x09, 0x5f, 0x70, 0x6c,
+            0x61, 0x74, 0x66, 0x6f, 0x72, 0x6d, 0x06, 0x78, 0x38, 0x36, 0x5f, 0x36, 0x34, 0x0c,
+            0x70, 0x72, 0x6f, 0x67, 0x72, 0x61, 0x6d, 0x5f, 0x6e, 0x61, 0x6d, 0x65, 0x05, 0x6d,
+            0x79, 0x73, 0x71, 0x6c,
+        ]
+        .to_vec();
+
+        let hs = HandshakeResponse::parse(&sample).unwrap();
+
+        assert_eq!(0x01ffa60d, hs.capability);
+        assert_eq!(33, hs.collation);
+        assert_eq!(16777216, hs.max_packet_size);
+
+        assert_eq!("root", hs.username);
+        assert_eq!("mysql", hs.database);
+        assert_eq!("mysql_native_password", hs.client_plugin_name);
     }
 }
