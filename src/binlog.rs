@@ -421,12 +421,9 @@ pub enum EventData {
     PreGaUpdateRowsEvent(Vec<u8>),
     /// Ignored by this implementation
     PreGaDeleteRowsEvent(Vec<u8>),
-    /// Ignored by this implementation
-    WriteRowsEventV1(Vec<u8>),
-    /// Ignored by this implementation
-    UpdateRowsEventV1(Vec<u8>),
-    /// Ignored by this implementation
-    DeleteRowsEventV1(Vec<u8>),
+    WriteRowsEventV1(WriteRowsEventV1),
+    UpdateRowsEventV1(UpdateRowsEventV1),
+    DeleteRowsEventV1(DeleteRowsEventV1),
     IncidentEvent(IncidentEvent),
     HeartbeatEvent,
     IgnorableEvent(Vec<u8>),
@@ -477,9 +474,9 @@ impl EventData {
             EventData::PreGaWriteRowsEvent(ev) => output.write_all(&ev),
             EventData::PreGaUpdateRowsEvent(ev) => output.write_all(&ev),
             EventData::PreGaDeleteRowsEvent(ev) => output.write_all(&ev),
-            EventData::WriteRowsEventV1(ev) => output.write_all(&ev),
-            EventData::UpdateRowsEventV1(ev) => output.write_all(&ev),
-            EventData::DeleteRowsEventV1(ev) => output.write_all(&ev),
+            EventData::WriteRowsEventV1(ev) => ev.write(version, output),
+            EventData::UpdateRowsEventV1(ev) => ev.write(version, output),
+            EventData::DeleteRowsEventV1(ev) => ev.write(version, output),
             EventData::IncidentEvent(ev) => ev.write(version, output),
             EventData::HeartbeatEvent => Ok(()),
             EventData::IgnorableEvent(ev) => output.write_all(&ev),
@@ -605,9 +602,9 @@ impl Event {
             PRE_GA_WRITE_ROWS_EVENT => EventData::PreGaWriteRowsEvent(self.data.clone()),
             PRE_GA_UPDATE_ROWS_EVENT => EventData::PreGaUpdateRowsEvent(self.data.clone()),
             PRE_GA_DELETE_ROWS_EVENT => EventData::PreGaDeleteRowsEvent(self.data.clone()),
-            WRITE_ROWS_EVENT_V1 => EventData::WriteRowsEventV1(self.data.clone()),
-            UPDATE_ROWS_EVENT_V1 => EventData::UpdateRowsEventV1(self.data.clone()),
-            DELETE_ROWS_EVENT_V1 => EventData::DeleteRowsEventV1(self.data.clone()),
+            WRITE_ROWS_EVENT_V1 => EventData::WriteRowsEventV1(self.read_event()?),
+            UPDATE_ROWS_EVENT_V1 => EventData::UpdateRowsEventV1(self.read_event()?),
+            DELETE_ROWS_EVENT_V1 => EventData::DeleteRowsEventV1(self.read_event()?),
             INCIDENT_EVENT => EventData::IncidentEvent(self.read_event()?),
             HEARTBEAT_EVENT => EventData::HeartbeatEvent,
             IGNORABLE_EVENT => EventData::IgnorableEvent(self.data.clone()),
@@ -2747,18 +2744,29 @@ impl RowsEvent {
     /// Writes this event into the given stream.
     ///
     /// This function will be used in `BinlogStruct` implementations for derived events.
-    pub fn write<T: Write>(&self, version: BinlogVersion, mut output: T) -> io::Result<()> {
+    pub fn write<T: Write>(
+        &self,
+        event_type: EventType,
+        version: BinlogVersion,
+        mut output: T,
+    ) -> io::Result<()> {
         let mut output = output.limit(S(self.len(version)));
 
         output.write_u48::<LittleEndian>(self.table_id)?;
         output.write_u16::<LittleEndian>(self.flags.0)?;
-        output.write_u16::<LittleEndian>(min(
-            self.extra_data.len().saturating_add(2),
-            u16::MAX as usize,
-        ) as u16)?;
-        output
-            .limit(S(u16::MAX as usize - 2))
-            .write_all(&self.extra_data)?;
+        if event_type == EventType::WRITE_ROWS_EVENT
+            || event_type == EventType::UPDATE_ROWS_EVENT
+            || event_type == EventType::DELETE_ROWS_EVENT
+        {
+            output.write_u16::<LittleEndian>(min(
+                self.extra_data.len().saturating_add(2),
+                u16::MAX as usize,
+            ) as u16)?;
+            output
+                .limit(S(u16::MAX as usize - 2))
+                .write_all(&self.extra_data)?;
+        }
+
         output.write_lenenc_int(self.num_columns)?;
         let bitmap_len = (self.num_columns as usize + 7) / 8;
         {
@@ -2811,10 +2819,42 @@ impl RowsEvent {
     }
 }
 
+/// Write rows event v1 (mariadb and mysql 5.1.15-5.6.x).
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+#[repr(transparent)]
+pub struct WriteRowsEventV1(pub RowsEvent);
+
+impl BinlogStruct for WriteRowsEventV1 {
+    const EVENT_TYPE: Option<EventType> = Some(EventType::WRITE_ROWS_EVENT_V1);
+
+    fn read<T: Read>(event_size: usize, fde: &FormatDescriptionEvent, input: T) -> io::Result<Self>
+    where
+        Self: Sized,
+    {
+        let version = fde.binlog_version.get().unwrap_or(BinlogVersion::Version4);
+        Ok(Self(RowsEvent::read(
+            Self::EVENT_TYPE.unwrap(),
+            event_size,
+            fde,
+            version,
+            input,
+        )?))
+    }
+
+    fn write<T: Write>(&self, version: BinlogVersion, output: T) -> io::Result<()> {
+        self.0.write(Self::EVENT_TYPE.unwrap(), version, output)
+    }
+
+    fn len(&self, version: BinlogVersion) -> usize {
+        self.0.len(version)
+    }
+}
+
 /// Write rows event.
 ///
 /// Used for row-based binary logging. Contains the row data to insert.
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
+#[repr(transparent)]
 pub struct WriteRowsEvent(pub RowsEvent);
 
 impl BinlogStruct for WriteRowsEvent {
@@ -2835,7 +2875,38 @@ impl BinlogStruct for WriteRowsEvent {
     }
 
     fn write<T: Write>(&self, version: BinlogVersion, output: T) -> io::Result<()> {
-        self.0.write(version, output)
+        self.0.write(Self::EVENT_TYPE.unwrap(), version, output)
+    }
+
+    fn len(&self, version: BinlogVersion) -> usize {
+        self.0.len(version)
+    }
+}
+
+/// Update rows event v1 (mariadb and mysql 5.1.15-5.6.x).
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+#[repr(transparent)]
+pub struct UpdateRowsEventV1(pub RowsEvent);
+
+impl BinlogStruct for UpdateRowsEventV1 {
+    const EVENT_TYPE: Option<EventType> = Some(EventType::UPDATE_ROWS_EVENT_V1);
+
+    fn read<T: Read>(event_size: usize, fde: &FormatDescriptionEvent, input: T) -> io::Result<Self>
+    where
+        Self: Sized,
+    {
+        let version = fde.binlog_version.get().unwrap_or(BinlogVersion::Version4);
+        Ok(Self(RowsEvent::read(
+            Self::EVENT_TYPE.unwrap(),
+            event_size,
+            fde,
+            version,
+            input,
+        )?))
+    }
+
+    fn write<T: Write>(&self, version: BinlogVersion, output: T) -> io::Result<()> {
+        self.0.write(Self::EVENT_TYPE.unwrap(), version, output)
     }
 
     fn len(&self, version: BinlogVersion) -> usize {
@@ -2848,6 +2919,7 @@ impl BinlogStruct for WriteRowsEvent {
 /// Used for row-based binary logging. Contains as much data as needed to identify
 /// a row + the data to change.
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
+#[repr(transparent)]
 pub struct UpdateRowsEvent(pub RowsEvent);
 
 impl BinlogStruct for UpdateRowsEvent {
@@ -2868,7 +2940,38 @@ impl BinlogStruct for UpdateRowsEvent {
     }
 
     fn write<T: Write>(&self, version: BinlogVersion, output: T) -> io::Result<()> {
-        self.0.write(version, output)
+        self.0.write(Self::EVENT_TYPE.unwrap(), version, output)
+    }
+
+    fn len(&self, version: BinlogVersion) -> usize {
+        self.0.len(version)
+    }
+}
+
+/// Delete rows event v1 (mariadb and mysql 5.1.15-5.6.x).
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+#[repr(transparent)]
+pub struct DeleteRowsEventV1(pub RowsEvent);
+
+impl BinlogStruct for DeleteRowsEventV1 {
+    const EVENT_TYPE: Option<EventType> = Some(EventType::DELETE_ROWS_EVENT_V1);
+
+    fn read<T: Read>(event_size: usize, fde: &FormatDescriptionEvent, input: T) -> io::Result<Self>
+    where
+        Self: Sized,
+    {
+        let version = fde.binlog_version.get().unwrap_or(BinlogVersion::Version4);
+        Ok(Self(RowsEvent::read(
+            Self::EVENT_TYPE.unwrap(),
+            event_size,
+            fde,
+            version,
+            input,
+        )?))
+    }
+
+    fn write<T: Write>(&self, version: BinlogVersion, output: T) -> io::Result<()> {
+        self.0.write(Self::EVENT_TYPE.unwrap(), version, output)
     }
 
     fn len(&self, version: BinlogVersion) -> usize {
@@ -2900,7 +3003,7 @@ impl BinlogStruct for DeleteRowsEvent {
     }
 
     fn write<T: Write>(&self, version: BinlogVersion, output: T) -> io::Result<()> {
-        self.0.write(version, output)
+        self.0.write(Self::EVENT_TYPE.unwrap(), version, output)
     }
 
     fn len(&self, version: BinlogVersion) -> usize {
