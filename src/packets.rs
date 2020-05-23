@@ -1731,7 +1731,7 @@ mod test {
     fn should_build_handshake_response() {
         let flags_without_db_name = CapabilityFlags::from_bits_truncate(0x81bea205);
 
-        let actual = HandshakeResponse::new(
+        let actual: Vec<u8> = HandshakeResponse::new(
             &Some(&[]),
             (5u16, 5, 5),
             Some("root"),
@@ -1759,7 +1759,7 @@ mod test {
         assert_eq!(expected, actual);
 
         let flags_with_db_name = flags_without_db_name | CapabilityFlags::CLIENT_CONNECT_WITH_DB;
-        let actual = HandshakeResponse::new(
+        let actual: Vec<u8> = HandshakeResponse::new(
             &Some(&[]),
             (5u16, 5, 5),
             Some("root"),
@@ -1787,7 +1787,7 @@ mod test {
 
         assert_eq!(expected, actual);
 
-        let actual = HandshakeResponse::new(
+        let actual: Vec<u8> = HandshakeResponse::new(
             &Some(&[]),
             (5u16, 5, 5),
             Some("root"),
@@ -1799,7 +1799,7 @@ mod test {
         .into();
         assert_eq!(expected, actual);
 
-        let actual = HandshakeResponse::new(
+        let actual: Vec<u8> = HandshakeResponse::new(
             &Some(&[]),
             (5u16, 5, 5),
             Some("root"),
