@@ -918,6 +918,54 @@ impl ConvIr<time::Duration> for ParseIr<time::Duration> {
     }
 }
 
+impl ConvIr<chrono::Duration> for ParseIr<chrono::Duration> {
+    fn new(v: Value) -> Result<ParseIr<chrono::Duration>, FromValueError> {
+        match v {
+            Value::Time(is_neg, days, hours, minutes, seconds, microseconds) => {
+                let duration = chrono::Duration::days(days.into())
+                    + chrono::Duration::hours(hours.into())
+                    + chrono::Duration::minutes(minutes.into())
+                    + chrono::Duration::seconds(seconds.into())
+                    + chrono::Duration::microseconds(microseconds.into());
+                Ok(ParseIr {
+                    value: Value::Time(is_neg, days, hours, minutes, seconds, microseconds),
+                    output: if is_neg { -duration } else { duration },
+                })
+            }
+            Value::Bytes(val_bytes) => {
+                // Parse the string using `parse_mysql_time_string`
+                // instead of `parse_mysql_time_string_with_time` here,
+                // as it may contain an hour value that's outside of a day's normal 0-23 hour range.
+                let duration = match parse_mysql_time_string(&*val_bytes) {
+                    Some((is_neg, hours, minutes, seconds, microseconds)) => {
+                        let duration = chrono::Duration::hours(hours.into())
+                            + chrono::Duration::minutes(minutes.into())
+                            + chrono::Duration::seconds(seconds.into())
+                            + chrono::Duration::microseconds(microseconds.into());
+                        if is_neg {
+                            -duration
+                        } else {
+                            duration
+                        }
+                    }
+                    _ => return Err(FromValueError(Value::Bytes(val_bytes))),
+                };
+                Ok(ParseIr {
+                    value: Value::Bytes(val_bytes),
+                    output: duration,
+                })
+            }
+            v => Err(FromValueError(v)),
+        }
+    }
+    fn commit(self) -> chrono::Duration {
+        self.output
+    }
+    fn rollback(self) -> Value {
+        self.value
+    }
+}
+
 impl_from_value!(NaiveDateTime, ParseIr<NaiveDateTime>);
 impl_from_value!(NaiveDate, ParseIr<NaiveDate>);
 impl_from_value!(NaiveTime, ParseIr<NaiveTime>);
@@ -926,6 +974,7 @@ impl_from_value!(Date, ParseIr<Date>);
 impl_from_value!(Time, ParseIr<Time>);
 impl_from_value!(Duration, ParseIr<Duration>);
 impl_from_value!(time::Duration, ParseIr<time::Duration>);
+impl_from_value!(chrono::Duration, ParseIr<chrono::Duration>);
 impl_from_value!(String, Vec<u8>);
 impl_from_value!(Vec<u8>, Vec<u8>);
 impl_from_value!(bool, ParseIr<bool>);
