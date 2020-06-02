@@ -63,7 +63,7 @@ pub fn from_row_opt<T: FromRow>(row: Row) -> Result<T, FromRowError> {
 ///
 /// ```ignore
 /// // Consider columns in the row is: Bytes(<some binary data>), NULL and Int(1024)
-/// from_row::<(String, u8, u8>(row) // this will panic because of invalid utf8 in first column.
+/// from_row::<(String, u8, u8)>(row) // this will panic because of invalid utf8 in first column.
 /// from_row::<(Vec<u8>, u8, u8)>(row) // this will panic because of a NULL in second column.
 /// from_row::<(Vec<u8>, Option<u8>, u8)>(row) // this will panic because 1024 does not fit in u8.
 /// from_row::<(Vec<u8>)>(row) // this will panic because number of columns != arity of a tuple.
