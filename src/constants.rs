@@ -438,6 +438,49 @@ impl TryFrom<u8> for SessionStateType {
 #[error("Unknown session state type {}", _0)]
 pub struct UnknownSessionStateType(pub u8);
 
+/// Geometry type.
+#[derive(Clone, Copy, Eq, PartialEq, Debug, Hash)]
+#[allow(non_camel_case_types)]
+#[repr(u8)]
+pub enum GeometryType {
+    GEOM_GEOMETRY,
+    GEOM_POINT,
+    GEOM_LINESTRING,
+    GEOM_POLYGON,
+    GEOM_MULTIPOINT,
+    GEOM_MULTILINESTRING,
+    GEOM_MULTIPOLYGON,
+    GEOM_GEOMETRYCOLLECTION,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[error("Unknown geometry type {}", _0)]
+#[repr(transparent)]
+pub struct UnknownGeometryType(pub u8);
+
+impl From<UnknownGeometryType> for u8 {
+    fn from(x: UnknownGeometryType) -> Self {
+        x.0
+    }
+}
+
+impl TryFrom<u8> for GeometryType {
+    type Error = UnknownGeometryType;
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(GeometryType::GEOM_GEOMETRY),
+            1 => Ok(GeometryType::GEOM_POINT),
+            2 => Ok(GeometryType::GEOM_LINESTRING),
+            3 => Ok(GeometryType::GEOM_POLYGON),
+            4 => Ok(GeometryType::GEOM_MULTIPOINT),
+            5 => Ok(GeometryType::GEOM_MULTILINESTRING),
+            6 => Ok(GeometryType::GEOM_MULTIPOLYGON),
+            7 => Ok(GeometryType::GEOM_GEOMETRYCOLLECTION),
+            x => Err(UnknownGeometryType(x)),
+        }
+    }
+}
+
 /// Type of MySql column field
 #[allow(non_camel_case_types)]
 #[derive(Clone, Copy, Eq, PartialEq, Debug, Hash)]
@@ -463,6 +506,7 @@ pub enum ColumnType {
     MYSQL_TYPE_TIMESTAMP2,
     MYSQL_TYPE_DATETIME2,
     MYSQL_TYPE_TIME2,
+    MYSQL_TYPE_TYPED_ARRAY, // Used for replication only
     MYSQL_TYPE_JSON = 245,
     MYSQL_TYPE_NEWDECIMAL = 246,
     MYSQL_TYPE_ENUM = 247,
@@ -474,6 +518,66 @@ pub enum ColumnType {
     MYSQL_TYPE_VAR_STRING = 253,
     MYSQL_TYPE_STRING = 254,
     MYSQL_TYPE_GEOMETRY = 255,
+}
+
+impl ColumnType {
+    pub fn is_numeric_type(&self) -> bool {
+        use ColumnType::*;
+        match self {
+            MYSQL_TYPE_TINY
+            | MYSQL_TYPE_SHORT
+            | MYSQL_TYPE_INT24
+            | MYSQL_TYPE_LONG
+            | MYSQL_TYPE_LONGLONG
+            | MYSQL_TYPE_DECIMAL
+            | MYSQL_TYPE_NEWDECIMAL
+            | MYSQL_TYPE_FLOAT
+            | MYSQL_TYPE_DOUBLE => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_character_type(&self) -> bool {
+        use ColumnType::*;
+        match self {
+            MYSQL_TYPE_STRING | MYSQL_TYPE_VAR_STRING | MYSQL_TYPE_VARCHAR | MYSQL_TYPE_BLOB => {
+                true
+            }
+            _ => false,
+        }
+    }
+
+    pub fn is_enum_or_set_type(&self) -> bool {
+        use ColumnType::*;
+        match self {
+            MYSQL_TYPE_ENUM | MYSQL_TYPE_SET => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_enum_type(&self) -> bool {
+        use ColumnType::*;
+        match self {
+            MYSQL_TYPE_ENUM => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_set_type(&self) -> bool {
+        use ColumnType::*;
+        match self {
+            MYSQL_TYPE_SET => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_geometry_type(&self) -> bool {
+        use ColumnType::*;
+        match self {
+            MYSQL_TYPE_GEOMETRY => true,
+            _ => false,
+        }
+    }
 }
 
 impl TryFrom<u8> for ColumnType {
@@ -500,6 +604,7 @@ impl TryFrom<u8> for ColumnType {
             0x11_u8 => Ok(ColumnType::MYSQL_TYPE_TIMESTAMP2),
             0x12_u8 => Ok(ColumnType::MYSQL_TYPE_DATETIME2),
             0x13_u8 => Ok(ColumnType::MYSQL_TYPE_TIME2),
+            0x14_u8 => Ok(ColumnType::MYSQL_TYPE_TYPED_ARRAY),
             0xf5_u8 => Ok(ColumnType::MYSQL_TYPE_JSON),
             0xf6_u8 => Ok(ColumnType::MYSQL_TYPE_NEWDECIMAL),
             0xf7_u8 => Ok(ColumnType::MYSQL_TYPE_ENUM),

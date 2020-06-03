@@ -8,9 +8,10 @@
 
 use bytes::BufMut;
 
-use std::{convert::TryFrom, fmt, io, str::from_utf8};
+use std::{convert::TryFrom, fmt, io, marker::PhantomData, str::from_utf8};
 
 use crate::{
+    binlog::{decimal, misc::*},
     constants::{ColumnFlags, ColumnType},
     io::{BufMutExt, ParseBuf},
     misc::{lenenc_str_len, unexpected_buf_eof},
@@ -50,6 +51,15 @@ pub enum ValueRepr {
     /// Binary protocol value.
     Binary(ColumnType, ColumnFlags),
 }
+
+/// Textual value representation.
+pub struct TextValue;
+
+/// Binary value representation.
+pub struct BinValue;
+
+/// Binlog value representation.
+pub struct BinlogValue;
 
 /// Client side representation of a value of MySql column.
 ///
@@ -149,6 +159,45 @@ impl<'de> MyDeserialize<'de> for Value {
                 Value::deserialize_bin((column_type, column_flags), buf)
             }
         }
+    }
+}
+
+/// Deserializer for a MySql value.
+///
+/// `T` specifies the value representation (textual, binary or binlog).
+#[derive(Debug, Clone, PartialEq)]
+pub struct ValueDeserializer<T>(pub Value, PhantomData<T>);
+
+impl<'de> MyDeserialize<'de> for ValueDeserializer<TextValue> {
+    type Ctx = ();
+
+    fn deserialize((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+        let value = Value::deserialize_text(buf)?;
+        Ok(Self(value, PhantomData))
+    }
+}
+
+impl<'de> MyDeserialize<'de> for ValueDeserializer<BinValue> {
+    type Ctx = (ColumnType, ColumnFlags);
+
+    fn deserialize((col_type, col_flags): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+        let value = Value::deserialize_bin((col_type, col_flags), buf)?;
+        Ok(Self(value, PhantomData))
+    }
+}
+
+impl<'de> MyDeserialize<'de> for ValueDeserializer<BinlogValue> {
+    /// <col_type, col_meta, is_unsigned, is_partial>
+    type Ctx = (ColumnType, &'de [u8], bool, bool);
+
+    fn deserialize(
+        (col_type, col_meta, is_unsigned, is_partial): Self::Ctx,
+        buf: &mut ParseBuf<'de>,
+    ) -> io::Result<Self> {
+        let mut reader = buf.0;
+        let value = Value::read_binlog(&mut reader, col_type, col_meta, is_unsigned, is_partial)?;
+        *buf = ParseBuf(reader);
+        Ok(Self(value, PhantomData))
     }
 }
 
@@ -381,6 +430,190 @@ impl Value {
         ))
     }
 
+    fn read_binlog<T: io::Read>(
+        mut input: T,
+        mut column_type: ColumnType,
+        mut column_meta: &[u8],
+        unsigned: bool,
+        is_partial: bool,
+    ) -> io::Result<Value> {
+        use byteorder::{LittleEndian as LE, ReadBytesExt};
+        use ColumnType::*;
+
+        let mut length = 0_usize;
+
+        if column_type == MYSQL_TYPE_TYPED_ARRAY {
+            let type_byte = column_meta[0];
+            column_type = ColumnType::try_from(type_byte).unwrap_or(column_type);
+        }
+
+        if column_type == MYSQL_TYPE_STRING {
+            if column_meta[0] >= 1 {
+                let byte0 = column_meta[0] as usize;
+                let byte1 = column_meta[1] as usize;
+
+                if (byte0 & 0x30) != 0x30 {
+                    // a long CHAR() field: see #37426
+                    length = byte1 | (((byte0 & 0x30) ^ 0x30) << 4);
+                    column_type = ColumnType::try_from(byte0 as u8 | 0x30).unwrap_or(column_type);
+                } else {
+                    length = byte1;
+                }
+            } else {
+                length = (&column_meta[..]).read_u16::<LE>().unwrap_or(0) as usize;
+            }
+        }
+
+        match column_type {
+            MYSQL_TYPE_TINY | MYSQL_TYPE_SHORT | MYSQL_TYPE_LONG | MYSQL_TYPE_LONGLONG
+            | MYSQL_TYPE_FLOAT | MYSQL_TYPE_DOUBLE => {
+                let mut buf = Vec::new();
+                input.read_to_end(&mut buf)?;
+                let mut flags = ColumnFlags::empty();
+                flags.set(ColumnFlags::UNSIGNED_FLAG, unsigned);
+                Self::deserialize_bin((column_type, flags), &mut ParseBuf(&*buf))
+            }
+            MYSQL_TYPE_TIMESTAMP => Ok(Int(input.read_u32::<LE>()?.into())),
+            MYSQL_TYPE_INT24 => {
+                if unsigned {
+                    Ok(Int(input.read_u24::<LE>()?.into()))
+                } else {
+                    Ok(Int(input.read_i24::<LE>()?.into()))
+                }
+            }
+            MYSQL_TYPE_TIME => {
+                let tmp = input.read_u24::<LE>()?;
+                let h = tmp / 10000;
+                let m = (tmp % 10000) / 100;
+                let s = tmp % 100;
+                Ok(Value::Time(false, 0, h as u8, m as u8, s as u8, 0))
+            }
+            MYSQL_TYPE_DATETIME => {
+                // read YYYYMMDDHHMMSS representaion
+                let raw = input.read_u64::<LE>()?;
+                let d_part = raw / 1_000_000;
+                let t_part = raw % 1_000_000;
+                Ok(Date(
+                    (d_part / 10000) as u16,
+                    ((d_part % 10000) / 100) as u8,
+                    (d_part % 100) as u8,
+                    (t_part / 10000) as u8,
+                    ((t_part % 10000) / 100) as u8,
+                    (t_part % 100) as u8,
+                    0,
+                ))
+            }
+            MYSQL_TYPE_YEAR => {
+                let y = input.read_u8()? as i32;
+                Ok(Bytes((1900 + y).to_string().into_bytes()))
+            }
+            MYSQL_TYPE_NEWDATE => {
+                let tmp = input.read_u24::<LE>()?;
+                let d = tmp & 31;
+                let m = (tmp >> 5) & 15;
+                let y = tmp >> 9;
+                Ok(Date(y as u16, m as u8, d as u8, 0, 0, 0, 0))
+            }
+            MYSQL_TYPE_BIT => {
+                let nbits = column_meta[0] as usize * 8 + (column_meta[1] as usize);
+                let nbytes = (nbits + 7) / 8;
+                let mut bytes = vec![0_u8; nbytes];
+                input.read_exact(&mut bytes)?;
+                Ok(Bytes(bytes))
+            }
+            MYSQL_TYPE_TIMESTAMP2 => {
+                let dec = column_meta.read_u8()?;
+                let (sec, usec) = my_timestamp_from_binary(input, dec)?;
+                if usec == 0 {
+                    Ok(Bytes(sec.to_string().into_bytes()))
+                } else {
+                    Ok(Bytes(format!("{}.{:06}", sec, usec).into_bytes()))
+                }
+            }
+            MYSQL_TYPE_DATETIME2 => {
+                let dec = column_meta.read_u8()?;
+                my_datetime_packed_from_binary(input, dec as u32).map(datetime_from_packed)
+            }
+            MYSQL_TYPE_TIME2 => {
+                let dec = column_meta.read_u8()?;
+                my_time_packed_from_binary(input, dec as u32).map(time_from_packed)
+            }
+            MYSQL_TYPE_JSON => {
+                length = input.read_u32::<LE>()? as usize;
+                if is_partial {
+                    // Not sure, that there is a way to extract
+                    // value out of this, at least in a sane manner.
+                    todo!();
+                } else {
+                    unimplemented!("MySql JSONB")
+                }
+            }
+            MYSQL_TYPE_NEWDECIMAL => {
+                // precision is the maximum number of decimal digits
+                let precision = column_meta[0] as usize;
+                // scale (aka decimals) is the number of decimal digits after the point
+                let scale = column_meta[1] as usize;
+
+                let dec = decimal::Decimal::read_bin(&mut input, precision, scale, false)?;
+
+                Ok(Bytes(dec.to_string().into_bytes()))
+            }
+            MYSQL_TYPE_ENUM => match column_meta[0] {
+                1 => Ok(Int(input.read_u8()? as i64)),
+                2 => Ok(Int(input.read_i16::<LE>()? as i64)),
+                _ => Err(io::Error::new(io::ErrorKind::InvalidData, "Unknown ENUM")),
+            },
+            MYSQL_TYPE_SET => {
+                let nbytes = column_meta[0] as usize * 8;
+                let mut bytes = vec![0_u8; nbytes];
+                input.read_exact(&mut bytes)?;
+                Ok(Bytes(bytes))
+            }
+            MYSQL_TYPE_TINY_BLOB
+            | MYSQL_TYPE_MEDIUM_BLOB
+            | MYSQL_TYPE_LONG_BLOB
+            | MYSQL_TYPE_BLOB => {
+                let nbytes = match column_meta[0] {
+                    1 => input.read_u8()? as usize,
+                    2 => input.read_u16::<LE>()? as usize,
+                    3 => input.read_u24::<LE>()? as usize,
+                    4 => input.read_u32::<LE>()? as usize,
+                    _ => return Err(io::Error::new(io::ErrorKind::InvalidData, "Unknown BLOB")),
+                };
+                let mut bytes = vec![0_u8; nbytes];
+                input.read_exact(&mut bytes)?;
+                Ok(Bytes(bytes))
+            }
+            MYSQL_TYPE_VARCHAR | MYSQL_TYPE_VAR_STRING => {
+                let type_len = column_meta.read_u16::<LE>()? as usize;
+                let nbytes = if type_len < 256 {
+                    input.read_u8()? as usize
+                } else {
+                    input.read_u16::<LE>()? as usize
+                };
+                let mut bytes = vec![0_u8; nbytes];
+                input.read_exact(&mut bytes)?;
+                Ok(Bytes(bytes))
+            }
+            MYSQL_TYPE_STRING => {
+                let nbytes = if length < 256 {
+                    input.read_u8()? as usize
+                } else {
+                    input.read_u16::<LE>()? as usize
+                };
+                let mut bytes = vec![0_u8; nbytes];
+                input.read_exact(&mut bytes)?;
+                Ok(Bytes(bytes))
+            }
+            _ => {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "Don't know how to handle column",
+                ))
+            }
+        }
+    }
+
     fn deserialize_bin(
         (column_type, column_flags): (ColumnType, ColumnFlags),
         buf: &mut ParseBuf<'_>,
@@ -524,7 +757,7 @@ mod test {
         use crate::{
             constants::ColumnType,
             io::WriteMysqlExt,
-            packets::{column_from_payload, Column, ComStmtExecuteRequestBuilder, NullBitmap},
+            packets::{Column, ComStmtExecuteRequestBuilder, NullBitmap},
             value::{ClientSide, Value},
         };
 
@@ -570,7 +803,7 @@ mod test {
         #[cfg(feature = "nightly")]
         #[bench]
         fn bench_parse_bin_row(bencher: &mut test::Bencher) {
-            fn col(name: &str, ty: ColumnType) -> Column {
+            fn col(name: &str, ty: ColumnType) -> Column<'static> {
                 let mut payload = b"\x00def".to_vec();
                 for _ in 0..5 {
                     payload.write_lenenc_str(name.as_bytes()).unwrap();
@@ -578,7 +811,7 @@ mod test {
                 payload.extend_from_slice(&b"_\x2d\x00\xff\xff\xff\xff"[..]);
                 payload.push(ty as u8);
                 payload.extend_from_slice(&b"\x00\x00\x00"[..]);
-                column_from_payload(payload).unwrap()
+                Column::read(&payload[..]).unwrap()
             }
 
             let values = vec![

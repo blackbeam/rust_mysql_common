@@ -287,6 +287,14 @@ pub trait ReadMysqlExt: ReadBytesExt {
             _ => unreachable!(),
         }
     }
+
+    /// Reads MySql's length-encoded string.
+    fn read_lenenc_str(&mut self) -> io::Result<Vec<u8>> {
+        let len = self.read_lenenc_int()?;
+        let mut output = vec![0_u8; len as usize];
+        self.read_exact(&mut output)?;
+        Ok(output)
+    }
 }
 
 pub trait WriteMysqlExt: WriteBytesExt {
