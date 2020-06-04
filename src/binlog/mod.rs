@@ -32,11 +32,14 @@ use std::{
 
 use crate::{
     constants::{
-        ColumnType, GeometryType, ItemResult, UnknownColumnType, UnknownGeometryType,
+        ColumnFlags, ColumnType, GeometryType, ItemResult, UnknownColumnType, UnknownGeometryType,
         UnknownItemResultType,
     },
     io::{ParseBuf, ReadMysqlExt, WriteMysqlExt},
     misc::{unexpected_buf_eof, LimitRead, LimitWrite, RawField, RawFlags, RawSeq, RawText},
+    packets::Column,
+    row::{new_row, Row},
+    value::Value,
 };
 
 pub mod decimal;
@@ -2867,19 +2870,40 @@ impl<'a> Iterator for OptionalMetadataIter<'a> {
 }
 
 impl ColumnType {
-    /// Returns type-specific metadata length for this column type.
-    fn get_metadata_len(&self) -> usize {
+    /// Returns type-specific metadata for this column type,
+    /// as well as the total number of occupied bytes.
+    ///
+    /// `is_array` must be true if `self` is from `MYSQL_TYPE_TYPED_ARRAY` metadata.
+    fn get_metadata<'a>(&self, ptr: &'a [u8], is_array: bool) -> Option<(&'a [u8], usize)> {
         match self {
-            Self::MYSQL_TYPE_STRING => 2,
-            Self::MYSQL_TYPE_VAR_STRING => 2,
-            Self::MYSQL_TYPE_VARCHAR => 2,
-            Self::MYSQL_TYPE_BLOB => 1,
-            Self::MYSQL_TYPE_DECIMAL => 2,
-            Self::MYSQL_TYPE_NEWDECIMAL => 2,
-            Self::MYSQL_TYPE_DOUBLE => 1,
-            Self::MYSQL_TYPE_FLOAT => 1,
-            Self::MYSQL_TYPE_SET | Self::MYSQL_TYPE_ENUM => 2,
-            _ => 0,
+            Self::MYSQL_TYPE_TINY_BLOB
+            | Self::MYSQL_TYPE_BLOB
+            | Self::MYSQL_TYPE_MEDIUM_BLOB
+            | Self::MYSQL_TYPE_LONG_BLOB
+            | Self::MYSQL_TYPE_DOUBLE
+            | Self::MYSQL_TYPE_FLOAT
+            | Self::MYSQL_TYPE_GEOMETRY
+            | Self::MYSQL_TYPE_TIME2
+            | Self::MYSQL_TYPE_DATETIME2
+            | Self::MYSQL_TYPE_TIMESTAMP2
+            | Self::MYSQL_TYPE_JSON => ptr.get(..1).map(|x| (x, 1)),
+            Self::MYSQL_TYPE_VARCHAR => {
+                if is_array {
+                    ptr.get(..3).map(|x| (x, 3))
+                } else {
+                    ptr.get(..2).map(|x| (x, 2))
+                }
+            }
+            Self::MYSQL_TYPE_NEWDECIMAL
+            | Self::MYSQL_TYPE_SET
+            | Self::MYSQL_TYPE_ENUM
+            | Self::MYSQL_TYPE_STRING
+            | Self::MYSQL_TYPE_BIT => ptr.get(..2).map(|x| (x, 2)),
+            Self::MYSQL_TYPE_TYPED_ARRAY => Self::try_from(*ptr.get(0)?)
+                .ok()?
+                .get_metadata(&ptr.get(1..)?, true)
+                .map(|(x, n)| (x, n + 1)),
+            _ => Some((&[], 0)),
         }
     }
 }
@@ -2934,17 +2958,25 @@ impl TableMapEvent {
     /// Returns `None` if column index is out of bounds or if offset couldn't be calculated
     /// (e.g. because of unknown column type between `0` and `col_idx`).
     pub fn get_column_metadata(&self, col_idx: usize) -> Option<&[u8]> {
-        let col_type = self.columns_type.get(col_idx)?.ok()?;
-        let metadata_len = col_type.get_metadata_len();
-
         let mut offset = 0;
-
-        for _ in 0..col_idx {
-            let ty = self.columns_type.get(col_idx)?.ok()?;
-            offset += ty.get_metadata_len();
+        for i in 0..=col_idx {
+            let ty = self.columns_type.get(i)?.ok()?;
+            let ptr = self.columns_metadata.get(offset..)?;
+            let (metadata, len) = ty.get_metadata(ptr, false)?;
+            if i == col_idx {
+                return Some(metadata);
+            } else {
+                offset += len;
+            }
         }
+        None
+    }
 
-        self.columns_metadata.get(offset..(offset + metadata_len))
+    pub fn iter_optional_meta(&self) -> OptionalMetadataIter {
+        OptionalMetadataIter {
+            columns: &self.columns_type,
+            data: &self.columns_metadata,
+        }
     }
 }
 
@@ -3319,6 +3351,178 @@ impl RowsEvent {
         len += S(self.rows_data.len());
 
         min(len.0, u32::MAX as usize - BinlogEventHeader::len(version))
+    }
+
+    /// Returns an iterator over event's rows given the corresponding `TableMapEvent`.
+    pub fn rows<'a>(&'a self, table_map_event: &'a TableMapEvent) -> RowsEventRows<'a> {
+        RowsEventRows {
+            rows_event: self,
+            table_map_event,
+            rows_data: &self.rows_data[..],
+        }
+    }
+}
+
+/// Iterator over rows in a `RowsEvent`.
+#[derive(Clone, Eq, PartialEq, Hash)]
+pub struct RowsEventRows<'a> {
+    rows_event: &'a RowsEvent,
+    table_map_event: &'a TableMapEvent,
+    rows_data: &'a [u8],
+}
+
+impl<'a> Iterator for RowsEventRows<'a> {
+    type Item = io::Result<(Option<Row>, Option<Row>)>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let mut row_before = None;
+        let mut row_after = None;
+
+        fn read_row<T: Read>(
+            mut input: T,
+            num_columns: u64,
+            cols: &BitVec<Lsb0, u8>,
+            tme: &TableMapEvent,
+        ) -> io::Result<Row> {
+            let mut values = vec![];
+            let mut columns = vec![];
+
+            let num_bits = cols.count_ones();
+            let bitmap_len = (num_bits + 7) / 8;
+            let mut bitmap_buf = vec![0_u8; bitmap_len];
+            input.read_exact(&mut bitmap_buf)?;
+            let mut null_bitmap = BitVec::<Lsb0, u8>::from_vec(bitmap_buf);
+            null_bitmap.truncate(num_bits);
+
+            let mut image_idx = 0;
+            let signedness = tme
+                .iter_optional_meta()
+                .find_map(|m| {
+                    m.map(|f| match f {
+                        OptionalMetadataField::Signedness(bit_vec) => Some(bit_vec),
+                        _ => None,
+                    })
+                    .unwrap_or(None)
+                })
+                .unwrap_or_else(|| {
+                    BitVec::<Lsb0, u8>::from_vec(vec![0_u8; (num_columns as usize + 7) / 8])
+                });
+            for i in 0..(num_columns as usize) {
+                // check if column is in columns list
+                if cols.get(i).as_deref().copied().unwrap_or(false) {
+                    let raw_column_type = tme.columns_type.get(i);
+
+                    // TableMapEvent must define column type for the current column.
+                    let raw_column_type = match raw_column_type {
+                        Some(ty) => ty,
+                        None => {
+                            return Err(io::Error::new(
+                                io::ErrorKind::InvalidData,
+                                "No column type",
+                            ))
+                        }
+                    };
+
+                    // Column type must be known.
+                    let raw_column_type = match raw_column_type {
+                        Ok(ty) => ty,
+                        Err(_) => {
+                            return Err(io::Error::new(
+                                io::ErrorKind::InvalidData,
+                                "Unknown column type",
+                            ))
+                        }
+                    };
+
+                    let column_meta = tme.get_column_metadata(i).unwrap_or(&[]);
+                    let column_type = match raw_column_type {
+                        ColumnType::MYSQL_TYPE_STRING => {
+                            let real_type = column_meta[0];
+                            if real_type == ColumnType::MYSQL_TYPE_ENUM as u8
+                                || real_type == ColumnType::MYSQL_TYPE_SET as u8
+                            {
+                                ColumnType::try_from(real_type).unwrap_or(raw_column_type)
+                            } else {
+                                raw_column_type
+                            }
+                        }
+                        ColumnType::MYSQL_TYPE_DATE => ColumnType::MYSQL_TYPE_NEWDATE,
+                        other => other,
+                    };
+
+                    let unsigned = signedness.get(i).as_deref().copied().unwrap_or_default();
+                    let mut column_flags = ColumnFlags::empty();
+                    if unsigned {
+                        column_flags |= ColumnFlags::UNSIGNED_FLAG;
+                    }
+                    let column = Column::new(column_type)
+                        .with_flags(column_flags)
+                        .with_schema(&tme.database_name.0[..])
+                        .with_org_table(&tme.table_name.0[..])
+                        .with_table(&tme.table_name.0[..]);
+                    columns.push(column);
+
+                    // check if column is null
+                    if null_bitmap
+                        .get(image_idx)
+                        .as_deref()
+                        .copied()
+                        .unwrap_or(true)
+                    {
+                        values.push(Value::NULL);
+                    } else {
+                        let column_meta = tme.get_column_metadata(i).unwrap_or(&[]);
+                        values.push(Value::read_binlog(
+                            &mut input,
+                            column_type,
+                            column_meta,
+                            signedness[i],
+                            false,
+                        )?);
+                    }
+
+                    image_idx += 1;
+                }
+            }
+
+            Ok(new_row(values, columns.into_boxed_slice().into()))
+        }
+
+        if self.rows_data.len() == 0 {
+            return None;
+        }
+
+        if let Some(ref cols) = self.rows_event.columns_before_image {
+            row_before = match read_row(
+                &mut self.rows_data,
+                self.rows_event.num_columns,
+                cols,
+                self.table_map_event,
+            ) {
+                Ok(row_before) => Some(row_before),
+                Err(err) => return Some(Err(err)),
+            };
+        }
+
+        if let Some(ref cols) = self.rows_event.columns_after_image {
+            row_after = match read_row(
+                &mut self.rows_data,
+                self.rows_event.num_columns,
+                cols,
+                self.table_map_event,
+            ) {
+                Ok(row_after) => Some(row_after),
+                Err(err) => return Some(Err(err)),
+            };
+        }
+
+        Some(Ok((row_before, row_after)))
+    }
+}
+
+impl fmt::Debug for RowsEventRows<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_list().entries(self.clone()).finish()
     }
 }
 

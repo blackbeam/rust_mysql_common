@@ -430,7 +430,10 @@ impl Value {
         ))
     }
 
-    fn read_binlog<T: io::Read>(
+    /// Reads a Value from binary log row.
+    ///
+    /// `column_type` myst be the real type (extracted from metadata, if needed).
+    pub(crate) fn read_binlog<T: io::Read>(
         mut input: T,
         mut column_type: ColumnType,
         mut column_meta: &[u8],

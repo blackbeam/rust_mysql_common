@@ -112,6 +112,66 @@ impl<'de> MyDeserialize<'de> for Column {
 }
 
 impl Column {
+    pub fn new(column_type: ColumnType) -> Self {
+        Self {
+            schema: Default::default(),
+            table: Default::default(),
+            org_table: Default::default(),
+            name: Default::default(),
+            org_name: Default::default(),
+            column_length: Default::default(),
+            character_set: Default::default(),
+            flags: ColumnFlags::empty(),
+            column_type,
+            decimals: Default::default(),
+        }
+    }
+
+    pub fn with_schema(mut self, schema: &[u8]) -> Self {
+        self.schema = schema.into();
+        self
+    }
+
+    pub fn with_table(mut self, table: &[u8]) -> Self {
+        self.table = table.into();
+        self
+    }
+
+    pub fn with_org_table(mut self, org_table: &[u8]) -> Self {
+        self.org_table = org_table.into();
+        self
+    }
+
+    pub fn with_name(mut self, name: &[u8]) -> Self {
+        self.name = name.into();
+        self
+    }
+
+    pub fn with_org_name(mut self, org_name: &[u8]) -> Self {
+        self.org_name = org_name.into();
+        self
+    }
+
+    pub fn with_flags(mut self, flags: ColumnFlags) -> Self {
+        self.flags = flags;
+        self
+    }
+
+    pub fn with_column_length(mut self, column_length: u32) -> Self {
+        self.column_length = column_length;
+        self
+    }
+
+    pub fn with_character_set(mut self, character_set: u16) -> Self {
+        self.character_set = character_set;
+        self
+    }
+
+    pub fn with_decimals(mut self, decimals: u8) -> Self {
+        self.decimals = decimals;
+        self
+    }
+
     /// Returns value of the column_length field of a column packet.
     pub fn column_length(&self) -> u32 {
         self.column_length
