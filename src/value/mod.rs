@@ -561,13 +561,13 @@ impl Value {
 
                 Ok(Bytes(dec.to_string().into_bytes()))
             }
-            MYSQL_TYPE_ENUM => match column_meta[0] {
+            MYSQL_TYPE_ENUM => match column_meta[1] {
                 1 => Ok(Int(input.read_u8()? as i64)),
                 2 => Ok(Int(input.read_i16::<LE>()? as i64)),
                 _ => Err(io::Error::new(io::ErrorKind::InvalidData, "Unknown ENUM")),
             },
             MYSQL_TYPE_SET => {
-                let nbytes = column_meta[0] as usize * 8;
+                let nbytes = column_meta[1] as usize * 8;
                 let mut bytes = vec![0_u8; nbytes];
                 input.read_exact(&mut bytes)?;
                 Ok(Bytes(bytes))
