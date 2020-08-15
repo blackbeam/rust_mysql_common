@@ -13,7 +13,26 @@ use crate::{
     proto::codec::{error::PacketCodecError, PacketCodec},
 };
 
-use std::io::{Error, ErrorKind::Other, Read, Write};
+use std::io::{Error, ErrorKind::{Other, Interrupted}, Read, Write};
+
+// stolen from futures-rs
+macro_rules! with_interrupt {
+    ($e:expr) => {
+        loop {
+            match $e {
+                Ok(x) => {
+                    break Ok(x);
+                }
+                Err(ref e) if e.kind() == Interrupted => {
+                    continue;
+                }
+                Err(e) => {
+                    break Err(e);
+                }
+            }
+        }
+    }
+}
 
 /// Synchronous framed stream for MySql protocol.
 ///
@@ -83,14 +102,14 @@ where
     /// Will write packets into the stream. Stream may not be flushed.
     pub fn write(&mut self, item: Vec<u8>) -> Result<(), PacketCodecError> {
         self.codec.encode(item, &mut self.out_buf)?;
-        self.stream.write_all(&*self.out_buf)?;
+        with_interrupt!(self.stream.write_all(&*self.out_buf))?;
         self.out_buf.clear();
         Ok(())
     }
 
     /// Will flush wrapped stream.
     pub fn flush(&mut self) -> Result<(), PacketCodecError> {
-        self.stream.flush()?;
+        with_interrupt!(self.stream.flush())?;
         Ok(())
     }
 
@@ -125,9 +144,9 @@ where
                     Some(item) => return Some(item),
                     None => unsafe {
                         self.in_buf.reserve(1);
-                        match self
+                        match with_interrupt!(self
                             .stream
-                            .read(super::codec::transmute_buf(self.in_buf.bytes_mut()))
+                            .read(super::codec::transmute_buf(self.in_buf.bytes_mut())))
                         {
                             Ok(0) => self.eof = true,
                             Ok(x) => {
