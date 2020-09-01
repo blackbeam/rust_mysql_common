@@ -323,8 +323,14 @@ impl<'a> OkPacket<'a> {
                                 &[][..]
                             };
                         (info, session_state_info)
+                    } else if !payload.is_empty() && payload[0] > 0 {
+                        // The `info` field is a `string<EOF>` according to the MySQL Internals
+                        // Manual, but actually it's a `string<lenenc>`.
+                        // SEE: sql/protocol_classics.cc `net_send_ok`
+                        let info = read_lenenc_str!(&mut payload)?;
+                        (info, &[][..])
                     } else {
-                        (payload, &[][..])
+                        (&[][..], &[][..])
                     };
                 (
                     affected_rows,
