@@ -1,3 +1,5 @@
+[![Gitter](https://badges.gitter.im/rust-mysql/community.svg)](https://gitter.im/rust-mysql/community?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge)
+
 [![Crates.io](https://img.shields.io/crates/v/mysql_common.svg)](https://crates.io/crates/cargo-readme)
 [![Docs.rs](https://docs.rs/mysql_common/badge.svg)](https://docs.rs/mysql_common)
 [![Build Status](https://travis-ci.org/blackbeam/rust_mysql_common.svg?branch=master)](https://travis-ci.org/blackbeam/rust_mysql_common)
