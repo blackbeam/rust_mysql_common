@@ -468,9 +468,11 @@ impl ConvIr<Vec<u8>> for Vec<u8> {
 impl ConvIr<PrimitiveDateTime> for ParseIr<PrimitiveDateTime> {
     fn new(value: Value) -> Result<ParseIr<PrimitiveDateTime>, FromValueError> {
         match value {
-            Value::Date(y, m, d, h, i, s, u) => Ok(ParseIr {
-                value: Value::Date(y, m, d, h, i, s, u),
-                output: match create_primitive_date_time(y, m, d, h, i, s, u) {
+            Value::Date(year, month, day, hour, minute, second, micros) => Ok(ParseIr {
+                value: Value::Date(year, month, day, hour, minute, second, micros),
+                output: match create_primitive_date_time(
+                    year, month, day, hour, minute, second, micros,
+                ) {
                     Some(datetime) => datetime,
                     None => return Err(FromValueError(value)),
                 },
@@ -497,9 +499,9 @@ impl ConvIr<PrimitiveDateTime> for ParseIr<PrimitiveDateTime> {
 impl ConvIr<Date> for ParseIr<Date> {
     fn new(value: Value) -> Result<ParseIr<Date>, FromValueError> {
         match value {
-            Value::Date(y, m, d, h, i, s, u) => Ok(ParseIr {
-                value: Value::Date(y, m, d, h, i, s, u),
-                output: match Date::try_from_ymd(y as i32, m, d) {
+            Value::Date(year, month, day, hour, minute, second, micros) => Ok(ParseIr {
+                value: Value::Date(year, month, day, hour, minute, second, micros),
+                output: match Date::try_from_ymd(year as i32, month, day) {
                     Ok(date) => date,
                     Err(_) => return Err(FromValueError(value)),
                 },
@@ -561,16 +563,16 @@ impl ConvIr<Time> for ParseIr<Time> {
 
 #[inline]
 fn create_primitive_date_time(
-    y: u16,
-    m: u8,
-    d: u8,
-    h: u8,
-    i: u8,
-    s: u8,
-    u: u32,
+    year: u16,
+    month: u8,
+    day: u8,
+    hour: u8,
+    minute: u8,
+    second: u8,
+    micros: u32,
 ) -> Option<PrimitiveDateTime> {
-    if let Ok(date) = Date::try_from_ymd(y as i32, m, d) {
-        if let Ok(time) = Time::try_from_hms_micro(h, i, s, u) {
+    if let Ok(date) = Date::try_from_ymd(year as i32, month, day) {
+        if let Ok(time) = Time::try_from_hms_micro(hour, minute, second, micros) {
             return Some(PrimitiveDateTime::new(date, time));
         }
     }
@@ -595,15 +597,26 @@ fn parse_mysql_time_string_with_time(bytes: &[u8]) -> Result<Time, ParseError> {
 impl ConvIr<NaiveDateTime> for ParseIr<NaiveDateTime> {
     fn new(value: Value) -> Result<ParseIr<NaiveDateTime>, FromValueError> {
         let result = match value {
-            Value::Date(y, m, d, h, i, s, u) => {
-                let date = NaiveDate::from_ymd_opt(y.into(), m.into(), d.into());
-                let time = NaiveTime::from_hms_micro_opt(h.into(), i.into(), s.into(), u);
-                Ok((date, time, Value::Date(y, m, d, h, i, s, u)))
+            Value::Date(year, month, day, hour, minute, second, micros) => {
+                let date = NaiveDate::from_ymd_opt(year.into(), month.into(), day.into());
+                let time = NaiveTime::from_hms_micro_opt(
+                    hour.into(),
+                    minute.into(),
+                    second.into(),
+                    micros,
+                );
+                Ok((
+                    date,
+                    time,
+                    Value::Date(year, month, day, hour, minute, second, micros),
+                ))
             }
             Value::Bytes(bytes) => {
-                if let Some((y, m, d, h, i, s, u)) = parse_mysql_datetime_string(&*bytes) {
-                    let date = NaiveDate::from_ymd_opt(y as i32, m, d);
-                    let time = NaiveTime::from_hms_micro_opt(h, i, s, u);
+                if let Some((year, month, day, hour, minute, second, micros)) =
+                    parse_mysql_datetime_string(&*bytes)
+                {
+                    let date = NaiveDate::from_ymd_opt(year as i32, month, day);
+                    let time = NaiveTime::from_hms_micro_opt(hour, minute, second, micros);
                     Ok((date, time, Value::Bytes(bytes)))
                 } else {
                     Err(FromValueError(Value::Bytes(bytes)))
@@ -614,10 +627,10 @@ impl ConvIr<NaiveDateTime> for ParseIr<NaiveDateTime> {
 
         let (date, time, value) = result?;
 
-        if date.is_some() && time.is_some() {
+        if let (Some(date), Some(time)) = (date, time) {
             Ok(ParseIr {
                 value,
-                output: NaiveDateTime::new(date.unwrap(), time.unwrap()),
+                output: NaiveDateTime::new(date, time),
             })
         } else {
             Err(FromValueError(value))
@@ -634,9 +647,12 @@ impl ConvIr<NaiveDateTime> for ParseIr<NaiveDateTime> {
 impl ConvIr<NaiveDate> for ParseIr<NaiveDate> {
     fn new(value: Value) -> Result<ParseIr<NaiveDate>, FromValueError> {
         let result = match value {
-            Value::Date(y, m, d, h, i, s, u) => {
-                let date = NaiveDate::from_ymd_opt(y.into(), m.into(), d.into());
-                Ok((date, Value::Date(y, m, d, h, i, s, u)))
+            Value::Date(year, month, day, hour, minute, second, micros) => {
+                let date = NaiveDate::from_ymd_opt(year.into(), month.into(), day.into());
+                Ok((
+                    date,
+                    Value::Date(year, month, day, hour, minute, second, micros),
+                ))
             }
             Value::Bytes(bytes) => {
                 if let Some((y, m, d, _, _, _, _)) = parse_mysql_datetime_string(&*bytes) {
@@ -651,11 +667,8 @@ impl ConvIr<NaiveDate> for ParseIr<NaiveDate> {
 
         let (date, value) = result?;
 
-        if date.is_some() {
-            Ok(ParseIr {
-                value,
-                output: date.unwrap(),
-            })
+        if let Some(output) = date {
+            Ok(ParseIr { value, output })
         } else {
             Err(FromValueError(value))
         }
@@ -812,11 +825,8 @@ impl ConvIr<NaiveTime> for ParseIr<NaiveTime> {
 
         let (time, value) = result?;
 
-        if time.is_some() {
-            Ok(ParseIr {
-                value,
-                output: time.unwrap(),
-            })
+        if let Some(output) = time {
+            Ok(ParseIr { value, output })
         } else {
             Err(FromValueError(value))
         }
@@ -1070,7 +1080,7 @@ impl From<u128> for Value {
 
 impl From<f32> for Value {
     fn from(x: f32) -> Value {
-        Value::Float(x.into())
+        Value::Float(x)
     }
 }
 

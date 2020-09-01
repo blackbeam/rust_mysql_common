@@ -154,12 +154,13 @@ impl Value {
             Value::Float(x) => format!("{}", x),
             Value::Double(x) => format!("{}", x),
             Value::Date(y, m, d, 0, 0, 0, 0) => format!("'{:04}-{:02}-{:02}'", y, m, d),
-            Value::Date(y, m, d, h, i, s, 0) => {
-                format!("'{:04}-{:02}-{:02} {:02}:{:02}:{:02}'", y, m, d, h, i, s)
-            }
-            Value::Date(y, m, d, h, i, s, u) => format!(
+            Value::Date(year, month, day, hour, minute, second, 0) => format!(
+                "'{:04}-{:02}-{:02} {:02}:{:02}:{:02}'",
+                year, month, day, hour, minute, second
+            ),
+            Value::Date(year, month, day, hour, minute, second, micros) => format!(
                 "'{:04}-{:02}-{:02} {:02}:{:02}:{:02}.{:06}'",
-                y, m, d, h, i, s, u
+                year, month, day, hour, minute, second, micros
             ),
             Value::Time(neg, d, h, i, s, 0) => {
                 if neg {
@@ -168,11 +169,23 @@ impl Value {
                     format!("'{:03}:{:02}:{:02}'", d * 24 + u32::from(h), i, s)
                 }
             }
-            Value::Time(neg, d, h, i, s, u) => {
+            Value::Time(neg, days, hours, minutes, seconds, micros) => {
                 if neg {
-                    format!("'-{:03}:{:02}:{:02}.{:06}'", d * 24 + u32::from(h), i, s, u)
+                    format!(
+                        "'-{:03}:{:02}:{:02}.{:06}'",
+                        days * 24 + u32::from(hours),
+                        minutes,
+                        seconds,
+                        micros
+                    )
                 } else {
-                    format!("'{:03}:{:02}:{:02}.{:06}'", d * 24 + u32::from(h), i, s, u)
+                    format!(
+                        "'{:03}:{:02}:{:02}.{:06}'",
+                        days * 24 + u32::from(hours),
+                        minutes,
+                        seconds,
+                        micros
+                    )
                 }
             }
             Value::Bytes(ref bytes) => match from_utf8(&*bytes) {
@@ -351,11 +364,11 @@ impl Value {
 }
 
 impl fmt::Debug for Value {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
-            Value::NULL => f.debug_tuple("Null").finish(),
+            Value::NULL => formatter.debug_tuple("Null").finish(),
             Value::Bytes(ref bytes) => {
-                let mut debug = f.debug_tuple("Bytes");
+                let mut debug = formatter.debug_tuple("Bytes");
                 if bytes.len() <= 8 {
                     debug
                         .field(&String::from_utf8_lossy(&*bytes).replace("\n", "\\n"))
@@ -365,24 +378,27 @@ impl fmt::Debug for Value {
                     debug.field(&format!("{}..", bytes)).finish()
                 }
             }
-            Value::Int(ref val) => f.debug_tuple("Int").field(val).finish(),
-            Value::UInt(ref val) => f.debug_tuple("UInt").field(val).finish(),
-            Value::Float(ref val) => f.debug_tuple("Float").field(val).finish(),
-            Value::Double(ref val) => f.debug_tuple("Double").field(val).finish(),
+            Value::Int(ref val) => formatter.debug_tuple("Int").field(val).finish(),
+            Value::UInt(ref val) => formatter.debug_tuple("UInt").field(val).finish(),
+            Value::Float(ref val) => formatter.debug_tuple("Float").field(val).finish(),
+            Value::Double(ref val) => formatter.debug_tuple("Double").field(val).finish(),
             Value::Date(y, m, d, 0, 0, 0, 0) => {
                 let format = format!("'{:04}-{:02}-{:02}'", y, m, d);
-                f.debug_tuple("Date").field(&format).finish()
+                formatter.debug_tuple("Date").field(&format).finish()
             }
-            Value::Date(y, m, d, h, i, s, 0) => {
-                let format = format!("'{:04}-{:02}-{:02} {:02}:{:02}:{:02}'", y, m, d, h, i, s);
-                f.debug_tuple("Date").field(&format).finish()
+            Value::Date(year, month, day, hour, minute, second, 0) => {
+                let format = format!(
+                    "'{:04}-{:02}-{:02} {:02}:{:02}:{:02}'",
+                    year, month, day, hour, minute, second
+                );
+                formatter.debug_tuple("Date").field(&format).finish()
             }
-            Value::Date(y, m, d, h, i, s, u) => {
+            Value::Date(year, month, day, hour, minute, second, micros) => {
                 let format = format!(
                     "'{:04}-{:02}-{:02} {:02}:{:02}:{:02}.{:06}'",
-                    y, m, d, h, i, s, u
+                    year, month, day, hour, minute, second, micros
                 );
-                f.debug_tuple("Date").field(&format).finish()
+                formatter.debug_tuple("Date").field(&format).finish()
             }
             Value::Time(neg, d, h, i, s, 0) => {
                 let format = if neg {
@@ -390,15 +406,27 @@ impl fmt::Debug for Value {
                 } else {
                     format!("'{:03}:{:02}:{:02}'", d * 24 + u32::from(h), i, s)
                 };
-                f.debug_tuple("Time").field(&format).finish()
+                formatter.debug_tuple("Time").field(&format).finish()
             }
-            Value::Time(neg, d, h, i, s, u) => {
+            Value::Time(neg, days, hours, minutes, seconds, micros) => {
                 let format = if neg {
-                    format!("'-{:03}:{:02}:{:02}.{:06}'", d * 24 + u32::from(h), i, s, u)
+                    format!(
+                        "'-{:03}:{:02}:{:02}.{:06}'",
+                        days * 24 + u32::from(hours),
+                        minutes,
+                        seconds,
+                        micros
+                    )
                 } else {
-                    format!("'{:03}:{:02}:{:02}.{:06}'", d * 24 + u32::from(h), i, s, u)
+                    format!(
+                        "'{:03}:{:02}:{:02}.{:06}'",
+                        days * 24 + u32::from(hours),
+                        minutes,
+                        seconds,
+                        micros
+                    )
                 };
-                f.debug_tuple("Time").field(&format).finish()
+                formatter.debug_tuple("Time").field(&format).finish()
             }
         }
     }

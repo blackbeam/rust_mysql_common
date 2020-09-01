@@ -28,7 +28,7 @@ pub mod error;
 
 /// Helper that transmutes `&mut [MaybeUninit<u8>]` to `&mut [u8]`.
 pub(crate) unsafe fn transmute_buf(buf: &mut [mem::MaybeUninit<u8>]) -> &mut [u8] {
-    mem::transmute(buf)
+    &mut *(buf as *mut [mem::MaybeUninit<u8>] as *mut [u8])
 }
 
 /// Will split given `packet` to MySql packet chunks and write into `dst`.
@@ -165,7 +165,7 @@ impl ChunkDecoder {
                     match NonZeroUsize::new(raw_chunk_len) {
                         Some(chunk_len) => {
                             if dst.len() + chunk_len.get() > max_allowed_packet {
-                                Err(PacketCodecError::PacketTooLarge)?
+                                return Err(PacketCodecError::PacketTooLarge);
                             }
 
                             dst.reserve(chunk_len.get());
@@ -233,7 +233,7 @@ impl CompData {
     ) -> Result<Option<Self>, PacketCodecError> {
         // max_allowed_packet will be an upper boundary
         if max(compressed_len, uncompressed_len) > max_allowed_packet {
-            Err(PacketCodecError::PacketTooLarge)?
+            return Err(PacketCodecError::PacketTooLarge);
         }
 
         let compressed_len = NonZeroUsize::new(compressed_len);
@@ -427,7 +427,7 @@ impl PacketCodecInner {
                     in_buf: BytesMut::with_capacity(DEFAULT_MAX_ALLOWED_PACKET),
                     out_buf: BytesMut::with_capacity(DEFAULT_MAX_ALLOWED_PACKET),
                     comp_decoder: CompDecoder::Idle,
-                    plain_codec: mem::replace(c, PlainPacketCodec::default()),
+                    plain_codec: mem::take(c),
                 })
             }
             PacketCodecInner::Comp(c) => c.level = level,
@@ -496,7 +496,7 @@ impl PlainPacketCodec {
         match self.chunk_decoder.decode(src, dst, max_allowed_packet)? {
             Some(chunk_info) => {
                 if self.seq_id != chunk_info.seq_id() {
-                    Err(PacketCodecError::PacketsOutOfSync)?
+                    return Err(PacketCodecError::PacketsOutOfSync);
                 }
 
                 self.seq_id = self.seq_id.wrapping_add(1);
@@ -524,7 +524,7 @@ impl PlainPacketCodec {
         max_allowed_packet: usize,
     ) -> Result<(), PacketCodecError> {
         if packet.len() > max_allowed_packet {
-            Err(PacketCodecError::PacketTooLarge)?;
+            return Err(PacketCodecError::PacketTooLarge);
         }
 
         self.seq_id = packet_to_chunks(self.seq_id, &*packet, dst);
@@ -588,7 +588,7 @@ impl CompPacketCodec {
         {
             Some(chunk_info) => {
                 if self.comp_seq_id != chunk_info.seq_id() {
-                    Err(PacketCodecError::PacketsOutOfSync)?
+                    return Err(PacketCodecError::PacketsOutOfSync);
                 }
 
                 self.comp_seq_id = self.comp_seq_id.wrapping_add(1);

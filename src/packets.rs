@@ -1076,8 +1076,8 @@ impl HandshakeResponse {
             UTF8_GENERAL_CI
         };
 
-        if let Some(_) = db_name {
-            client_flags = client_flags | CapabilityFlags::CLIENT_CONNECT_WITH_DB;
+        if db_name.is_some() {
+            client_flags |= CapabilityFlags::CLIENT_CONNECT_WITH_DB;
         }
 
         let mut data = Vec::with_capacity(1024);
@@ -1323,7 +1323,7 @@ impl ComStmtExecuteRequestBuilder {
     }
 
     pub fn build(mut self, params: &[Value]) -> (Vec<u8>, bool) {
-        if params.len() > 0 {
+        if !params.is_empty() {
             self.bitmap_len = NullBitmap::<ClientSide>::bitmap_len(params.len());
             let meta_len = params.len() * 2;
             let data_len: usize = params.iter().map(Value::bin_len).sum();

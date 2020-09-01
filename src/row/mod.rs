@@ -105,7 +105,7 @@ impl Row {
             .idx(&*self.columns)
             .and_then(|idx| self.values.get(idx))
             .and_then(|x| x.as_ref())
-            .and_then(|x| Some(from_value_opt::<T>(x.clone())))
+            .map(|x| from_value_opt::<T>(x.clone()))
     }
 
     /// Will take value of a column with index `index` if it exists and wasn't taken earlier then
@@ -135,7 +135,7 @@ impl Row {
             .idx(&*self.columns)
             .and_then(|idx| self.values.get_mut(idx))
             .and_then(|x| x.take())
-            .and_then(|x| Some(from_value_opt::<T>(x)))
+            .map(from_value_opt::<T>)
     }
 
     /// Unwraps values of a row.
