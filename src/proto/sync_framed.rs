@@ -13,7 +13,11 @@ use crate::{
     proto::codec::{error::PacketCodecError, PacketCodec},
 };
 
-use std::io::{Error, ErrorKind::{Other, Interrupted}, Read, Write};
+use std::io::{
+    Error,
+    ErrorKind::{Interrupted, Other},
+    Read, Write,
+};
 
 // stolen from futures-rs
 macro_rules! with_interrupt {
@@ -31,7 +35,7 @@ macro_rules! with_interrupt {
                 }
             }
         }
-    }
+    };
 }
 
 /// Synchronous framed stream for MySql protocol.
