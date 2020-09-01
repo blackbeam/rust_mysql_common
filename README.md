@@ -33,7 +33,6 @@ column and protocol type correspondence:
 | `Vec<u8>`                       | MySql bytes                                               |
 | `String`                        | MySql bytes parsed as utf8                                |
 | `Duration` (`std` and `time`)   | MySql time or bytes parsed as MySql time string           |
-| `time::OffsetDateTime`          | MySql date or bytes parsed as MySql date string           |
 | `time::PrimitiveDateTime`       | MySql date or bytes parsed as MySql date string           |
 | `time::Date`                    | MySql date or bytes parsed as MySql date string           |
 | `time::Time`                    | MySql date or bytes parsed as MySql date string           |
