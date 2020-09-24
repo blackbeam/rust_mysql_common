@@ -80,48 +80,54 @@ pub use uuid;
 #[macro_export]
 macro_rules! params {
     () => {};
-    (@to_pair $name:expr => $value:expr) => (
-        (std::string::String::from($name), $crate::value::Value::from($value))
+    (@to_pair $map:expr, $name:expr => $value:expr) => (
+        $map.insert(
+            std::string::String::from($name),
+            $crate::value::Value::from($value),
+        )
     );
-    (@to_pair $name:ident) => (
-        (std::string::String::from(stringify!($name)), $crate::value::Value::from($name))
+    (@to_pair $map:expr, $name:ident) => (
+        $map.insert(
+            std::string::String::from(stringify!($name)),
+            $crate::value::Value::from($name),
+        )
     );
-    (@expand $vec:expr;) => {};
-    (@expand $vec:expr; $name:expr => $value:expr, $($tail:tt)*) => {
-        $vec.push(params!(@to_pair $name => $value));
-        params!(@expand $vec; $($tail)*);
+    (@expand $map:expr;) => {};
+    (@expand $map:expr; $name:expr => $value:expr, $($tail:tt)*) => {
+        params!(@to_pair $map, $name => $value);
+        params!(@expand $map; $($tail)*);
     };
-    (@expand $vec:expr; $name:expr => $value:expr $(, $tail:tt)*) => {
-        $vec.push(params!(@to_pair $name => $value));
-        params!(@expand $vec; $($tail)*);
+    (@expand $map:expr; $name:expr => $value:expr $(, $tail:tt)*) => {
+        params!(@to_pair $map, $name => $value);
+        params!(@expand $map; $($tail)*);
     };
-    (@expand $vec:expr; $name:ident, $($tail:tt)*) => {
-        $vec.push(params!(@to_pair $name));
-        params!(@expand $vec; $($tail)*);
+    (@expand $map:expr; $name:ident, $($tail:tt)*) => {
+        params!(@to_pair $map, $name);
+        params!(@expand $map; $($tail)*);
     };
-    (@expand $vec:expr; $name:ident $(, $tail:tt)*) => {
-        $vec.push(params!(@to_pair $name));
-        params!(@expand $vec; $($tail)*);
+    (@expand $map:expr; $name:ident $(, $tail:tt)*) => {
+        params!(@to_pair $map, $name);
+        params!(@expand $map; $($tail)*);
     };
     ($i:ident, $($tail:tt)*) => {
         {
-            let mut output = std::vec::Vec::new();
-            params!(@expand output; $i, $($tail)*);
-            output
+            let mut map: std::collections::HashMap<std::string::String, $crate::value::Value, _> = std::default::Default::default();
+            params!(@expand (&mut map); $i, $($tail)*);
+            $crate::params::Params::Named(map)
         }
     };
     ($i:expr => $($tail:tt)*) => {
         {
-            let mut output = std::vec::Vec::new();
-            params!(@expand output; $i => $($tail)*);
-            output
+            let mut map: std::collections::HashMap<std::string::String, $crate::value::Value, _> = std::default::Default::default();
+            params!(@expand (&mut map); $i => $($tail)*);
+            $crate::params::Params::Named(map)
         }
     };
     ($i:ident) => {
         {
-            let mut output = std::vec::Vec::new();
-            params!(@expand output; $i);
-            output
+            let mut map: std::collections::HashMap<std::string::String, $crate::value::Value, _> = std::default::Default::default();
+            params!(@expand (&mut map); $i);
+            $crate::params::Params::Named(map)
         }
     }
 }
@@ -170,70 +176,73 @@ pub mod value;
 #[cfg(test)]
 #[test]
 fn params_macro_test() {
-    use crate::value::Value;
+    use crate::{params::Params, value::Value};
 
     let foo = 42;
     let bar = "bar";
 
-    assert_eq!(vec![(String::from("foo"), Value::Int(42))], params! { foo });
     assert_eq!(
-        vec![(String::from("foo"), Value::Int(42))],
+        Params::from(vec![(String::from("foo"), Value::Int(42))]),
+        params! { foo }
+    );
+    assert_eq!(
+        Params::from(vec![(String::from("foo"), Value::Int(42))]),
         params! { foo, }
     );
     assert_eq!(
-        vec![
+        Params::from(vec![
             (String::from("foo"), Value::Int(42)),
             (String::from("bar"), Value::Bytes((&b"bar"[..]).into())),
-        ],
+        ]),
         params! { foo, bar }
     );
     assert_eq!(
-        vec![
+        Params::from(vec![
             (String::from("foo"), Value::Int(42)),
             (String::from("bar"), Value::Bytes((&b"bar"[..]).into())),
-        ],
+        ]),
         params! { foo, bar, }
     );
     assert_eq!(
-        vec![
+        Params::from(vec![
             (String::from("foo"), Value::Int(42)),
             (String::from("bar"), Value::Bytes((&b"bar"[..]).into())),
-        ],
+        ]),
         params! { "foo" => foo, "bar" => bar }
     );
     assert_eq!(
-        vec![
+        Params::from(vec![
             (String::from("foo"), Value::Int(42)),
             (String::from("bar"), Value::Bytes((&b"bar"[..]).into())),
-        ],
+        ]),
         params! { "foo" => foo, "bar" => bar, }
     );
     assert_eq!(
-        vec![
+        Params::from(vec![
             (String::from("foo"), Value::Int(42)),
             (String::from("bar"), Value::Bytes((&b"bar"[..]).into())),
-        ],
+        ]),
         params! { foo, "bar" => bar }
     );
     assert_eq!(
-        vec![
+        Params::from(vec![
             (String::from("foo"), Value::Int(42)),
             (String::from("bar"), Value::Bytes((&b"bar"[..]).into())),
-        ],
+        ]),
         params! { "foo" => foo, bar }
     );
     assert_eq!(
-        vec![
+        Params::from(vec![
             (String::from("foo"), Value::Int(42)),
             (String::from("bar"), Value::Bytes((&b"bar"[..]).into())),
-        ],
+        ]),
         params! { foo, "bar" => bar, }
     );
     assert_eq!(
-        vec![
+        Params::from(vec![
             (String::from("foo"), Value::Int(42)),
             (String::from("bar"), Value::Bytes((&b"bar"[..]).into())),
-        ],
+        ]),
         params! { "foo" => foo, bar, }
     );
 }
