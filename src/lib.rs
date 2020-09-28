@@ -81,16 +81,20 @@ pub use uuid;
 macro_rules! params {
     () => {};
     (@to_pair $map:expr, $name:expr => $value:expr) => (
-        $map.insert(
-            std::string::String::from($name),
-            $crate::value::Value::from($value),
-        )
+        let entry = $map.entry(std::string::String::from($name));
+        if let std::collections::hash_map::Entry::Occupied(_) = entry {
+            panic!("Redefinition of named parameter `{}'", entry.key());
+        } else {
+            entry.or_insert($crate::value::Value::from($value));
+        }
     );
     (@to_pair $map:expr, $name:ident) => (
-        $map.insert(
-            std::string::String::from(stringify!($name)),
-            $crate::value::Value::from($name),
-        )
+        let entry = $map.entry(std::string::String::from(stringify!($name)));
+        if let std::collections::hash_map::Entry::Occupied(_) = entry {
+            panic!("Redefinition of named parameter `{}'", entry.key());
+        } else {
+            entry.or_insert($crate::value::Value::from($name));
+        }
     );
     (@expand $map:expr;) => {};
     (@expand $map:expr; $name:expr => $value:expr, $($tail:tt)*) => {
@@ -245,4 +249,10 @@ fn params_macro_test() {
         ]),
         params! { "foo" => foo, bar, }
     );
+}
+
+#[test]
+#[should_panic(expected = "Redefinition of named parameter `a'")]
+fn params_macro_should_panic_on_named_param_redefinition() {
+    params! {"a" => 1, "b" => 2, "a" => 3};
 }
