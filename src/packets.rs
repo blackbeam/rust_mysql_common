@@ -1477,15 +1477,21 @@ pub struct BinlogDumpPacket {
 }
 
 impl BinlogDumpPacket {
-    pub fn new(position: u32, file_name: Option<&str>, non_block: bool, server_id: u32) -> Self {
+    pub fn new(file_name: Option<&str>, position: u32, non_blocking: bool, server_id: u32) -> Self {
         let mut buffer = Vec::new();
         buffer.write_u32::<LE>(position).unwrap();
-        buffer.write_u16::<LE>(non_block as u16).unwrap();
+        buffer.write_u16::<LE>(non_blocking as u16).unwrap();
         buffer.write_u32::<LE>(server_id).unwrap();
         if let Some(file_name) = file_name {
             buffer.extend_from_slice(file_name.as_bytes());
         }
         BinlogDumpPacket { data: buffer }
+    }
+}
+
+impl AsRef<[u8]> for BinlogDumpPacket {
+    fn as_ref(&self) -> &[u8] {
+        &*self.data
     }
 }
 
