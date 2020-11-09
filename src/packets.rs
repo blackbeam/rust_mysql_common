@@ -1501,6 +1501,36 @@ impl Into<Vec<u8>> for BinlogDumpPacket {
     }
 }
 
+pub struct RegisterSlavePacket {
+    data: Vec<u8>,
+}
+
+impl RegisterSlavePacket {
+    pub fn new(server_id: u32) -> Self {
+        let mut buffer = Vec::new();
+        buffer.write_u32::<LE>(server_id).unwrap();
+        buffer.write_u8(0).unwrap();
+        buffer.write_u8(0).unwrap();
+        buffer.write_u8(0).unwrap();
+        buffer.write_u16::<LE>(0).unwrap();
+        buffer.write_u32::<LE>(0).unwrap();
+        buffer.write_u32::<LE>(0).unwrap();
+        RegisterSlavePacket { data: buffer }
+    }
+}
+
+impl AsRef<[u8]> for RegisterSlavePacket {
+    fn as_ref(&self) -> &[u8] {
+        &*self.data
+    }
+}
+
+impl Into<Vec<u8>> for RegisterSlavePacket {
+    fn into(self) -> Vec<u8> {
+        self.data
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::{
