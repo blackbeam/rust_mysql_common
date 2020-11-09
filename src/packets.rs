@@ -1472,12 +1472,35 @@ impl Into<Vec<u8>> for ComStmtClose {
     }
 }
 
+pub struct BinlogDumpPacket {
+    data: Vec<u8>,
+}
+
+impl BinlogDumpPacket {
+    pub fn new(position: u32, file_name: Option<&str>, non_block: bool, server_id: u32) -> Self {
+        let mut buffer = Vec::new();
+        buffer.write_u32::<LE>(position).unwrap();
+        buffer.write_u16::<LE>(non_block as u16).unwrap();
+        buffer.write_u32::<LE>(server_id).unwrap();
+        if let Some(file_name) = file_name {
+            buffer.extend_from_slice(file_name.as_bytes());
+        }
+        BinlogDumpPacket { data: buffer }
+    }
+}
+
+impl Into<Vec<u8>> for BinlogDumpPacket {
+    fn into(self) -> Vec<u8> {
+        self.data
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::{
         column_from_payload, parse_auth_more_data, parse_auth_switch_request, parse_err_packet,
         parse_handshake_packet, parse_local_infile_packet, parse_ok_packet, parse_stmt_packet,
-        AuthPlugin, HandshakeResponse, OkPacketKind, SessionStateChange,
+        AuthPlugin, BinlogDumpPacket, HandshakeResponse, OkPacketKind, SessionStateChange,
     };
     use crate::constants::{
         CapabilityFlags, ColumnFlags, ColumnType, StatusFlags, UTF8_GENERAL_CI,
@@ -1828,6 +1851,30 @@ mod test {
             0x6d, 0x79, 0x73, 0x71, 0x6c, 0x5f, 0x6e, 0x61, 0x74, 0x69, 0x76, 0x65, 0x5f, 0x70,
             0x61, 0x73, 0x73, 0x77, 0x6f, 0x72, 0x64, 0x00, // mysql_native_password
             0x00,
+        ]
+        .to_vec();
+        assert_eq!(expected, actual);
+    }
+
+    #[test]
+    fn should_build_binlog_dump_packet() {
+        let actual: Vec<u8> =
+            BinlogDumpPacket::new(123, Some("mysql-bin-changelog.123"), true, 1).into();
+        let expected: Vec<u8> = [
+            0x7b, 0x00, 0x00, 0x00, // position
+            0x01, 0x00, // flags
+            0x01, 0x00, 0x00, 0x00, // server id
+            0x6d, 0x79, 0x73, 0x71, 0x6c, 0x2d, 0x62, 0x69, 0x6e, 0x2d, 0x63, 0x68, 0x61, 0x6e,
+            0x67, 0x65, 0x6c, 0x6f, 0x67, 0x2e, 0x31, 0x32, 0x33, // filename
+        ]
+        .to_vec();
+        assert_eq!(expected, actual);
+
+        let actual: Vec<u8> = BinlogDumpPacket::new(0, None, false, 1).into();
+        let expected: Vec<u8> = [
+            0x00, 0x00, 0x00, 0x00, // position
+            0x00, 0x00, // flags
+            0x01, 0x00, 0x00, 0x00, // server id
         ]
         .to_vec();
         assert_eq!(expected, actual);
