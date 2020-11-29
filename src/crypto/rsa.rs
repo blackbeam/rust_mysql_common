@@ -162,7 +162,7 @@ impl PublicKey {
 
     /// Returns number of octets in the modulus.
     pub fn num_octets(&self) -> usize {
-        (self.modulus.bits() + 6) >> 3
+        (self.modulus.bits() as usize + 6) >> 3
     }
 
     /// Returns modulus of the public key.

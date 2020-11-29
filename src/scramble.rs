@@ -61,15 +61,15 @@ pub fn scramble_native(nonce: &[u8], password: &[u8]) -> Option<[u8; 20]> {
 pub fn scramble_sha256(nonce: &[u8], password: &[u8]) -> Option<[u8; 32]> {
     fn sha256_1(bytes: impl AsRef<[u8]>) -> [u8; 32] {
         let mut hasher = Sha256::default();
-        hasher.input(bytes.as_ref());
-        to_u8_32(hasher.result())
+        hasher.update(bytes.as_ref());
+        to_u8_32(hasher.finalize())
     }
 
     fn sha256_2(bytes1: impl AsRef<[u8]>, bytes2: impl AsRef<[u8]>) -> [u8; 32] {
         let mut hasher = Sha256::default();
-        hasher.input(bytes1.as_ref());
-        hasher.input(bytes2.as_ref());
-        to_u8_32(hasher.result())
+        hasher.update(bytes1.as_ref());
+        hasher.update(bytes2.as_ref());
+        to_u8_32(hasher.finalize())
     }
 
     if password.is_empty() {

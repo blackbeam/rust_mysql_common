@@ -13,10 +13,13 @@ use crate::{
     proto::codec::{error::PacketCodecError, PacketCodec},
 };
 
-use std::io::{
-    Error,
-    ErrorKind::{Interrupted, Other},
-    Read, Write,
+use std::{
+    io::{
+        Error,
+        ErrorKind::{Interrupted, Other},
+        Read, Write,
+    },
+    ptr::slice_from_raw_parts_mut,
 };
 
 // stolen from futures-rs
@@ -148,10 +151,10 @@ where
                     Some(item) => return Some(item),
                     None => unsafe {
                         self.in_buf.reserve(1);
-                        match with_interrupt!(self
-                            .stream
-                            .read(super::codec::transmute_buf(self.in_buf.bytes_mut())))
-                        {
+                        match with_interrupt!(self.stream.read(&mut *slice_from_raw_parts_mut(
+                            self.in_buf.bytes_mut().as_mut_ptr(),
+                            self.in_buf.bytes_mut().len()
+                        ))) {
                             Ok(0) => self.eof = true,
                             Ok(x) => {
                                 self.in_buf.advance_mut(x);

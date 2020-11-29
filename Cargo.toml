@@ -15,22 +15,22 @@ edition = "2018"
 travis-ci = { repository = "blackbeam/rust_mysql_common" }
 
 [dependencies]
-base64 = "0.12"
-bigdecimal = { version = "0.1", features = ["serde"] }
+base64 = "0.13"
+bigdecimal = { version = "0.2", features = ["serde"] }
 bitflags = "1"
 byteorder = "1"
-bytes = "0.5.2"
+bytes = "0.6.0"
 chrono = { version = "0.4", features = ["serde"] }
 flate2 = { version = "1.0", default-features = false }
 lazy_static = "1"
 lexical = "5.2"
-num-bigint = { version = "0.2", features = ["i128"] }
+num-bigint = { version = "0.3" }
 num-traits = { version = "0.2", features = ["i128"] }
 rand = "0.7"
 regex = "1"
 rust_decimal = "1.0"
 sha1 = "0.6"
-sha2 = "0.8"
+sha2 = "0.9"
 time = { version = "0.2", default-features = false, features = ["std"] }
 twox-hash = "1"
 uuid = "0.8"
@@ -38,7 +38,7 @@ serde = "1"
 serde_json = "1"
 
 [dev-dependencies]
-proptest = "0.9.2"
+proptest = "0.10.1"
 
 [profile.bench]
 debug = true

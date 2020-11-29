@@ -60,6 +60,11 @@ impl Row {
         self.values.len()
     }
 
+    /// Returns true if the row has a length of 0.
+    pub fn is_empty(&self) -> bool {
+        self.values.is_empty()
+    }
+
     /// Returns columns of this row.
     pub fn columns_ref(&self) -> &[Column] {
         &*self.columns

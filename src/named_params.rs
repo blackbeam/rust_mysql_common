@@ -27,9 +27,9 @@ use self::ParserState::*;
 /// * names of named parameters (if any) in order of appearance in `query`. Same name may
 ///   appear multiple times if named parameter used more than once.
 /// * query string to pass to MySql (named parameters replaced with `?`).
-pub fn parse_named_params<'a>(
-    query: &'a str,
-) -> Result<(Option<Vec<String>>, Cow<'a, str>), MixedParamsError> {
+pub fn parse_named_params(
+    query: &str,
+) -> Result<(Option<Vec<String>>, Cow<'_, str>), MixedParamsError> {
     let mut state = TopLevel;
     let mut have_positional = false;
     let mut cur_param = 0;

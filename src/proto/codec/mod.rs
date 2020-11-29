@@ -19,17 +19,13 @@ use std::{
     io::Read,
     mem,
     num::NonZeroUsize,
+    ptr::slice_from_raw_parts_mut,
 };
 
 use self::error::PacketCodecError;
 use crate::constants::{DEFAULT_MAX_ALLOWED_PACKET, MAX_PAYLOAD_LEN, MIN_COMPRESS_LENGTH};
 
 pub mod error;
-
-/// Helper that transmutes `&mut [MaybeUninit<u8>]` to `&mut [u8]`.
-pub(crate) unsafe fn transmute_buf(buf: &mut [mem::MaybeUninit<u8>]) -> &mut [u8] {
-    &mut *(buf as *mut [mem::MaybeUninit<u8>] as *mut [u8])
-}
 
 /// Will split given `packet` to MySql packet chunks and write into `dst`.
 ///
@@ -80,7 +76,10 @@ pub fn compress(
                 loop {
                     dst.reserve(max(chunk.len().saturating_sub(read), 1));
                     let dst_buf = &mut dst.bytes_mut()[7 + read..];
-                    match encoder.read(transmute_buf(dst_buf))? {
+                    match encoder.read(&mut *slice_from_raw_parts_mut(
+                        dst_buf.as_mut_ptr(),
+                        dst_buf.len(),
+                    ))? {
                         0 => break,
                         count => read += count,
                     }
@@ -316,8 +315,10 @@ impl CompDecoder {
                             dst.reserve(plain_len.get());
                             unsafe {
                                 let mut decoder = ZlibDecoder::new(&src[..needed.get()]);
-                                decoder.read_exact(transmute_buf(
-                                    &mut dst.bytes_mut()[..plain_len.get()],
+                                let dst_buf = &mut dst.bytes_mut()[..plain_len.get()];
+                                decoder.read_exact(&mut *slice_from_raw_parts_mut(
+                                    dst_buf.as_mut_ptr(),
+                                    dst_buf.len(),
                                 ))?;
                                 dst.advance_mut(plain_len.get());
                             }

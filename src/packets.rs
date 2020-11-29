@@ -569,10 +569,7 @@ impl<'a> ErrPacket<'a> {
 
     /// Returns false if this error packet contains progress report.
     pub fn is_error(&self) -> bool {
-        match *self {
-            ErrPacket::Error(..) => true,
-            _ => false,
-        }
+        matches!(self, ErrPacket::Error(..))
     }
 
     /// Returns true if this error packet contains progress report.

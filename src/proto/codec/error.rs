@@ -6,8 +6,7 @@
 // option. All files in the project carrying such notice may not be copied,
 // modified, or distributed except according to those terms.
 
-use std::fmt;
-use std::io;
+use std::{fmt, io};
 
 #[derive(Debug)]
 pub enum PacketCodecError {
