@@ -75,7 +75,7 @@ pub fn compress(
                 let mut read = 0;
                 loop {
                     dst.reserve(max(chunk.len().saturating_sub(read), 1));
-                    let dst_buf = &mut dst.bytes_mut()[7 + read..];
+                    let dst_buf = &mut dst.chunk_mut()[7 + read..];
                     match encoder.read(&mut *slice_from_raw_parts_mut(
                         dst_buf.as_mut_ptr(),
                         dst_buf.len(),
@@ -315,7 +315,7 @@ impl CompDecoder {
                             dst.reserve(plain_len.get());
                             unsafe {
                                 let mut decoder = ZlibDecoder::new(&src[..needed.get()]);
-                                let dst_buf = &mut dst.bytes_mut()[..plain_len.get()];
+                                let dst_buf = &mut dst.chunk_mut()[..plain_len.get()];
                                 decoder.read_exact(&mut *slice_from_raw_parts_mut(
                                     dst_buf.as_mut_ptr(),
                                     dst_buf.len(),

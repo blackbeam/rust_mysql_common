@@ -152,8 +152,8 @@ where
                     None => unsafe {
                         self.in_buf.reserve(1);
                         match with_interrupt!(self.stream.read(&mut *slice_from_raw_parts_mut(
-                            self.in_buf.bytes_mut().as_mut_ptr(),
-                            self.in_buf.bytes_mut().len()
+                            self.in_buf.chunk_mut().as_mut_ptr(),
+                            self.in_buf.chunk_mut().len()
                         ))) {
                             Ok(0) => self.eof = true,
                             Ok(x) => {
