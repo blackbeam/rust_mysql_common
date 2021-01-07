@@ -10,8 +10,8 @@ pub static MAX_PAYLOAD_LEN: usize = 16_777_215;
 pub static DEFAULT_MAX_ALLOWED_PACKET: usize = 4 * 1024 * 1024;
 pub static MIN_COMPRESS_LENGTH: usize = 50;
 
-pub static UTF8_GENERAL_CI: u16 = 33;
-pub static UTF8MB4_GENERAL_CI: u16 = 45;
+pub static UTF8_GENERAL_CI: u8 = 33;
+pub static UTF8MB4_GENERAL_CI: u8 = 45;
 
 bitflags! {
     /// MySql server status flags
