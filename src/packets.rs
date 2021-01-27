@@ -1536,7 +1536,8 @@ mod test {
     use super::{
         column_from_payload, parse_auth_more_data, parse_auth_switch_request, parse_err_packet,
         parse_handshake_packet, parse_local_infile_packet, parse_ok_packet, parse_stmt_packet,
-        AuthPlugin, BinlogDumpPacket, HandshakeResponse, OkPacketKind, SessionStateChange,
+        AuthPlugin, BinlogDumpPacket, HandshakeResponse, OkPacketKind, RegisterSlavePacket,
+        SessionStateChange,
     };
     use crate::constants::{
         CapabilityFlags, ColumnFlags, ColumnType, StatusFlags, UTF8_GENERAL_CI,
@@ -1895,7 +1896,7 @@ mod test {
     #[test]
     fn should_build_binlog_dump_packet() {
         let actual: Vec<u8> =
-            BinlogDumpPacket::new(123, Some("mysql-bin-changelog.123"), true, 1).into();
+            BinlogDumpPacket::new(Some("mysql-bin-changelog.123"), 123, true, 1).into();
         let expected: Vec<u8> = [
             0x7b, 0x00, 0x00, 0x00, // position
             0x01, 0x00, // flags
@@ -1906,11 +1907,27 @@ mod test {
         .to_vec();
         assert_eq!(expected, actual);
 
-        let actual: Vec<u8> = BinlogDumpPacket::new(0, None, false, 1).into();
+        let actual: Vec<u8> = BinlogDumpPacket::new(None, 0, false, 1).into();
         let expected: Vec<u8> = [
             0x00, 0x00, 0x00, 0x00, // position
             0x00, 0x00, // flags
             0x01, 0x00, 0x00, 0x00, // server id
+        ]
+        .to_vec();
+        assert_eq!(expected, actual);
+    }
+
+    #[test]
+    fn should_build_register_slave_packet() {
+        let actual: Vec<u8> = RegisterSlavePacket::new(1).into();
+        let expected: Vec<u8> = [
+            0x01, 0x00, 0x00, 0x00, // server id
+            0x00, // slaves hostname leng
+            0x00, // slaves user len
+            0x00, // salves password len
+            0x00, 0x00, // slaves mysql port
+            0x00, 0x00, 0x00, 0x00, // replication rank
+            0x00, 0x00, 0x00, 0x00, // master id
         ]
         .to_vec();
         assert_eq!(expected, actual);
