@@ -1922,7 +1922,7 @@ mod test {
         let actual: Vec<u8> = RegisterSlavePacket::new(1).into();
         let expected: Vec<u8> = [
             0x01, 0x00, 0x00, 0x00, // server id
-            0x00, // slaves hostname leng
+            0x00, // slaves hostname len
             0x00, // slaves user len
             0x00, // salves password len
             0x00, 0x00, // slaves mysql port
