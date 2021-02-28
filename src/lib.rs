@@ -136,34 +136,6 @@ macro_rules! params {
     }
 }
 
-/// Non panicking Slice::split_at
-macro_rules! split_at_or_err {
-    ($reader:expr, $at:expr, $msg:expr) => {
-        if $reader.len() >= $at {
-            Ok($reader.split_at($at))
-        } else {
-            Err(io::Error::new(io::ErrorKind::UnexpectedEof, $msg))
-        }
-    };
-}
-
-/// Reads MySql's length-encoded string
-#[macro_export]
-macro_rules! read_lenenc_str {
-    ($reader:expr) => {{
-        let reader = $reader;
-        reader.read_lenenc_int().and_then(|len| {
-            let (value, rest) = split_at_or_err!(
-                reader,
-                len as usize,
-                "EOF while reading length-encoded string"
-            )?;
-            *reader = rest;
-            Ok(value)
-        })
-    }};
-}
-
 pub mod constants;
 pub mod crypto;
 pub mod io;

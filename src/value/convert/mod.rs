@@ -123,13 +123,11 @@ pub trait FromValue: Sized {
 }
 
 /// Will panic if could not convert `v` to `T`
-#[inline]
 pub fn from_value<T: FromValue>(v: Value) -> T {
     FromValue::from_value(v)
 }
 
 /// Will return `Err(FromValueError(v))` if could not convert `v` to `T`
-#[inline]
 pub fn from_value_opt<T: FromValue>(v: Value) -> Result<T, FromValueError> {
     FromValue::from_value_opt(v)
 }
@@ -561,7 +559,6 @@ impl ConvIr<Time> for ParseIr<Time> {
     }
 }
 
-#[inline]
 fn create_primitive_date_time(
     year: u16,
     month: u8,
@@ -580,14 +577,12 @@ fn create_primitive_date_time(
     None
 }
 
-#[inline]
 fn parse_mysql_datetime_string_with_time(bytes: &[u8]) -> Result<PrimitiveDateTime, ParseError> {
     from_utf8(&*bytes)
         .map_err(|_| ParseError::InsufficientInformation)
         .and_then(|s| time::parse(s, "%Y-%m-%d %H:%M:%S").or_else(|_| time::parse(s, "%Y-%m-%d")))
 }
 
-#[inline]
 fn parse_mysql_time_string_with_time(bytes: &[u8]) -> Result<Time, ParseError> {
     from_utf8(&*bytes)
         .map_err(|_| ParseError::InsufficientInformation)
@@ -681,7 +676,6 @@ impl ConvIr<NaiveDate> for ParseIr<NaiveDate> {
     }
 }
 
-#[inline]
 fn parse_micros(micros_bytes: &[u8]) -> u32 {
     let mut micros = parse(micros_bytes).unwrap();
 

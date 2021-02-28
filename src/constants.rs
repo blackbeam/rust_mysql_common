@@ -1,3 +1,5 @@
+use std::convert::TryFrom;
+
 // Copyright (c) 2017 Anatoly Ikorsky
 //
 // Licensed under the Apache License, Version 2.0
@@ -410,23 +412,29 @@ pub enum SessionStateType {
     SESSION_TRACK_TRANSACTION_STATE,
 }
 
-impl From<u8> for SessionStateType {
-    fn from(x: u8) -> Self {
-        match x {
-            0x00 => SessionStateType::SESSION_TRACK_SYSTEM_VARIABLES,
-            0x01 => SessionStateType::SESSION_TRACK_SCHEMA,
-            0x02 => SessionStateType::SESSION_TRACK_STATE_CHANGE,
-            0x03 => SessionStateType::SESSION_TRACK_GTIDS,
-            0x04 => SessionStateType::SESSION_TRACK_TRANSACTION_CHARACTERISTICS,
-            0x05 => SessionStateType::SESSION_TRACK_TRANSACTION_STATE,
-            x => panic!("Unknown session state type {}", x),
+impl TryFrom<u8> for SessionStateType {
+    type Error = UnknownSessionStateType;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0x00 => Ok(SessionStateType::SESSION_TRACK_SYSTEM_VARIABLES),
+            0x01 => Ok(SessionStateType::SESSION_TRACK_SCHEMA),
+            0x02 => Ok(SessionStateType::SESSION_TRACK_STATE_CHANGE),
+            0x03 => Ok(SessionStateType::SESSION_TRACK_GTIDS),
+            0x04 => Ok(SessionStateType::SESSION_TRACK_TRANSACTION_CHARACTERISTICS),
+            0x05 => Ok(SessionStateType::SESSION_TRACK_TRANSACTION_STATE),
+            x => Err(UnknownSessionStateType(x)),
         }
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[error("Unknown session state type {}", _0)]
+pub struct UnknownSessionStateType(pub u8);
+
 /// Type of MySql column field
 #[allow(non_camel_case_types)]
-#[derive(Clone, Copy, Eq, PartialEq, Debug)]
+#[derive(Clone, Copy, Eq, PartialEq, Debug, Hash)]
 #[repr(u8)]
 pub enum ColumnType {
     MYSQL_TYPE_DECIMAL = 0,
@@ -462,40 +470,46 @@ pub enum ColumnType {
     MYSQL_TYPE_GEOMETRY = 255,
 }
 
-impl From<u8> for ColumnType {
-    fn from(x: u8) -> ColumnType {
-        match x {
-            0x00_u8 => ColumnType::MYSQL_TYPE_DECIMAL,
-            0x01_u8 => ColumnType::MYSQL_TYPE_TINY,
-            0x02_u8 => ColumnType::MYSQL_TYPE_SHORT,
-            0x03_u8 => ColumnType::MYSQL_TYPE_LONG,
-            0x04_u8 => ColumnType::MYSQL_TYPE_FLOAT,
-            0x05_u8 => ColumnType::MYSQL_TYPE_DOUBLE,
-            0x06_u8 => ColumnType::MYSQL_TYPE_NULL,
-            0x07_u8 => ColumnType::MYSQL_TYPE_TIMESTAMP,
-            0x08_u8 => ColumnType::MYSQL_TYPE_LONGLONG,
-            0x09_u8 => ColumnType::MYSQL_TYPE_INT24,
-            0x0a_u8 => ColumnType::MYSQL_TYPE_DATE,
-            0x0b_u8 => ColumnType::MYSQL_TYPE_TIME,
-            0x0c_u8 => ColumnType::MYSQL_TYPE_DATETIME,
-            0x0d_u8 => ColumnType::MYSQL_TYPE_YEAR,
-            0x0f_u8 => ColumnType::MYSQL_TYPE_VARCHAR,
-            0x10_u8 => ColumnType::MYSQL_TYPE_BIT,
-            0x11_u8 => ColumnType::MYSQL_TYPE_TIMESTAMP2,
-            0x12_u8 => ColumnType::MYSQL_TYPE_DATETIME2,
-            0x13_u8 => ColumnType::MYSQL_TYPE_TIME2,
-            0xf5_u8 => ColumnType::MYSQL_TYPE_JSON,
-            0xf6_u8 => ColumnType::MYSQL_TYPE_NEWDECIMAL,
-            0xf7_u8 => ColumnType::MYSQL_TYPE_ENUM,
-            0xf8_u8 => ColumnType::MYSQL_TYPE_SET,
-            0xf9_u8 => ColumnType::MYSQL_TYPE_TINY_BLOB,
-            0xfa_u8 => ColumnType::MYSQL_TYPE_MEDIUM_BLOB,
-            0xfb_u8 => ColumnType::MYSQL_TYPE_LONG_BLOB,
-            0xfc_u8 => ColumnType::MYSQL_TYPE_BLOB,
-            0xfd_u8 => ColumnType::MYSQL_TYPE_VAR_STRING,
-            0xfe_u8 => ColumnType::MYSQL_TYPE_STRING,
-            0xff_u8 => ColumnType::MYSQL_TYPE_GEOMETRY,
-            _ => panic!("Unknown column type {}", x),
+impl TryFrom<u8> for ColumnType {
+    type Error = UnknownColumnType;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0x00_u8 => Ok(ColumnType::MYSQL_TYPE_DECIMAL),
+            0x01_u8 => Ok(ColumnType::MYSQL_TYPE_TINY),
+            0x02_u8 => Ok(ColumnType::MYSQL_TYPE_SHORT),
+            0x03_u8 => Ok(ColumnType::MYSQL_TYPE_LONG),
+            0x04_u8 => Ok(ColumnType::MYSQL_TYPE_FLOAT),
+            0x05_u8 => Ok(ColumnType::MYSQL_TYPE_DOUBLE),
+            0x06_u8 => Ok(ColumnType::MYSQL_TYPE_NULL),
+            0x07_u8 => Ok(ColumnType::MYSQL_TYPE_TIMESTAMP),
+            0x08_u8 => Ok(ColumnType::MYSQL_TYPE_LONGLONG),
+            0x09_u8 => Ok(ColumnType::MYSQL_TYPE_INT24),
+            0x0a_u8 => Ok(ColumnType::MYSQL_TYPE_DATE),
+            0x0b_u8 => Ok(ColumnType::MYSQL_TYPE_TIME),
+            0x0c_u8 => Ok(ColumnType::MYSQL_TYPE_DATETIME),
+            0x0d_u8 => Ok(ColumnType::MYSQL_TYPE_YEAR),
+            0x0f_u8 => Ok(ColumnType::MYSQL_TYPE_VARCHAR),
+            0x10_u8 => Ok(ColumnType::MYSQL_TYPE_BIT),
+            0x11_u8 => Ok(ColumnType::MYSQL_TYPE_TIMESTAMP2),
+            0x12_u8 => Ok(ColumnType::MYSQL_TYPE_DATETIME2),
+            0x13_u8 => Ok(ColumnType::MYSQL_TYPE_TIME2),
+            0xf5_u8 => Ok(ColumnType::MYSQL_TYPE_JSON),
+            0xf6_u8 => Ok(ColumnType::MYSQL_TYPE_NEWDECIMAL),
+            0xf7_u8 => Ok(ColumnType::MYSQL_TYPE_ENUM),
+            0xf8_u8 => Ok(ColumnType::MYSQL_TYPE_SET),
+            0xf9_u8 => Ok(ColumnType::MYSQL_TYPE_TINY_BLOB),
+            0xfa_u8 => Ok(ColumnType::MYSQL_TYPE_MEDIUM_BLOB),
+            0xfb_u8 => Ok(ColumnType::MYSQL_TYPE_LONG_BLOB),
+            0xfc_u8 => Ok(ColumnType::MYSQL_TYPE_BLOB),
+            0xfd_u8 => Ok(ColumnType::MYSQL_TYPE_VAR_STRING),
+            0xfe_u8 => Ok(ColumnType::MYSQL_TYPE_STRING),
+            0xff_u8 => Ok(ColumnType::MYSQL_TYPE_GEOMETRY),
+            x => Err(UnknownColumnType(x)),
         }
     }
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[error("Unknown column type {}", _0)]
+pub struct UnknownColumnType(pub u8);
