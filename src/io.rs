@@ -6,19 +6,243 @@
 // option. All files in the project carrying such notice may not be copied,
 // modified, or distributed except according to those terms.
 
-use crate::value::Value;
 use byteorder::{LittleEndian as LE, ReadBytesExt, WriteBytesExt};
+use bytes::BufMut;
 use std::io;
+
+pub trait BufMutExt: BufMut {
+    /// Writes an unsigned integer to self as MySql length-encoded integer.
+    fn put_lenenc_int(&mut self, n: u64) {
+        if n < 251 {
+            self.put_u8(n as u8);
+        } else if n < 65_536 {
+            self.put_u8(0xFC);
+            self.put_uint_le(n, 2);
+        } else if n < 16_777_216 {
+            self.put_u8(0xFD);
+            self.put_uint_le(n, 3);
+        } else {
+            self.put_u8(0xFE);
+            self.put_uint_le(n, 8);
+        }
+    }
+
+    /// Writes a slice to self as MySql length-encoded string.
+    fn put_lenenc_str(&mut self, s: &[u8]) {
+        self.put_lenenc_int(s.len() as u64);
+        self.put_slice(s);
+    }
+}
+
+impl<T: BufMut> BufMutExt for T {}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub struct ParseBuf<'a>(pub &'a [u8]);
+
+macro_rules! eat_num {
+    ($name:ident, $checked:ident, $t:ident::$fn:ident) => {
+        #[doc = "Consumes a number from the head of the buffer."]
+        pub fn $name(&mut self) -> $t {
+            const SIZE: usize = std::mem::size_of::<$t>();
+            let bytes = self.eat(SIZE);
+            unsafe { $t::$fn(*(bytes as *const _ as *const [_; SIZE])) }
+        }
+
+        #[doc = "Consumes a number from the head of the buffer. Returns `None` if buffer is too small."]
+        pub fn $checked(&mut self) -> Option<$t> {
+            if self.len() >= std::mem::size_of::<$t>() {
+                Some(self.$name())
+            } else {
+                None
+            }
+        }
+    };
+    ($name:ident, $checked:ident, $size:literal, $offset:literal, $t:ident::$fn:ident) => {
+        #[doc = "Consumes a number from the head of the buffer."]
+        pub fn $name(&mut self) -> $t {
+            const SIZE: usize = $size;
+            let mut x: $t = 0;
+            let bytes = self.eat(SIZE);
+            for (i, b) in bytes.iter().enumerate() {
+                x |= (*b as $t) << ((8 * i) + (8 * $offset));
+            }
+            $t::$fn(x)
+        }
+
+        #[doc = "Consumes a number from the head of the buffer. Returns `None` if buffer is too small."]
+        pub fn $checked(&mut self) -> Option<$t> {
+            if self.len() >= $size {
+                Some(self.$name())
+            } else {
+                None
+            }
+        }
+    };
+}
+
+impl<'a> ParseBuf<'a> {
+    /// Returns true if buffer is empty.
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// Returns the number of bytes in the buffer.
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    /// Skips the given number of bytes.
+    ///
+    /// Afterwards self contains elements `[cnt, len)`.
+    pub fn skip(&mut self, cnt: usize) {
+        self.0 = &self.0[cnt..];
+    }
+
+    /// Same as `skip` but returns `false` if buffer is too small.
+    pub fn checked_skip(&mut self, cnt: usize) -> bool {
+        if self.len() >= cnt {
+            self.skip(cnt);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Splits the buffer into two at the given index. Returns elements `[0, n)`.
+    ///
+    /// Afterwards self contains elements `[n, len)`.
+    ///
+    /// # Panic
+    ///
+    /// Will panic if `n > self.len()`.
+    pub fn eat(&mut self, n: usize) -> &'a [u8] {
+        let (left, right) = self.0.split_at(n);
+        self.0 = right;
+        left
+    }
+
+    pub fn eat_buf(&mut self, n: usize) -> Self {
+        Self(self.eat(n))
+    }
+
+    /// Same as `eat`. Returns `None` if buffer is too small.
+    pub fn checked_eat(&mut self, n: usize) -> Option<&'a [u8]> {
+        if self.len() >= n {
+            Some(self.eat(n))
+        } else {
+            None
+        }
+    }
+
+    pub fn checked_eat_buf(&mut self, n: usize) -> Option<Self> {
+        Some(Self(self.checked_eat(n)?))
+    }
+
+    pub fn eat_all(&mut self) -> &'a [u8] {
+        self.eat(self.len())
+    }
+
+    eat_num!(eat_u8, checked_eat_u8, u8::from_le_bytes);
+    eat_num!(eat_i8, checked_eat_i8, i8::from_le_bytes);
+    eat_num!(eat_u16_le, checked_eat_u16_le, u16::from_le_bytes);
+    eat_num!(eat_i16_le, checked_eat_i16_le, i16::from_le_bytes);
+    eat_num!(eat_u16_be, checked_eat_u16_be, u16::from_be_bytes);
+    eat_num!(eat_i16_be, checked_eat_i16_be, i16::from_be_bytes);
+    eat_num!(eat_u24_le, checked_eat_u24_le, 3, 0, u32::from_le);
+    eat_num!(eat_i24_le, checked_eat_i24_le, 3, 0, i32::from_le);
+    eat_num!(eat_u24_be, checked_eat_u24_be, 3, 1, u32::from_be);
+    eat_num!(eat_i24_be, checked_eat_i24_be, 3, 1, i32::from_be);
+    eat_num!(eat_u32_le, checked_eat_u32_le, u32::from_le_bytes);
+    eat_num!(eat_i32_le, checked_eat_i32_le, i32::from_le_bytes);
+    eat_num!(eat_u32_be, checked_eat_u32_be, u32::from_be_bytes);
+    eat_num!(eat_i32_be, checked_eat_i32_be, i32::from_be_bytes);
+    eat_num!(eat_u40_le, checked_eat_u40_le, 5, 0, u64::from_le);
+    eat_num!(eat_i40_le, checked_eat_i40_le, 5, 0, i64::from_le);
+    eat_num!(eat_u40_be, checked_eat_u40_be, 5, 3, u64::from_be);
+    eat_num!(eat_i40_be, checked_eat_i40_be, 5, 3, i64::from_be);
+    eat_num!(eat_u48_le, checked_eat_u48_le, 6, 0, u64::from_le);
+    eat_num!(eat_i48_le, checked_eat_i48_le, 6, 0, i64::from_le);
+    eat_num!(eat_u48_be, checked_eat_u48_be, 6, 2, u64::from_be);
+    eat_num!(eat_i48_be, checked_eat_i48_be, 6, 2, i64::from_be);
+    eat_num!(eat_u56_le, checked_eat_u56_le, 7, 0, u64::from_le);
+    eat_num!(eat_i56_le, checked_eat_i56_le, 7, 0, i64::from_le);
+    eat_num!(eat_u56_be, checked_eat_u56_be, 7, 1, u64::from_be);
+    eat_num!(eat_i56_be, checked_eat_i56_be, 7, 1, i64::from_be);
+    eat_num!(eat_u64_le, checked_eat_u64_le, u64::from_le_bytes);
+    eat_num!(eat_i64_le, checked_eat_i64_le, i64::from_le_bytes);
+    eat_num!(eat_u64_be, checked_eat_u64_be, u64::from_be_bytes);
+    eat_num!(eat_i64_be, checked_eat_i64_be, i64::from_be_bytes);
+    eat_num!(eat_u128_le, checked_eat_u128_le, u128::from_le_bytes);
+    eat_num!(eat_i128_le, checked_eat_i128_le, i128::from_le_bytes);
+    eat_num!(eat_u128_be, checked_eat_u128_be, u128::from_be_bytes);
+    eat_num!(eat_i128_be, checked_eat_i128_be, i128::from_be_bytes);
+
+    eat_num!(eat_f32_le, checked_eat_f32_le, f32::from_le_bytes);
+    eat_num!(eat_f32_be, checked_eat_f32_be, f32::from_be_bytes);
+
+    eat_num!(eat_f64_le, checked_eat_f64_le, f64::from_le_bytes);
+    eat_num!(eat_f64_be, checked_eat_f64_be, f64::from_be_bytes);
+
+    /// Consumes MySql length-encoded integer from the head of the buffer.
+    ///
+    /// Returns `0` if integer is maliformed (starts with 0xff or 0xfb). First byte will be eaten.
+    pub fn eat_lenenc_int(&mut self) -> u64 {
+        match self.eat_u8() {
+            x @ 0..=0xfa => x as u64,
+            0xfc => self.eat_u16_le() as u64,
+            0xfd => self.eat_u24_le() as u64,
+            0xfe => self.eat_u64_le(),
+            0xfb | 0xff => 0,
+        }
+    }
+
+    /// Same as `eat_lenenc_int`. Returns `None` if buffer is too small.
+    pub fn checked_eat_lenenc_int(&mut self) -> Option<u64> {
+        match self.checked_eat_u8()? {
+            x @ 0..=0xfa => Some(x as u64),
+            0xfc => self.checked_eat_u16_le().map(|x| x as u64),
+            0xfd => self.checked_eat_u24_le().map(|x| x as u64),
+            0xfe => self.checked_eat_u64_le(),
+            0xfb | 0xff => Some(0),
+        }
+    }
+
+    /// Consumes MySql length-encoded string from the head of the buffer.
+    ///
+    /// Returns an empty slice if length is maliformed (starts with 0xff). First byte will be eaten.
+    pub fn eat_lenenc_str(&mut self) -> &'a [u8] {
+        let len = self.eat_lenenc_int();
+        self.eat(len as usize)
+    }
+
+    /// Same as `eat_lenenc_str`. Returns `None` if buffer is too small.
+    pub fn checked_eat_lenenc_str(&mut self) -> Option<&'a [u8]> {
+        let len = self.checked_eat_lenenc_int()?;
+        self.checked_eat(len as usize)
+    }
+
+    /// Consumes null-terminated string from the head of the buffer.
+    ///
+    /// Consumes whole buffer if there is no `0`-byte.
+    pub fn eat_null_str(&mut self) -> &'a [u8] {
+        let pos = self
+            .0
+            .iter()
+            .position(|x| *x == 0)
+            .unwrap_or_else(|| self.len());
+        self.eat(pos)
+    }
+}
 
 pub trait ReadMysqlExt: ReadBytesExt {
     /// Reads MySql's length-encoded integer.
     fn read_lenenc_int(&mut self) -> io::Result<u64> {
         match self.read_u8()? {
-            x if x < 0xfc => Ok(x.into()),
+            x if x < 0xfa => Ok(x.into()),
             0xfc => self.read_uint::<LE>(2),
             0xfd => self.read_uint::<LE>(3),
             0xfe => self.read_uint::<LE>(8),
-            0xff => Err(io::Error::new(
+            0xfb | 0xff => Err(io::Error::new(
                 io::ErrorKind::Other,
                 "Invalid length-encoded integer value",
             )),
@@ -54,86 +278,28 @@ pub trait WriteMysqlExt: WriteBytesExt {
         self.write_all(bytes)?;
         Ok(written + bytes.len() as u64)
     }
-
-    /// Writes MySql's value in binary value format.
-    fn write_bin_value(&mut self, value: &Value) -> io::Result<u64> {
-        match *value {
-            Value::NULL => Ok(0),
-            Value::Bytes(ref x) => self.write_lenenc_str(&x[..]),
-            Value::Int(x) => {
-                self.write_i64::<LE>(x)?;
-                Ok(8)
-            }
-            Value::UInt(x) => {
-                self.write_u64::<LE>(x)?;
-                Ok(8)
-            }
-            Value::Float(x) => {
-                self.write_f32::<LE>(x)?;
-                Ok(8)
-            }
-            Value::Double(x) => {
-                self.write_f64::<LE>(x)?;
-                Ok(8)
-            }
-            Value::Date(0u16, 0u8, 0u8, 0u8, 0u8, 0u8, 0u32) => {
-                self.write_u8(0u8)?;
-                Ok(1)
-            }
-            Value::Date(y, m, d, 0u8, 0u8, 0u8, 0u32) => {
-                self.write_u8(4u8)?;
-                self.write_u16::<LE>(y)?;
-                self.write_u8(m)?;
-                self.write_u8(d)?;
-                Ok(5)
-            }
-            Value::Date(y, m, d, h, i, s, 0u32) => {
-                self.write_u8(7u8)?;
-                self.write_u16::<LE>(y)?;
-                self.write_u8(m)?;
-                self.write_u8(d)?;
-                self.write_u8(h)?;
-                self.write_u8(i)?;
-                self.write_u8(s)?;
-                Ok(8)
-            }
-            Value::Date(y, m, d, h, i, s, u) => {
-                self.write_u8(11u8)?;
-                self.write_u16::<LE>(y)?;
-                self.write_u8(m)?;
-                self.write_u8(d)?;
-                self.write_u8(h)?;
-                self.write_u8(i)?;
-                self.write_u8(s)?;
-                self.write_u32::<LE>(u)?;
-                Ok(12)
-            }
-            Value::Time(_, 0u32, 0u8, 0u8, 0u8, 0u32) => {
-                self.write_u8(0u8)?;
-                Ok(1)
-            }
-            Value::Time(neg, d, h, m, s, 0u32) => {
-                self.write_u8(8u8)?;
-                self.write_u8(if neg { 1u8 } else { 0u8 })?;
-                self.write_u32::<LE>(d)?;
-                self.write_u8(h)?;
-                self.write_u8(m)?;
-                self.write_u8(s)?;
-                Ok(9)
-            }
-            Value::Time(neg, d, h, m, s, u) => {
-                self.write_u8(12u8)?;
-                self.write_u8(if neg { 1u8 } else { 0u8 })?;
-                self.write_u32::<LE>(d)?;
-                self.write_u8(h)?;
-                self.write_u8(m)?;
-                self.write_u8(s)?;
-                self.write_u32::<LE>(u)?;
-                Ok(13)
-            }
-        }
-    }
 }
 
 impl<T> ReadMysqlExt for T where T: ReadBytesExt {}
 impl<T> WriteMysqlExt for T where T: WriteBytesExt {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn be_le() {
+        let buf = ParseBuf(&[0, 1, 2]);
+        assert_eq!(buf.clone().eat_u24_le(), 0x00020100);
+        assert_eq!(buf.clone().eat_u24_be(), 0x00000102);
+        let buf = ParseBuf(&[0, 1, 2, 3, 4]);
+        assert_eq!(buf.clone().eat_u40_le(), 0x0000000403020100);
+        assert_eq!(buf.clone().eat_u40_be(), 0x0000000001020304);
+        let buf = ParseBuf(&[0, 1, 2, 3, 4, 5]);
+        assert_eq!(buf.clone().eat_u48_le(), 0x0000050403020100);
+        assert_eq!(buf.clone().eat_u48_be(), 0x0000000102030405);
+        let buf = ParseBuf(&[0, 1, 2, 3, 4, 5, 6]);
+        assert_eq!(buf.clone().eat_u56_le(), 0x0006050403020100);
+        assert_eq!(buf.clone().eat_u56_be(), 0x0000010203040506);
+    }
+}

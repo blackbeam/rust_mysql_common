@@ -6,15 +6,15 @@
 // option. All files in the project carrying such notice may not be copied,
 // modified, or distributed except according to those terms.
 
-use byteorder::{LittleEndian as LE, ReadBytesExt};
+use bytes::BufMut;
 
-use std::{fmt, io, str::from_utf8};
+use std::{convert::TryFrom, fmt, io, str::from_utf8};
 
 use crate::{
     constants::{ColumnFlags, ColumnType},
-    io::ReadMysqlExt,
-    misc::lenenc_int_len,
-    packets::{Column, NullBitmap},
+    io::{BufMutExt, ParseBuf},
+    misc::{lenenc_str_len, unexpected_buf_eof},
+    proto::{MyDeserialize, MySerialize},
     value::Value::*,
 };
 
@@ -42,6 +42,15 @@ impl SerializationSide for ClientSide {
     const BIT_OFFSET: usize = 0;
 }
 
+/// Value representation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ValueRepr {
+    /// Text protocol value
+    Text,
+    /// Binary protocol value.
+    Binary(ColumnType, ColumnFlags),
+}
+
 /// Client side representation of a value of MySql column.
 ///
 /// The `Value` is also used as a parameter to a prepared statement.
@@ -59,31 +68,88 @@ pub enum Value {
     Time(bool, u32, u8, u8, u8, u32),
 }
 
-/// Reads value in text format.
-pub fn read_text_value(input: &mut &[u8]) -> io::Result<Value> {
-    Value::read_text(input)
+impl MySerialize for Value {
+    fn serialize(&self, buf: &mut Vec<u8>) {
+        match self {
+            Self::NULL => (),
+            Value::Bytes(x) => {
+                buf.put_lenenc_str(&*x);
+            }
+            Value::Int(x) => {
+                buf.put_i64_le(*x);
+            }
+            Value::UInt(x) => {
+                buf.put_u64_le(*x);
+            }
+            Value::Float(x) => {
+                buf.put_f32_le(*x);
+            }
+            Value::Double(x) => {
+                buf.put_f64_le(*x);
+            }
+            Value::Date(0u16, 0u8, 0u8, 0u8, 0u8, 0u8, 0u32) => {
+                buf.put_u8(0);
+            }
+            Value::Date(y, m, d, 0u8, 0u8, 0u8, 0u32) => {
+                buf.put_u8(4);
+                buf.put_u16_le(*y);
+                buf.put_u8(*m);
+                buf.put_u8(*d);
+            }
+            Value::Date(y, m, d, h, i, s, 0u32) => {
+                buf.put_u8(7);
+                buf.put_u16_le(*y);
+                buf.put_u8(*m);
+                buf.put_u8(*d);
+                buf.put_u8(*h);
+                buf.put_u8(*i);
+                buf.put_u8(*s);
+            }
+            Value::Date(y, m, d, h, i, s, u) => {
+                buf.put_u8(11);
+                buf.put_u16_le(*y);
+                buf.put_u8(*m);
+                buf.put_u8(*d);
+                buf.put_u8(*h);
+                buf.put_u8(*i);
+                buf.put_u8(*s);
+                buf.put_u32_le(*u);
+            }
+            Value::Time(_, 0u32, 0u8, 0u8, 0u8, 0u32) => {
+                buf.put_u8(0);
+            }
+            Value::Time(neg, d, h, m, s, 0u32) => {
+                buf.put_u8(8);
+                buf.put_u8(if *neg { 1 } else { 0 });
+                buf.put_u32_le(*d);
+                buf.put_u8(*h);
+                buf.put_u8(*m);
+                buf.put_u8(*s);
+            }
+            Value::Time(neg, d, h, m, s, u) => {
+                buf.put_u8(12);
+                buf.put_u8(if *neg { 1 } else { 0 });
+                buf.put_u32_le(*d);
+                buf.put_u8(*h);
+                buf.put_u8(*m);
+                buf.put_u8(*s);
+                buf.put_u32_le(*u);
+            }
+        }
+    }
 }
 
-/// Reads multiple values in text format.
-pub fn read_text_values(input: &[u8], count: usize) -> io::Result<Vec<Value>> {
-    Value::read_text_many(input, count)
-}
+impl<'de> MyDeserialize<'de> for Value {
+    type Ctx = ValueRepr;
 
-/// Reads value in binary format.
-pub fn read_bin_value(
-    input: &mut &[u8],
-    column_type: ColumnType,
-    unsigned: bool,
-) -> io::Result<Value> {
-    Value::read_bin(input, column_type, unsigned)
-}
-
-/// Reads multiple values in binary format.
-pub fn read_bin_values<T: SerializationSide>(
-    input: &[u8],
-    columns: &[Column],
-) -> io::Result<Vec<Value>> {
-    Value::read_bin_many::<T>(input, columns)
+    fn deserialize(repr: Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+        match repr {
+            ValueRepr::Text => Value::deserialize_text(buf),
+            ValueRepr::Binary(column_type, column_flags) => {
+                Value::deserialize_bin((column_type, column_flags), buf)
+            }
+        }
+    }
 }
 
 /// Will escape string for SQL depending on `no_backslash_escape` flag.
@@ -125,13 +191,28 @@ fn escaped(input: &str, no_backslash_escape: bool) -> String {
     output
 }
 
+macro_rules! de_num {
+    ($name:ident, $i:ident, $u:ident) => {
+        fn $name(unsigned: bool, buf: &mut ParseBuf<'_>) -> io::Result<Self> {
+            if unsigned {
+                buf.$u()
+                    .ok_or_else(unexpected_buf_eof)
+                    .map(|x| Int(x as i64))
+            } else {
+                buf.$i()
+                    .ok_or_else(unexpected_buf_eof)
+                    .map(|x| Int(x as i64))
+            }
+        }
+    };
+}
+
 impl Value {
     /// Returns length in binary serialized form.
-    #[inline]
-    pub fn bin_len(&self) -> usize {
+    pub fn bin_len(&self) -> u64 {
         match self {
             Value::NULL => 0,
-            Value::Bytes(x) => lenenc_int_len(x.len()) + x.len(),
+            Value::Bytes(x) => lenenc_str_len(&*x),
             Value::Int(_) => 8,
             Value::UInt(_) => 8,
             Value::Float(_) => 4,
@@ -201,40 +282,109 @@ impl Value {
         }
     }
 
-    fn read_text(input: &mut &[u8]) -> io::Result<Value> {
-        if input.is_empty() {
-            Err(io::Error::new(
-                io::ErrorKind::UnexpectedEof,
-                "Unexpected EOF while reading Value",
-            ))
-        } else if input[0] == 0xfb {
-            let _ = input.read_u8();
-            Ok(Value::NULL)
-        } else {
-            Ok(Value::Bytes(read_lenenc_str!(input)?.into()))
+    fn deserialize_text(buf: &mut ParseBuf<'_>) -> io::Result<Self> {
+        if buf.is_empty() {
+            return Err(unexpected_buf_eof());
         }
-    }
 
-    fn read_text_many(mut input: &[u8], count: usize) -> io::Result<Vec<Value>> {
-        let mut output = Vec::<Value>::new();
-        loop {
-            if input.is_empty() {
-                if output.len() != count {
-                    return Err(io::Error::new(
-                        io::ErrorKind::UnexpectedEof,
-                        "Unexpected EOF while reading Values",
-                    ));
-                } else {
-                    break;
-                }
-            } else {
-                output.push(read_text_value(&mut input)?)
+        match buf.0[0] {
+            0xfb => Ok(Value::NULL),
+            _ => {
+                let bytes = buf
+                    .checked_eat_lenenc_str()
+                    .ok_or_else(unexpected_buf_eof)?;
+                Ok(Value::Bytes(bytes.to_vec()))
             }
         }
-        Ok(output)
     }
 
-    fn read_bin(input: &mut &[u8], column_type: ColumnType, unsigned: bool) -> io::Result<Value> {
+    de_num!(deserialize_tiny, checked_eat_i8, checked_eat_u8);
+    de_num!(deserialize_short, checked_eat_i16_le, checked_eat_u16_le);
+    de_num!(deserialize_long, checked_eat_i32_le, checked_eat_u32_le);
+
+    fn deserialize_longlong(unsigned: bool, buf: &mut ParseBuf<'_>) -> io::Result<Self> {
+        if unsigned {
+            buf.checked_eat_u64_le()
+                .ok_or_else(unexpected_buf_eof)
+                .map(|x| i64::try_from(x).map(Int).unwrap_or_else(|_| UInt(x)))
+        } else {
+            buf.checked_eat_i64_le()
+                .ok_or_else(unexpected_buf_eof)
+                .map(Int)
+        }
+    }
+
+    fn deserialize_datetime(buf: &mut ParseBuf<'_>) -> io::Result<Self> {
+        let len = buf.checked_eat_u8().ok_or_else(unexpected_buf_eof)?;
+
+        let mut year = 0u16;
+        let mut month = 0u8;
+        let mut day = 0u8;
+        let mut hour = 0u8;
+        let mut minute = 0u8;
+        let mut second = 0u8;
+        let mut micro_second = 0u32;
+
+        let mut buf = buf
+            .checked_eat_buf(len as usize)
+            .ok_or_else(unexpected_buf_eof)?;
+
+        if len >= 4u8 {
+            year = buf.eat_u16_le();
+            month = buf.eat_u8();
+            day = buf.eat_u8();
+        }
+        if len >= 7u8 {
+            hour = buf.eat_u8();
+            minute = buf.eat_u8();
+            second = buf.eat_u8();
+        }
+        if len == 11u8 {
+            micro_second = buf.eat_u32_le();
+        }
+
+        Ok(Date(year, month, day, hour, minute, second, micro_second))
+    }
+
+    fn deserialize_time(buf: &mut ParseBuf<'_>) -> io::Result<Self> {
+        let len = buf.checked_eat_u8().ok_or_else(unexpected_buf_eof)?;
+
+        let mut is_negative = false;
+        let mut days = 0u32;
+        let mut hours = 0u8;
+        let mut minutes = 0u8;
+        let mut seconds = 0u8;
+        let mut micro_seconds = 0u32;
+
+        let mut buf = buf
+            .checked_eat_buf(len as usize)
+            .ok_or_else(unexpected_buf_eof)?;
+
+        if len >= 8u8 {
+            is_negative = buf.eat_u8() == 1u8;
+            days = buf.eat_u32_le();
+            hours = buf.eat_u8();
+            minutes = buf.eat_u8();
+            seconds = buf.eat_u8();
+        }
+        if len == 12u8 {
+            micro_seconds = buf.eat_u32_le();
+        }
+
+        Ok(Time(
+            is_negative,
+            days,
+            hours,
+            minutes,
+            seconds,
+            micro_seconds,
+        ))
+    }
+
+    fn deserialize_bin(
+        (column_type, column_flags): (ColumnType, ColumnFlags),
+        buf: &mut ParseBuf<'_>,
+    ) -> io::Result<Self> {
         match column_type {
             ColumnType::MYSQL_TYPE_STRING
             | ColumnType::MYSQL_TYPE_VAR_STRING
@@ -249,117 +399,38 @@ impl Value {
             | ColumnType::MYSQL_TYPE_BIT
             | ColumnType::MYSQL_TYPE_NEWDECIMAL
             | ColumnType::MYSQL_TYPE_GEOMETRY
-            | ColumnType::MYSQL_TYPE_JSON => Ok(Bytes(read_lenenc_str!(input)?.into())),
+            | ColumnType::MYSQL_TYPE_JSON => Ok(Bytes(
+                buf.checked_eat_lenenc_str()
+                    .ok_or_else(unexpected_buf_eof)?
+                    .to_vec(),
+            )),
             ColumnType::MYSQL_TYPE_TINY => {
-                if unsigned {
-                    Ok(Int(input.read_u8()?.into()))
-                } else {
-                    Ok(Int(input.read_i8()?.into()))
-                }
+                Self::deserialize_tiny(column_flags.contains(ColumnFlags::UNSIGNED_FLAG), buf)
             }
             ColumnType::MYSQL_TYPE_SHORT | ColumnType::MYSQL_TYPE_YEAR => {
-                if unsigned {
-                    Ok(Int(input.read_u16::<LE>()?.into()))
-                } else {
-                    Ok(Int(input.read_i16::<LE>()?.into()))
-                }
+                Self::deserialize_short(column_flags.contains(ColumnFlags::UNSIGNED_FLAG), buf)
             }
             ColumnType::MYSQL_TYPE_LONG | ColumnType::MYSQL_TYPE_INT24 => {
-                if unsigned {
-                    Ok(Int(input.read_u32::<LE>()?.into()))
-                } else {
-                    Ok(Int(input.read_i32::<LE>()?.into()))
-                }
+                Self::deserialize_long(column_flags.contains(ColumnFlags::UNSIGNED_FLAG), buf)
             }
             ColumnType::MYSQL_TYPE_LONGLONG => {
-                if unsigned {
-                    Ok(UInt(input.read_u64::<LE>()?))
-                } else {
-                    Ok(Int(input.read_i64::<LE>()?))
-                }
+                Self::deserialize_longlong(column_flags.contains(ColumnFlags::UNSIGNED_FLAG), buf)
             }
-            ColumnType::MYSQL_TYPE_FLOAT => Ok(Float(input.read_f32::<LE>()?)),
-            ColumnType::MYSQL_TYPE_DOUBLE => Ok(Double(input.read_f64::<LE>()?)),
+            ColumnType::MYSQL_TYPE_FLOAT => buf
+                .checked_eat_f32_le()
+                .ok_or_else(unexpected_buf_eof)
+                .map(Float),
+            ColumnType::MYSQL_TYPE_DOUBLE => buf
+                .checked_eat_f64_le()
+                .ok_or_else(unexpected_buf_eof)
+                .map(Double),
             ColumnType::MYSQL_TYPE_TIMESTAMP
             | ColumnType::MYSQL_TYPE_DATE
-            | ColumnType::MYSQL_TYPE_DATETIME => {
-                let len = input.read_u8()?;
-                let mut year = 0u16;
-                let mut month = 0u8;
-                let mut day = 0u8;
-                let mut hour = 0u8;
-                let mut minute = 0u8;
-                let mut second = 0u8;
-                let mut micro_second = 0u32;
-                if len >= 4u8 {
-                    year = input.read_u16::<LE>()?;
-                    month = input.read_u8()?;
-                    day = input.read_u8()?;
-                }
-                if len >= 7u8 {
-                    hour = input.read_u8()?;
-                    minute = input.read_u8()?;
-                    second = input.read_u8()?;
-                }
-                if len == 11u8 {
-                    micro_second = input.read_u32::<LE>()?;
-                }
-                Ok(Date(year, month, day, hour, minute, second, micro_second))
-            }
-            ColumnType::MYSQL_TYPE_TIME => {
-                let len = input.read_u8()?;
-                let mut is_negative = false;
-                let mut days = 0u32;
-                let mut hours = 0u8;
-                let mut minutes = 0u8;
-                let mut seconds = 0u8;
-                let mut micro_seconds = 0u32;
-                if len >= 8u8 {
-                    is_negative = input.read_u8()? == 1u8;
-                    days = input.read_u32::<LE>()?;
-                    hours = input.read_u8()?;
-                    minutes = input.read_u8()?;
-                    seconds = input.read_u8()?;
-                }
-                if len == 12u8 {
-                    micro_seconds = input.read_u32::<LE>()?;
-                }
-                Ok(Time(
-                    is_negative,
-                    days,
-                    hours,
-                    minutes,
-                    seconds,
-                    micro_seconds,
-                ))
-            }
+            | ColumnType::MYSQL_TYPE_DATETIME => Self::deserialize_datetime(buf),
+            ColumnType::MYSQL_TYPE_TIME => Self::deserialize_time(buf),
             ColumnType::MYSQL_TYPE_NULL => Ok(NULL),
             x => unimplemented!("Unsupported column type {:?}", x),
         }
-    }
-
-    fn read_bin_many<T: SerializationSide>(
-        mut input: &[u8],
-        columns: &[Column],
-    ) -> io::Result<Vec<Value>> {
-        input.read_u8()?;
-
-        let bitmap = NullBitmap::<T>::read(&mut input, columns.len());
-        let mut values = Vec::with_capacity(columns.len());
-
-        for (i, column) in columns.iter().enumerate() {
-            if bitmap.is_null(i) {
-                values.push(NULL)
-            } else {
-                values.push(read_bin_value(
-                    &mut input,
-                    column.column_type(),
-                    column.flags().contains(ColumnFlags::UNSIGNED_FLAG),
-                )?)
-            }
-        }
-
-        Ok(values)
     }
 }
 

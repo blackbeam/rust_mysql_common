@@ -34,13 +34,11 @@ impl Error for FromRowError {
 }
 
 /// Will *panic* if could not convert `row` to `T`.
-#[inline]
 pub fn from_row<T: FromRow>(row: Row) -> T {
     FromRow::from_row(row)
 }
 
 /// Will return `Err(row)` if could not convert `row` to `T`
-#[inline]
 pub fn from_row_opt<T: FromRow>(row: Row) -> Result<T, FromRowError> {
     FromRow::from_row_opt(row)
 }
@@ -72,7 +70,6 @@ pub fn from_row_opt<T: FromRow>(row: Row) -> Result<T, FromRowError> {
 /// from_row::<(Vec<u8>, Option<u8>, u16)>(row) // this'll work and return (vec![..], None, 1024u16)
 /// ```
 pub trait FromRow {
-    #[inline]
     fn from_row(row: Row) -> Self
     where
         Self: Sized,

@@ -7,13 +7,16 @@
 // modified, or distributed except according to those terms.
 
 use crate::{
-    packets::Column,
+    io::ParseBuf,
+    misc::unexpected_buf_eof,
+    packets::{Column, NullBitmap},
+    proto::{Binary, MyDeserialize, Text},
     value::{
         convert::{from_value, from_value_opt, FromValue, FromValueError},
-        Value,
+        SerializationSide, Value, ValueRepr,
     },
 };
-use std::{fmt, ops::Index, sync::Arc};
+use std::{borrow::Cow, fmt, io, marker::PhantomData, ops::Index, sync::Arc};
 
 pub mod convert;
 
@@ -205,5 +208,58 @@ impl<'a> ColumnIndex for &'a str {
             }
         }
         None
+    }
+}
+
+/// Row deserializer.
+///
+/// `S` – serialization side (see [`SerializationSide`]);
+/// `P` – protocol.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RowDeserializer<S, P>(Row, PhantomData<(S, P)>);
+
+impl<S, P> From<RowDeserializer<S, P>> for Row {
+    fn from(x: RowDeserializer<S, P>) -> Self {
+        x.0
+    }
+}
+
+impl<'de, T> MyDeserialize<'de> for RowDeserializer<T, Text> {
+    type Ctx = Arc<[Column]>;
+
+    fn deserialize(columns: Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+        let mut values = Vec::with_capacity(columns.len());
+
+        for _ in 0..columns.len() {
+            values.push(Some(Value::deserialize(ValueRepr::Text, &mut *buf)?))
+        }
+
+        Ok(Self(Row { values, columns }, PhantomData))
+    }
+}
+
+impl<'de, S: SerializationSide> MyDeserialize<'de> for RowDeserializer<S, Binary> {
+    type Ctx = Arc<[Column]>;
+
+    fn deserialize(columns: Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+        use Value::*;
+
+        buf.checked_eat_u8().ok_or_else(unexpected_buf_eof)?;
+
+        let bitmap = NullBitmap::<S, Cow<'de, [u8]>>::deserialize(columns.len(), &mut *buf)?;
+        let mut values = Vec::with_capacity(columns.len());
+
+        for (i, column) in columns.iter().enumerate() {
+            if bitmap.is_null(i) {
+                values.push(Some(NULL))
+            } else {
+                values.push(Some(Value::deserialize(
+                    ValueRepr::Binary(column.column_type(), column.flags()),
+                    &mut *buf,
+                )?));
+            }
+        }
+
+        Ok(Self(Row { values, columns }, PhantomData))
     }
 }

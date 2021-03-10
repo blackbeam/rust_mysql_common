@@ -32,20 +32,25 @@ pub mod error;
 /// Chunk ids will start with given `seq_id`.
 ///
 /// Resulting sequence id will be returned.
-pub fn packet_to_chunks(mut seq_id: u8, packet: &[u8], dst: &mut BytesMut) -> u8 {
-    dst.reserve(packet.len() + (packet.len() / MAX_PAYLOAD_LEN) * 4 + 4);
+pub fn packet_to_chunks<T: Buf>(mut seq_id: u8, packet: &mut T, dst: &mut BytesMut) -> u8 {
+    let extra_packet = packet.remaining() % MAX_PAYLOAD_LEN == 0;
+    dst.reserve(packet.remaining() + (packet.remaining() / MAX_PAYLOAD_LEN) * 4 + 4);
 
-    let chunks = packet
-        .chunks(MAX_PAYLOAD_LEN)
-        .chain(if packet.len() % MAX_PAYLOAD_LEN == 0 {
-            Some(&[][..])
-        } else {
-            None
-        });
+    while packet.has_remaining() {
+        let mut chunk_len = min(packet.remaining(), MAX_PAYLOAD_LEN);
+        dst.put_u32_le(chunk_len as u32 | (u32::from(seq_id) << 24));
+        while chunk_len > 0 {
+            let chunk = packet.chunk();
+            let count = min(chunk.len(), chunk_len);
+            dst.put(&chunk[..count]);
+            chunk_len -= count;
+            packet.advance(count);
+        }
+        seq_id = seq_id.wrapping_add(1);
+    }
 
-    for chunk in chunks {
-        dst.put_u32_le(chunk.len() as u32 | (u32::from(seq_id) << 24));
-        dst.put(chunk);
+    if extra_packet {
+        dst.put_u32_le(u32::from(seq_id) << 24);
         seq_id = seq_id.wrapping_add(1);
     }
 
@@ -146,12 +151,20 @@ impl ChunkDecoder {
     /// Will try to decode MySql packet chunk from `src` to `dst`.
     ///
     /// If chunk is decoded, then `ChunkInfo` is returned.
-    pub fn decode(
+    ///
+    /// If the `dst` buffer isn't empty then it is expected that it contains previous chunks
+    /// of the same packet, or this function may erroneously report
+    /// [`PacketCodecError::PacketTooLarge`] error.
+    pub fn decode<T>(
         &mut self,
         src: &mut BytesMut,
-        dst: &mut Vec<u8>,
+        dst: &mut T,
         max_allowed_packet: usize,
-    ) -> Result<Option<ChunkInfo>, PacketCodecError> {
+    ) -> Result<Option<ChunkInfo>, PacketCodecError>
+    where
+        T: AsRef<[u8]>,
+        T: BufMut,
+    {
         match *self {
             ChunkDecoder::Idle => {
                 if src.len() < 4 {
@@ -163,11 +176,9 @@ impl ChunkDecoder {
 
                     match NonZeroUsize::new(raw_chunk_len) {
                         Some(chunk_len) => {
-                            if dst.len() + chunk_len.get() > max_allowed_packet {
+                            if dst.as_ref().len() + chunk_len.get() > max_allowed_packet {
                                 return Err(PacketCodecError::PacketTooLarge);
                             }
-
-                            dst.reserve(chunk_len.get());
 
                             *self = ChunkDecoder::Chunk {
                                 seq_id,
@@ -190,12 +201,13 @@ impl ChunkDecoder {
             ChunkDecoder::Chunk { seq_id, needed } => {
                 if src.len() >= 4 + needed.get() {
                     src.advance(4);
-                    let bytes = src.split_to(needed.get());
-                    dst.extend_from_slice(&bytes[..]);
+
+                    dst.put_slice(&src[..needed.get()]);
+                    src.advance(needed.get());
 
                     *self = ChunkDecoder::Idle;
 
-                    if dst.len() % MAX_PAYLOAD_LEN == 0 {
+                    if dst.as_ref().len() % MAX_PAYLOAD_LEN == 0 {
                         Ok(Some(ChunkInfo::Middle(seq_id)))
                     } else {
                         Ok(Some(ChunkInfo::Last(seq_id)))
@@ -342,8 +354,6 @@ impl CompDecoder {
 pub struct PacketCodec {
     /// Maximum size of a packet for this codec.
     pub max_allowed_packet: usize,
-    /// Buffer for a packet being parsed.
-    buffer: Vec<u8>,
     /// Actual implementation.
     inner: PacketCodecInner,
 }
@@ -364,21 +374,27 @@ impl PacketCodec {
         self.inner.compress(level);
     }
 
-    /// Will try to decode packet from `src`.
-    pub fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Vec<u8>>, PacketCodecError> {
-        if self
-            .inner
-            .decode(src, &mut self.buffer, self.max_allowed_packet)?
-        {
-            Ok(Some(mem::replace(&mut self.buffer, Vec::new())))
-        } else {
-            Ok(None)
-        }
+    /// Will try to decode a packet from `src` into `dst`.
+    ///
+    /// Returns
+    ///
+    /// * `true` - decoded packet was written into the `dst`,
+    /// * `false` - `src` did not contain a full packet.
+    pub fn decode<T>(&mut self, src: &mut BytesMut, dst: &mut T) -> Result<bool, PacketCodecError>
+    where
+        T: AsRef<[u8]>,
+        T: BufMut,
+    {
+        self.inner.decode(src, dst, self.max_allowed_packet)
     }
 
     /// Will encode packets into `dst`.
-    pub fn encode(&mut self, item: Vec<u8>, dst: &mut BytesMut) -> Result<(), PacketCodecError> {
-        self.inner.encode(item, dst, self.max_allowed_packet)
+    pub fn encode<T: Buf>(
+        &mut self,
+        src: &mut T,
+        dst: &mut BytesMut,
+    ) -> Result<(), PacketCodecError> {
+        self.inner.encode(src, dst, self.max_allowed_packet)
     }
 }
 
@@ -386,7 +402,6 @@ impl Default for PacketCodec {
     fn default() -> Self {
         Self {
             max_allowed_packet: DEFAULT_MAX_ALLOWED_PACKET,
-            buffer: vec![],
             inner: Default::default(),
         }
     }
@@ -438,12 +453,16 @@ impl PacketCodecInner {
     /// Will try to decode packet from `src` into `dst`.
     ///
     /// If `true` is returned then `dst` contains full packet.
-    fn decode(
+    fn decode<T>(
         &mut self,
         src: &mut BytesMut,
-        dst: &mut Vec<u8>,
+        dst: &mut T,
         max_allowed_packet: usize,
-    ) -> Result<bool, PacketCodecError> {
+    ) -> Result<bool, PacketCodecError>
+    where
+        T: AsRef<[u8]>,
+        T: BufMut,
+    {
         match self {
             PacketCodecInner::Plain(codec) => codec.decode(src, dst, max_allowed_packet),
             PacketCodecInner::Comp(codec) => codec.decode(src, dst, max_allowed_packet),
@@ -451,9 +470,9 @@ impl PacketCodecInner {
     }
 
     /// Will try to encode packets into `dst`.
-    fn encode(
+    fn encode<T: Buf>(
         &mut self,
-        packet: Vec<u8>,
+        packet: &mut T,
         dst: &mut BytesMut,
         max_allowed_packet: usize,
     ) -> Result<(), PacketCodecError> {
@@ -488,12 +507,16 @@ impl PlainPacketCodec {
     /// Will try to decode packet from `src` into `dst`.
     ///
     /// If `true` is returned then `dst` contains full packet.
-    fn decode(
+    fn decode<T>(
         &mut self,
         src: &mut BytesMut,
-        dst: &mut Vec<u8>,
+        dst: &mut T,
         max_allowed_packet: usize,
-    ) -> Result<bool, PacketCodecError> {
+    ) -> Result<bool, PacketCodecError>
+    where
+        T: AsRef<[u8]>,
+        T: BufMut,
+    {
         match self.chunk_decoder.decode(src, dst, max_allowed_packet)? {
             Some(chunk_info) => {
                 if self.seq_id != chunk_info.seq_id() {
@@ -518,17 +541,17 @@ impl PlainPacketCodec {
     }
 
     /// Will try to encode packets into `dst`.
-    fn encode(
+    fn encode<T: Buf>(
         &mut self,
-        packet: Vec<u8>,
+        packet: &mut T,
         dst: &mut BytesMut,
         max_allowed_packet: usize,
     ) -> Result<(), PacketCodecError> {
-        if packet.len() > max_allowed_packet {
+        if packet.remaining() > max_allowed_packet {
             return Err(PacketCodecError::PacketTooLarge);
         }
 
-        self.seq_id = packet_to_chunks(self.seq_id, &*packet, dst);
+        self.seq_id = packet_to_chunks(self.seq_id, packet, dst);
 
         Ok(())
     }
@@ -569,12 +592,16 @@ impl CompPacketCodec {
     /// Will try to decode packet from `src` into `dst`.
     ///
     /// If `true` is returned then `dst` contains full packet.
-    fn decode(
+    fn decode<T>(
         &mut self,
         src: &mut BytesMut,
-        dst: &mut Vec<u8>,
+        dst: &mut T,
         max_allowed_packet: usize,
-    ) -> Result<bool, PacketCodecError> {
+    ) -> Result<bool, PacketCodecError>
+    where
+        T: AsRef<[u8]>,
+        T: BufMut,
+    {
         if !self.in_buf.is_empty()
             && self
                 .plain_codec
@@ -601,9 +628,9 @@ impl CompPacketCodec {
     }
 
     /// Will try to encode packets into `dst`.
-    fn encode(
+    fn encode<T: Buf>(
         &mut self,
-        packet: Vec<u8>,
+        packet: &mut T,
         dst: &mut BytesMut,
         max_allowed_packet: usize,
     ) -> Result<(), PacketCodecError> {
@@ -645,12 +672,15 @@ mod tests {
     #[test]
     fn zero_len_packet() -> Result<(), error::PacketCodecError> {
         let mut encoder = PacketCodec::default();
+        let mut empty: &[u8] = &[];
         let mut src = BytesMut::new();
-        encoder.encode(vec![], &mut src)?;
+        encoder.encode(&mut empty, &mut src)?;
 
+        let mut dst = vec![];
         let mut decoder = PacketCodec::default();
-        let result = decoder.decode(&mut src)?.unwrap();
-        assert_eq!(result, vec![0_u8; 0]);
+        let result = decoder.decode(&mut src, &mut dst)?;
+        assert!(result);
+        assert_eq!(dst, vec![0_u8; 0]);
 
         Ok(())
     }
@@ -659,11 +689,13 @@ mod tests {
     fn regular_packet() -> Result<(), error::PacketCodecError> {
         let mut encoder = PacketCodec::default();
         let mut src = BytesMut::new();
-        encoder.encode(vec![0x31, 0x32, 0x33], &mut src)?;
+        encoder.encode(&mut &[0x31_u8, 0x32, 0x33][..], &mut src)?;
 
+        let mut dst = vec![];
         let mut decoder = PacketCodec::default();
-        let result = decoder.decode(&mut src)?.unwrap();
-        assert_eq!(result, vec![0x31, 0x32, 0x33]);
+        let result = decoder.decode(&mut src, &mut dst)?;
+        assert!(result);
+        assert_eq!(dst, vec![0x31, 0x32, 0x33]);
 
         Ok(())
     }
@@ -675,9 +707,11 @@ mod tests {
         let mut src = BytesMut::new();
 
         for i in 0..1024_usize {
-            encoder.encode(vec![0; i], &mut src)?;
-            let result = decoder.decode(&mut src)?.unwrap();
-            assert_eq!(result, vec![0; i]);
+            encoder.encode(&mut &*vec![0; i], &mut src)?;
+            let mut dst = vec![];
+            let result = decoder.decode(&mut src, &mut dst)?;
+            assert!(result);
+            assert_eq!(dst, vec![0; i]);
         }
 
         Ok(())
@@ -694,12 +728,14 @@ mod tests {
         encoder.max_allowed_packet = *lengths.iter().max().unwrap();
 
         for &len in &lengths {
-            encoder.encode(vec![0x42; len], &mut src)?;
+            encoder.encode(&mut &*vec![0x42_u8; len], &mut src)?;
         }
 
         for &len in &lengths {
-            let result = decoder.decode(&mut src)?.unwrap();
-            assert_eq!(result, vec![0x42; len]);
+            let mut dst = vec![];
+            let result = decoder.decode(&mut src, &mut dst)?;
+            assert!(result);
+            assert_eq!(dst, vec![0x42; len]);
         }
 
         Ok(())
@@ -714,13 +750,17 @@ mod tests {
         encoder.compress(Compression::best());
         decoder.compress(Compression::best());
 
-        let plain = decoder.decode(&mut src).unwrap().unwrap();
-        assert_eq!(&*plain, PLAIN);
-        encoder.encode(plain.into(), &mut src).unwrap();
+        let mut dst = vec![];
+        let result = decoder.decode(&mut src, &mut dst).unwrap();
+        assert!(result);
+        assert_eq!(&*dst, PLAIN);
+        encoder.encode(&mut &*dst, &mut src).unwrap();
 
+        let mut dst = vec![];
         decoder.reset_seq_id();
-        let plain = decoder.decode(&mut src).unwrap().unwrap();
-        assert_eq!(&*plain, PLAIN);
+        let result = decoder.decode(&mut src, &mut dst).unwrap();
+        assert!(result);
+        assert_eq!(&*dst, PLAIN);
     }
 
     #[test]
@@ -732,9 +772,11 @@ mod tests {
         encoder.compress(Compression::none());
         decoder.compress(Compression::none());
 
-        encoder.encode(PLAIN.into(), &mut src).unwrap();
-        let plain = decoder.decode(&mut src).unwrap().unwrap();
-        assert_eq!(&*plain, PLAIN);
+        encoder.encode(&mut &PLAIN[..], &mut src).unwrap();
+        let mut dst = vec![];
+        let result = decoder.decode(&mut src, &mut dst).unwrap();
+        assert!(result);
+        assert_eq!(&*dst, PLAIN);
     }
 
     #[test]
@@ -742,7 +784,8 @@ mod tests {
     fn out_of_sync() {
         let mut src = BytesMut::from(&b"\x00\x00\x00\x01"[..]);
         let mut codec = PacketCodec::default();
-        codec.decode(&mut src).unwrap();
+        let mut dst = vec![];
+        codec.decode(&mut src, &mut dst).unwrap();
     }
 
     #[test]
@@ -753,8 +796,9 @@ mod tests {
         let mut src = BytesMut::new();
 
         encoder
-            .encode(vec![0; encoder.max_allowed_packet + 1], &mut src)
+            .encode(&mut &*vec![0; encoder.max_allowed_packet + 1], &mut src)
             .unwrap();
-        decoder.decode(&mut src).unwrap();
+        let mut dst = vec![];
+        decoder.decode(&mut src, &mut dst).unwrap();
     }
 }
