@@ -43,15 +43,6 @@ impl SerializationSide for ClientSide {
     const BIT_OFFSET: usize = 0;
 }
 
-/// Value representation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum ValueRepr {
-    /// Text protocol value
-    Text,
-    /// Binary protocol value.
-    Binary(ColumnType, ColumnFlags),
-}
-
 /// Textual value representation.
 pub struct TextValue;
 
@@ -144,19 +135,6 @@ impl MySerialize for Value {
                 buf.put_u8(*m);
                 buf.put_u8(*s);
                 buf.put_u32_le(*u);
-            }
-        }
-    }
-}
-
-impl<'de> MyDeserialize<'de> for Value {
-    type Ctx = ValueRepr;
-
-    fn deserialize(repr: Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
-        match repr {
-            ValueRepr::Text => Value::deserialize_text(buf),
-            ValueRepr::Binary(column_type, column_flags) => {
-                Value::deserialize_bin((column_type, column_flags), buf)
             }
         }
     }

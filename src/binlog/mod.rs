@@ -31,12 +31,17 @@ use std::{
 };
 
 use crate::{
-    constants::{
-        ColumnFlags, ColumnType, GeometryType, ItemResult, UnknownColumnType, UnknownGeometryType,
-        UnknownItemResultType,
-    },
+    constants::{ColumnFlags, ColumnType, Flags2, GeometryType, ItemResult, SqlMode},
     io::{ParseBuf, ReadMysqlExt, WriteMysqlExt},
-    misc::{unexpected_buf_eof, LimitRead, LimitWrite, RawField, RawFlags, RawSeq, RawText},
+    misc::{
+        raw::{
+            text::{
+                BareText, EofText, FixedLengthText, LengthEncodedText, NullText, U32Text, U8Text,
+            },
+            RawConst, RawFlags, RawSeq, RawText,
+        },
+        unexpected_buf_eof, LimitRead, LimitWrite,
+    },
     packets::Column,
     row::{new_row, Row},
     value::Value,
@@ -708,7 +713,7 @@ impl BinlogStruct for Event {
 
         // fde will always contain checksum (see WL#2540)
         let contains_checksum = !footer.checksum_alg.is_none()
-            && (is_fde || footer.checksum_alg != Some(RawField::new(0)));
+            && (is_fde || footer.checksum_alg != Some(RawConst::new(0)));
 
         if contains_checksum {
             // truncate checksum
@@ -777,7 +782,7 @@ pub struct BinlogEventHeader {
     /// Seconds since unix epoch.
     pub timestamp: u32,
     /// Raw event Type.
-    pub event_type: RawField<u8, UnknownEventType, EventType>,
+    pub event_type: RawConst<u8, EventType>,
     /// Server-id of the originating mysql-server.
     ///
     /// Used to filter out events in circular replication.
@@ -820,7 +825,7 @@ impl BinlogStruct for BinlogEventHeader {
 
         Ok(Self {
             timestamp,
-            event_type: RawField::new(event_type),
+            event_type: RawConst::new(event_type),
             server_id,
             event_size,
             log_pos,
@@ -847,7 +852,7 @@ impl BinlogStruct for BinlogEventHeader {
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
 pub struct BinlogEventFooter {
     /// Raw checksum algorithm description.
-    pub checksum_alg: Option<RawField<u8, UnknownChecksumAlg, BinlogChecksumAlg>>,
+    pub checksum_alg: Option<RawConst<u8, BinlogChecksumAlg>>,
 }
 
 impl BinlogEventFooter {
@@ -860,7 +865,7 @@ impl BinlogEventFooter {
 
     /// Returns parsed checksum algorithm, or raw value if algorithm is unknown.
     pub fn get_checksum_alg(&self) -> Result<Option<BinlogChecksumAlg>, UnknownChecksumAlg> {
-        self.checksum_alg.as_ref().map(RawField::get).transpose()
+        self.checksum_alg.as_ref().map(RawConst::get).transpose()
     }
 
     /// Reads binlog event footer from the given buffer.
@@ -887,7 +892,7 @@ impl BinlogEventFooter {
         };
 
         Ok(Self {
-            checksum_alg: checksum_alg.map(RawField::new),
+            checksum_alg: checksum_alg.map(RawConst::new),
         })
     }
 }
@@ -895,7 +900,7 @@ impl BinlogEventFooter {
 impl Default for BinlogEventFooter {
     fn default() -> Self {
         BinlogEventFooter {
-            checksum_alg: Some(RawField::new(
+            checksum_alg: Some(RawConst::new(
                 BinlogChecksumAlg::BINLOG_CHECKSUM_ALG_OFF as u8,
             )),
         }
@@ -938,12 +943,12 @@ impl Hash for RawServerVersion {
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct FormatDescriptionEvent {
     /// Version of this binlog format.
-    pub binlog_version: RawField<u16, UnknownBinlogVersion, BinlogVersion>,
+    pub binlog_version: RawConst<u16, BinlogVersion>,
 
     /// Version of the MySQL Server that created the binlog (len=50).
     ///
     /// The string is evaluted to apply work-arounds in the slave.
-    pub server_version: RawText<RawServerVersion>,
+    pub server_version: RawText<'static, FixedLengthText<{ Self::SERVER_VER_LEN }>>,
 
     /// Seconds since Unix epoch when the binlog was created.
     pub create_timestamp: u32,
@@ -1026,8 +1031,8 @@ impl FormatDescriptionEvent {
     /// Creates format description event suitable for `FormatDescriptionEvent::read`.
     pub fn new(binlog_version: BinlogVersion) -> Self {
         Self {
-            binlog_version: RawField::new(binlog_version as u16),
-            server_version: RawText(RawServerVersion([0_u8; Self::SERVER_VER_LEN])),
+            binlog_version: RawConst::new(binlog_version as u16),
+            server_version: RawText::new(Cow::Owned(vec![])),
             create_timestamp: 0,
             event_type_header_lengths: Vec::new(),
             footer: Default::default(),
@@ -1117,8 +1122,8 @@ impl BinlogStruct for FormatDescriptionEvent {
         input.read_exact(&mut event_type_header_lengths)?;
 
         Ok(Self {
-            binlog_version: RawField::new(binlog_version),
-            server_version: RawText(RawServerVersion(server_version)),
+            binlog_version: RawConst::new(binlog_version),
+            server_version: RawText::new(server_version.to_vec()),
             create_timestamp,
             event_type_header_lengths,
             footer: Default::default(),
@@ -1129,7 +1134,7 @@ impl BinlogStruct for FormatDescriptionEvent {
         let mut output = output.limit(S(self.len(version)));
 
         output.write_u16::<LittleEndian>(self.binlog_version.0)?;
-        output.write_all(&(self.server_version.0).0)?;
+        output.write_all(&self.server_version.0)?;
         output.write_u32::<LittleEndian>(self.create_timestamp)?;
         output.write_u8(BinlogEventHeader::LEN as u8)?;
         output.write_all(&self.event_type_header_lengths)?;
@@ -1160,7 +1165,7 @@ pub struct RotateEvent {
 
     // payload
     /// Name of the next binlog.
-    pub name: RawText,
+    pub name: RawText<'static, BareText>,
 }
 
 impl BinlogStruct for RotateEvent {
@@ -1181,7 +1186,7 @@ impl BinlogStruct for RotateEvent {
 
         Ok(Self {
             position,
-            name: RawText(name),
+            name: RawText::new(name),
         })
     }
 
@@ -1226,9 +1231,9 @@ pub struct QueryEvent {
     /// Only available if binlog version >= 4 (empty otherwise).
     pub status_vars: StatusVars,
     /// The currently selected database name (`schema-length` bytes).
-    pub schema: RawText,
+    pub schema: RawText<'static, BareText>,
     /// The SQL query.
-    pub query: RawText,
+    pub query: RawText<'static, EofText>,
 }
 
 impl BinlogStruct for QueryEvent {
@@ -1275,8 +1280,8 @@ impl BinlogStruct for QueryEvent {
             execution_time,
             error_code,
             status_vars: StatusVars(status_vars),
-            schema: RawText(schema),
-            query: RawText(query),
+            schema: RawText::new(schema),
+            query: RawText::new(query),
         })
     }
 
@@ -1410,8 +1415,13 @@ pub enum StatusVarKey {
     DefaultTableEncryption,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, thiserror::Error)]
+#[error("Unknown status var key {}", _0)]
+#[repr(transparent)]
+pub struct UnknownStatusVarKey(pub u8);
+
 impl TryFrom<u8> for StatusVarKey {
-    type Error = u8;
+    type Error = UnknownStatusVarKey;
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         match value {
             0 => Ok(StatusVarKey::Flags2),
@@ -1435,7 +1445,7 @@ impl TryFrom<u8> for StatusVarKey {
             18 => Ok(StatusVarKey::DefaultCollationForUtf8mb4),
             19 => Ok(StatusVarKey::SqlRequirePrimaryKey),
             20 => Ok(StatusVarKey::DefaultTableEncryption),
-            x => Err(x),
+            x => Err(UnknownStatusVarKey(x)),
         }
     }
 }
@@ -1443,8 +1453,8 @@ impl TryFrom<u8> for StatusVarKey {
 /// Status variable value.
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub enum StatusVarVal<'a> {
-    Flags2(RawFlags<crate::constants::Flags2>),
-    SqlMode(RawFlags<crate::constants::SqlMode>),
+    Flags2(RawFlags<Flags2>),
+    SqlMode(RawFlags<SqlMode>),
     /// Ignored by this implementation.
     Catalog(&'a [u8]),
     AutoIncrement {
@@ -1457,18 +1467,18 @@ pub enum StatusVarVal<'a> {
         collation_server: u16,
     },
     /// Will be empty if timezone length is `0`.
-    TimeZone(RawText<&'a [u8]>),
+    TimeZone(RawText<'a, U8Text>),
     /// Will be empty if timezone length is `0`.
-    CatalogNz(RawText<&'a [u8]>),
+    CatalogNz(RawText<'a, U8Text>),
     LcTimeNames(u16),
     CharsetDatabase(u16),
     TableMapForUpdate(u64),
     MasterDataWritten([u8; 4]),
     Invoker {
-        username: RawText<&'a [u8]>,
-        hostname: RawText<&'a [u8]>,
+        username: RawText<'a, U8Text>,
+        hostname: RawText<'a, U8Text>,
     },
-    UpdatedDbNames(Vec<RawText<&'a [u8]>>),
+    UpdatedDbNames(Vec<RawText<'a, NullText>>),
     Microseconds(u32),
     /// Ignored.
     CommitTs(&'a [u8]),
@@ -1532,13 +1542,13 @@ impl StatusVar<'_> {
                 let mut read = self.value;
                 let len = read.read_u8().map_err(|_| self.value)? as usize;
                 let text = read.get(..len).ok_or(self.value)?;
-                Ok(StatusVarVal::TimeZone(RawText(text)))
+                Ok(StatusVarVal::TimeZone(RawText::new(text)))
             }
             StatusVarKey::CatalogNz => {
                 let mut read = self.value;
                 let len = read.read_u8().map_err(|_| self.value)? as usize;
                 let text = read.get(..len).ok_or(self.value)?;
-                Ok(StatusVarVal::CatalogNz(RawText(text)))
+                Ok(StatusVarVal::CatalogNz(RawText::new(text)))
             }
             StatusVarKey::LcTimeNames => {
                 let mut read = self.value;
@@ -1572,8 +1582,8 @@ impl StatusVar<'_> {
                 let hostname = read.get(..len).ok_or(self.value)?;
 
                 Ok(StatusVarVal::Invoker {
-                    username: RawText(username),
-                    hostname: RawText(hostname),
+                    username: RawText::new(username),
+                    hostname: RawText::new(hostname),
                 })
             }
             StatusVarKey::UpdatedDbNames => {
@@ -1583,7 +1593,7 @@ impl StatusVar<'_> {
 
                 for _ in 0..count {
                     let index = read.iter().position(|x| *x == 0).ok_or(self.value)?;
-                    names.push(RawText(&read[..index]));
+                    names.push(RawText::new(&read[..index]));
                     read = &read[index..];
                 }
 
@@ -1856,8 +1866,8 @@ pub struct ExecuteLoadQueryEvent {
     pub error_code: u16,
 
     pub status_vars: Vec<u8>,
-    pub schema: RawText,
-    pub query: RawText,
+    pub schema: RawText<'static, BareText>,
+    pub query: RawText<'static, EofText>,
 
     // payload
     /// File_id of a temporary file.
@@ -1867,7 +1877,7 @@ pub struct ExecuteLoadQueryEvent {
     /// Pointer to the end of this part of query
     pub end_pos: u32,
     /// How to handle duplicates.
-    pub dup_handling: RawField<u8, UnknownDuplicateHandling, LoadDuplicateHandling>,
+    pub dup_handling: RawConst<u8, LoadDuplicateHandling>,
 }
 
 impl BinlogStruct for ExecuteLoadQueryEvent {
@@ -1909,12 +1919,12 @@ impl BinlogStruct for ExecuteLoadQueryEvent {
             execution_time,
             error_code,
             status_vars,
-            schema: RawText(schema),
+            schema: RawText::new(schema),
             file_id,
             start_pos,
             end_pos,
-            dup_handling: RawField::new(dup_handling),
-            query: RawText(query),
+            dup_handling: RawConst::new(dup_handling),
+            query: RawText::new(query),
         })
     }
 
@@ -2104,7 +2114,7 @@ impl TryFrom<u8> for IntvarEventType {
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct IntvarEvent {
     /// Subtype of this event.
-    pub subtype: RawField<u8, UnknownIntvarEventType, IntvarEventType>,
+    pub subtype: RawConst<u8, IntvarEventType>,
     pub value: u64,
 }
 
@@ -2136,7 +2146,7 @@ impl BinlogStruct for IntvarEvent {
         }
 
         Ok(Self {
-            subtype: RawField::new(subtype),
+            subtype: RawConst::new(subtype),
             value,
         })
     }
@@ -2173,11 +2183,11 @@ my_bitflags! {
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct UserVarEvent {
     /// User variable name.
-    pub name: RawText,
+    pub name: RawText<'static, U32Text>,
     /// `true` if value is `NULL`.
     pub is_null: bool,
     /// Type of a value.
-    pub value_type: RawField<i8, UnknownItemResultType, ItemResult>,
+    pub value_type: RawConst<i8, ItemResult>,
     /// Character set of a value. Will be `0` if `is_null` is `true`.
     pub charset: u32,
     /// Value of a user variable. Will be empty if `is_null` is `true`.
@@ -2209,9 +2219,9 @@ impl BinlogStruct for UserVarEvent {
 
         if is_null {
             return Ok(Self {
-                name: RawText(name),
+                name: RawText::new(name),
                 is_null,
-                value_type: RawField::new(ItemResult::STRING_RESULT as i8),
+                value_type: RawConst::new(ItemResult::STRING_RESULT as i8),
                 charset: 63,
                 value: Vec::new(),
                 flags: RawFlags(UserVarFlags::empty().bits()),
@@ -2236,9 +2246,9 @@ impl BinlogStruct for UserVarEvent {
         }
 
         Ok(Self {
-            name: RawText(name),
+            name: RawText::new(name),
             is_null,
-            value_type: RawField::new(value_type),
+            value_type: RawConst::new(value_type),
             charset,
             value,
             flags: RawFlags(flags),
@@ -2320,8 +2330,8 @@ impl TryFrom<u16> for IncidentType {
 /// to be in an inconsistent state.
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct IncidentEvent {
-    pub incident_type: RawField<u16, UnknownIncidentType, IncidentType>,
-    pub message: RawText,
+    pub incident_type: RawConst<u16, IncidentType>,
+    pub message: RawText<'static, U8Text>,
 }
 
 impl BinlogStruct for IncidentEvent {
@@ -2348,8 +2358,8 @@ impl BinlogStruct for IncidentEvent {
         }
 
         Ok(Self {
-            incident_type: RawField::new(incident_type),
-            message: RawText(message),
+            incident_type: RawConst::new(incident_type),
+            message: RawText::new(message),
         })
     }
 
@@ -2559,22 +2569,22 @@ pub enum OptionalMetadataField<'a> {
     /// See [`OptionalMetadataFieldType::COLUMN_NAME`].
     ColumnName(
         /// Name for every column.
-        Vec<RawText<Cow<'a, [u8]>>>,
+        Vec<RawText<'a, LengthEncodedText>>,
     ),
     /// See [`OptionalMetadataFieldType::SET_STR_VALUE`].
     SetStrValue(
         /// Variants names for everty SET column.
-        Vec<Vec<RawText<Cow<'a, [u8]>>>>,
+        Vec<Vec<RawText<'a, LengthEncodedText>>>,
     ),
     /// See [`OptionalMetadataFieldType::ENUM_STR_VALUE`].
     EnumStrValue(
         /// Variants names for everty ENUM column.
-        Vec<Vec<RawText<Cow<'a, [u8]>>>>,
+        Vec<Vec<RawText<'a, LengthEncodedText>>>,
     ),
     /// See [`OptionalMetadataFieldType::GEOMETRY_TYPE`].
     GeometryType(
         /// Real type for every geometry column.
-        Vec<RawField<u8, UnknownGeometryType, GeometryType>>,
+        Vec<RawConst<u8, GeometryType>>,
     ),
     /// See [`OptionalMetadataFieldType::SIMPLE_PRIMARY_KEY`].
     SimplePrimaryKey(
@@ -2602,18 +2612,13 @@ pub enum OptionalMetadataField<'a> {
 
 /// Iterator over fields of an optional metadata.
 pub struct OptionalMetadataIter<'a> {
-    columns: &'a RawSeq<u8, UnknownColumnType, ColumnType>,
+    columns: &'a RawSeq<'a, u8, ColumnType>,
     data: &'a [u8],
 }
 
 impl<'a> OptionalMetadataIter<'a> {
     /// Reads type-length-value value.
-    fn read_tlv(
-        &mut self,
-    ) -> io::Result<(
-        RawField<u8, UnknownOptionalMetadataFieldType, OptionalMetadataFieldType>,
-        &'a [u8],
-    )> {
+    fn read_tlv(&mut self) -> io::Result<(RawConst<u8, OptionalMetadataFieldType>, &'a [u8])> {
         let t = self.data.read_u8()?;
         let l = self.data.read_u8()? as usize;
         let v = match self.data.get(..l) {
@@ -2627,18 +2632,13 @@ impl<'a> OptionalMetadataIter<'a> {
             }
         };
         self.data = &self.data[..l];
-        Ok((RawField::new(t), v))
+        Ok((RawConst::new(t), v))
     }
 
     /// Returns next tlv, if any.
     fn next_tlv(
         &mut self,
-    ) -> Option<
-        io::Result<(
-            RawField<u8, UnknownOptionalMetadataFieldType, OptionalMetadataFieldType>,
-            &'a [u8],
-        )>,
-    > {
+    ) -> Option<io::Result<(RawConst<u8, OptionalMetadataFieldType>, &'a [u8])>> {
         if self.data.is_empty() {
             return None;
         }
@@ -2729,7 +2729,7 @@ impl<'a> Iterator for OptionalMetadataIter<'a> {
                             for _ in 0..num_columns {
                                 let text =
                                     v.checked_eat_lenenc_str().ok_or_else(unexpected_buf_eof)?;
-                                columns.push(RawText(text.into()));
+                                columns.push(RawText::new(text));
                             }
 
                             if !v.is_empty() {
@@ -2751,7 +2751,7 @@ impl<'a> Iterator for OptionalMetadataIter<'a> {
                                     let text = v
                                         .checked_eat_lenenc_str()
                                         .ok_or_else(unexpected_buf_eof)?;
-                                    names.push(RawText(text.into()));
+                                    names.push(RawText::new(text));
                                 }
                                 columns.push(names);
                             }
@@ -2775,7 +2775,7 @@ impl<'a> Iterator for OptionalMetadataIter<'a> {
                                     let text = v
                                         .checked_eat_lenenc_str()
                                         .ok_or_else(unexpected_buf_eof)?;
-                                    names.push(RawText(text.into()));
+                                    names.push(RawText::new(text));
                                 }
                                 columns.push(names);
                             }
@@ -2791,7 +2791,7 @@ impl<'a> Iterator for OptionalMetadataIter<'a> {
                             let mut columns = Vec::with_capacity(num_columns);
 
                             for _ in 0..num_columns {
-                                columns.push(RawField::new(
+                                columns.push(RawConst::new(
                                     v.checked_eat_lenenc_int().ok_or_else(unexpected_buf_eof)?
                                         as u8,
                                 ))
@@ -2926,13 +2926,13 @@ pub struct TableMapEvent {
     /// The name of the database in which the table resides.
     ///
     /// Length must be <= 64 bytes.
-    pub database_name: RawText,
+    pub database_name: RawText<'static, U8Text>,
     /// The name of the table.
     ///
     /// Length must be <= 64 bytes.
-    pub table_name: RawText,
+    pub table_name: RawText<'static, U8Text>,
     /// The type of each column in the table, listed from left to right.
-    pub columns_type: RawSeq<u8, UnknownColumnType, ColumnType>,
+    pub columns_type: RawSeq<'static, u8, ColumnType>,
     /// For each column from left to right, a chunk of data who's length and semantics depends
     /// on the type of the column.
     pub columns_metadata: Vec<u8>,
@@ -2960,7 +2960,7 @@ impl TableMapEvent {
     pub fn get_column_metadata(&self, col_idx: usize) -> Option<&[u8]> {
         let mut offset = 0;
         for i in 0..=col_idx {
-            let ty = self.columns_type.get(i)?.ok()?;
+            let ty = self.columns_type.get(i)?.get().ok()?;
             let ptr = self.columns_metadata.get(offset..)?;
             let (metadata, len) = ty.get_metadata(ptr, false)?;
             if i == col_idx {
@@ -3033,8 +3033,8 @@ impl BinlogStruct for TableMapEvent {
         Ok(Self {
             table_id,
             flags,
-            database_name: RawText(database_name),
-            table_name: RawText(table_name),
+            database_name: RawText::new(database_name),
+            table_name: RawText::new(table_name),
             columns_type: RawSeq::new(columns_type),
             columns_metadata,
             null_bitmask,
@@ -3089,7 +3089,7 @@ impl BinlogStruct for TableMapEvent {
 /// Query that caused the following `ROWS_EVENT`.
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct RowsQueryEvent {
-    pub query: RawText,
+    pub query: RawText<'static, EofText>,
 }
 
 impl BinlogStruct for RowsQueryEvent {
@@ -3111,7 +3111,7 @@ impl BinlogStruct for RowsQueryEvent {
         input.read_exact(&mut query)?;
 
         Ok(Self {
-            query: RawText(query),
+            query: RawText::new(query),
         })
     }
 
@@ -3424,7 +3424,7 @@ impl<'a> Iterator for RowsEventRows<'a> {
                     };
 
                     // Column type must be known.
-                    let raw_column_type = match raw_column_type {
+                    let raw_column_type = match raw_column_type.get() {
                         Ok(ty) => ty,
                         Err(_) => {
                             return Err(io::Error::new(
@@ -3785,7 +3785,7 @@ pub struct GtidEvent {
     ///
     /// Should be an integer between `MIN_GNO` and `MAX_GNO` for GtidEvent
     /// or `0` for AnonymousGtidEvent.
-    pub gno: RawField<u64, InvalidGno, Gno>,
+    pub gno: RawConst<u64, Gno>,
     /// The transaction's logical timestamp
     pub last_committed: i64,
     /// The transaction's logical timestamp.
@@ -3891,7 +3891,7 @@ impl BinlogStruct for GtidEvent {
         Ok(Self {
             flags: RawFlags(flags),
             sid,
-            gno: RawField::new(gno),
+            gno: RawConst::new(gno),
             last_committed,
             sequence_number,
             original_commit_timestamp,
@@ -4154,7 +4154,7 @@ mod tests {
                         ev.header,
                         BinlogEventHeader {
                             timestamp: 1253783036,
-                            event_type: RawField::new(15),
+                            event_type: RawConst::new(15),
                             server_id: 1,
                             event_size: 94,
                             log_pos: 98,
@@ -4166,7 +4166,7 @@ mod tests {
                     ev.header,
                     BinlogEventHeader {
                         timestamp: 1253783037,
-                        event_type: RawField::new(2),
+                        event_type: RawConst::new(2),
                         server_id: 1,
                         event_size: 100,
                         log_pos: 198,
@@ -4177,7 +4177,7 @@ mod tests {
                     ev.header,
                     BinlogEventHeader {
                         timestamp: 1253783037,
-                        event_type: RawField::new(2),
+                        event_type: RawConst::new(2),
                         server_id: 1,
                         event_size: 101,
                         log_pos: 299,
@@ -4188,7 +4188,7 @@ mod tests {
                     ev.header,
                     BinlogEventHeader {
                         timestamp: 1253783037,
-                        event_type: RawField::new(2),
+                        event_type: RawConst::new(2),
                         server_id: 1,
                         event_size: 69,
                         log_pos: 368,
@@ -4199,7 +4199,7 @@ mod tests {
                     ev.header,
                     BinlogEventHeader {
                         timestamp: 1253783037,
-                        event_type: RawField::new(2),
+                        event_type: RawConst::new(2),
                         server_id: 1,
                         event_size: 92,
                         log_pos: 460,
@@ -4210,7 +4210,7 @@ mod tests {
                     ev.header,
                     BinlogEventHeader {
                         timestamp: 1253783037,
-                        event_type: RawField::new(2),
+                        event_type: RawConst::new(2),
                         server_id: 1,
                         event_size: 93,
                         log_pos: 553,
@@ -4221,7 +4221,7 @@ mod tests {
                     ev.header,
                     BinlogEventHeader {
                         timestamp: 1253783037,
-                        event_type: RawField::new(16),
+                        event_type: RawConst::new(16),
                         server_id: 1,
                         event_size: 27,
                         log_pos: 580,
@@ -4232,7 +4232,7 @@ mod tests {
                     ev.header,
                     BinlogEventHeader {
                         timestamp: 1253783037,
-                        event_type: RawField::new(2),
+                        event_type: RawConst::new(2),
                         server_id: 1,
                         event_size: 100,
                         log_pos: 680,
@@ -4243,7 +4243,7 @@ mod tests {
                     ev.header,
                     BinlogEventHeader {
                         timestamp: 1253783037,
-                        event_type: RawField::new(2),
+                        event_type: RawConst::new(2),
                         server_id: 1,
                         event_size: 101,
                         log_pos: 781,
@@ -4254,7 +4254,7 @@ mod tests {
                     ev.header,
                     BinlogEventHeader {
                         timestamp: 1253783037,
-                        event_type: RawField::new(2),
+                        event_type: RawConst::new(2),
                         server_id: 1,
                         event_size: 69,
                         log_pos: 850,
@@ -4265,7 +4265,7 @@ mod tests {
                     ev.header,
                     BinlogEventHeader {
                         timestamp: 1253783037,
-                        event_type: RawField::new(2),
+                        event_type: RawConst::new(2),
                         server_id: 1,
                         event_size: 92,
                         log_pos: 942,
@@ -4276,7 +4276,7 @@ mod tests {
                     ev.header,
                     BinlogEventHeader {
                         timestamp: 1253783037,
-                        event_type: RawField::new(2),
+                        event_type: RawConst::new(2),
                         server_id: 1,
                         event_size: 93,
                         log_pos: 1035,
@@ -4287,7 +4287,7 @@ mod tests {
                     ev.header,
                     BinlogEventHeader {
                         timestamp: 1253783037,
-                        event_type: RawField::new(2),
+                        event_type: RawConst::new(2),
                         server_id: 1,
                         event_size: 72,
                         log_pos: 1107,
@@ -4298,7 +4298,7 @@ mod tests {
                     ev.header,
                     BinlogEventHeader {
                         timestamp: 1253783037,
-                        event_type: RawField::new(2),
+                        event_type: RawConst::new(2),
                         server_id: 1,
                         event_size: 97,
                         log_pos: 1204,
@@ -4309,7 +4309,7 @@ mod tests {
                     ev.header,
                     BinlogEventHeader {
                         timestamp: 1253783037,
-                        event_type: RawField::new(2),
+                        event_type: RawConst::new(2),
                         server_id: 1,
                         event_size: 98,
                         log_pos: 1302,
@@ -4320,7 +4320,7 @@ mod tests {
                     ev.header,
                     BinlogEventHeader {
                         timestamp: 1253783037,
-                        event_type: RawField::new(2),
+                        event_type: RawConst::new(2),
                         server_id: 1,
                         event_size: 69,
                         log_pos: 1371,
@@ -4331,7 +4331,7 @@ mod tests {
                     ev.header,
                     BinlogEventHeader {
                         timestamp: 1253783037,
-                        event_type: RawField::new(2),
+                        event_type: RawConst::new(2),
                         server_id: 1,
                         event_size: 92,
                         log_pos: 1463,
@@ -4342,7 +4342,7 @@ mod tests {
                     ev.header,
                     BinlogEventHeader {
                         timestamp: 1253783037,
-                        event_type: RawField::new(2),
+                        event_type: RawConst::new(2),
                         server_id: 1,
                         event_size: 93,
                         log_pos: 1556,
@@ -4353,7 +4353,7 @@ mod tests {
                     ev.header,
                     BinlogEventHeader {
                         timestamp: 1253783037,
-                        event_type: RawField::new(2),
+                        event_type: RawConst::new(2),
                         server_id: 1,
                         event_size: 70,
                         log_pos: 1626,
@@ -4364,7 +4364,7 @@ mod tests {
                     ev.header,
                     BinlogEventHeader {
                         timestamp: 1253783037,
-                        event_type: RawField::new(4),
+                        event_type: RawConst::new(4),
                         server_id: 1,
                         event_size: 44,
                         log_pos: 1670,
