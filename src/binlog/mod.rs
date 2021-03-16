@@ -12,7 +12,7 @@
 //! All structures of this module contains raw data that may not necessarily be valid.
 //! Please consult the MySql documentation.
 
-use bitvec::{order::Lsb0, vec::BitVec};
+use bitvec::{order::Lsb0, slice::BitSlice, vec::BitVec};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use saturating::Saturating as S;
 
@@ -28,6 +28,7 @@ use std::{
         ErrorKind::{InvalidData, Other, UnexpectedEof},
         Read, Write,
     },
+    sync::Arc,
 };
 
 use crate::{
@@ -43,12 +44,238 @@ use crate::{
         unexpected_buf_eof, LimitRead, LimitWrite,
     },
     packets::Column,
-    row::{new_row, Row},
-    value::Value,
+    proto::MyDeserialize,
+    value::{binlog::BinlogValue, Value},
 };
 
 pub mod decimal;
+pub mod jsonb;
+pub mod jsondiff;
 pub mod misc;
+
+/// Representation of a binlog row.
+#[derive(Clone, PartialEq)]
+pub struct BinlogRow {
+    values: Vec<Option<BinlogValue<'static>>>,
+    columns: Arc<[Column]>,
+}
+
+impl BinlogRow {
+    pub fn new(values: Vec<Option<BinlogValue<'static>>>, columns: Arc<[Column]>) -> Self {
+        Self { values, columns }
+    }
+
+    /// Returns length of a row.
+    pub fn len(&self) -> usize {
+        self.values.len()
+    }
+
+    /// Returns true if the row has a length of 0.
+    pub fn is_empty(&self) -> bool {
+        self.values.is_empty()
+    }
+
+    /// Returns columns of this row.
+    pub fn columns_ref(&self) -> &[Column] {
+        &*self.columns
+    }
+
+    /// Returns columns of this row.
+    pub fn columns(&self) -> Arc<[Column]> {
+        self.columns.clone()
+    }
+
+    /// Returns reference to the value of a column with index `index` if it exists and wasn't taken
+    /// by `Row::take` method.
+    ///
+    /// Non panicking version of `row[usize]`.
+    pub fn as_ref(&self, index: usize) -> Option<&BinlogValue> {
+        self.values.get(index).and_then(|x| x.as_ref())
+    }
+
+    /// Will take value of a column with index `index` if it exists and wasn't taken earlier then
+    /// will converts it to `T`.
+    pub fn take(&mut self, index: usize) -> Option<BinlogValue> {
+        self.values.get_mut(index).and_then(|x| x.take())
+    }
+
+    /// Unwraps values of a row.
+    ///
+    /// # Panics
+    ///
+    /// Panics if any of columns was taken by `take` method.
+    pub fn unwrap(self) -> Vec<BinlogValue<'static>> {
+        self.values
+            .into_iter()
+            .map(|x| x.expect("Can't unwrap row if some of columns was taken"))
+            .collect()
+    }
+
+    #[doc(hidden)]
+    pub fn place(&mut self, index: usize, value: BinlogValue<'static>) {
+        self.values[index] = Some(value);
+    }
+}
+
+impl<'de> MyDeserialize<'de> for BinlogRow {
+    /// Content:
+    ///
+    /// * number of columns
+    /// * column bitmap - bit is set if column is in the row
+    /// * have shared image - `true` means, that this is a partial event
+    ///   and this is an after image row. Therefore we need to parse a shared image
+    /// * corresponding table map event
+    type Ctx = (u64, &'de BitSlice<Lsb0, u8>, bool, &'de TableMapEvent);
+
+    fn deserialize(
+        (num_columns, cols, have_shared_image, table_info): Self::Ctx,
+        buf: &mut ParseBuf<'de>,
+    ) -> io::Result<Self> {
+        let mut values = vec![];
+        let mut columns = vec![];
+
+        // read a shared image if needed (see WL#2955)
+        let mut partial_cols = if have_shared_image {
+            let value_options = buf
+                .checked_eat_lenenc_int()
+                .ok_or_else(unexpected_buf_eof)?;
+            if value_options & BinlogRowValueOptions::PARTIAL_JSON_UPDATES as u64 > 0 {
+                let json_columns_count = table_info.json_column_count();
+                let partial_columns_len = (json_columns_count + 7) / 8;
+                let partial_columns = buf
+                    .checked_eat(partial_columns_len)
+                    .ok_or_else(unexpected_buf_eof)?;
+                let partial_columns = BitSlice::<Lsb0, u8>::from_slice(partial_columns)
+                    .expect("suspiciously large slice");
+                Some(partial_columns.into_iter().take(json_columns_count))
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        let num_bits = cols.count_ones();
+        let bitmap_len = (num_bits + 7) / 8;
+        let bitmap_buf = buf.checked_eat(bitmap_len).ok_or_else(unexpected_buf_eof)?;
+        let mut null_bitmap = BitVec::<Lsb0, u8>::from_slice(bitmap_buf).expect("should not fail");
+        null_bitmap.truncate(num_bits);
+
+        let mut image_idx = 0;
+        let signedness = table_info
+            .iter_optional_meta()
+            .find_map(|m| {
+                m.map(|f| match f {
+                    OptionalMetadataField::Signedness(bit_vec) => Some(bit_vec),
+                    _ => None,
+                })
+                .unwrap_or(None)
+            })
+            .unwrap_or_else(|| {
+                BitVec::<Lsb0, u8>::from_vec(vec![0_u8; (num_columns as usize + 7) / 8])
+            });
+        for i in 0..(num_columns as usize) {
+            // check if column is in columns list
+            if cols.get(i).as_deref().copied().unwrap_or(false) {
+                let raw_column_type = table_info.columns_type.get(i);
+
+                // TableMapEvent must define column type for the current column.
+                let raw_column_type = match raw_column_type {
+                    Some(ty) => ty,
+                    None => {
+                        return Err(io::Error::new(io::ErrorKind::InvalidData, "No column type"))
+                    }
+                };
+
+                // Column type must be known.
+                let raw_column_type = match raw_column_type.get() {
+                    Ok(ty) => ty,
+                    Err(_) => {
+                        return Err(io::Error::new(
+                            io::ErrorKind::InvalidData,
+                            "Unknown column type",
+                        ))
+                    }
+                };
+
+                let column_meta = table_info.get_column_metadata(i).unwrap_or(&[]);
+                let column_type = match raw_column_type {
+                    ColumnType::MYSQL_TYPE_STRING => {
+                        let real_type = column_meta[0];
+                        if real_type == ColumnType::MYSQL_TYPE_ENUM as u8
+                            || real_type == ColumnType::MYSQL_TYPE_SET as u8
+                        {
+                            ColumnType::try_from(real_type).unwrap_or(raw_column_type)
+                        } else {
+                            raw_column_type
+                        }
+                    }
+                    ColumnType::MYSQL_TYPE_DATE => ColumnType::MYSQL_TYPE_NEWDATE,
+                    other => other,
+                };
+
+                let is_partial = raw_column_type == ColumnType::MYSQL_TYPE_JSON
+                    && partial_cols
+                        .as_mut()
+                        .and_then(|bits| bits.next().as_deref().copied())
+                        .unwrap_or(false);
+
+                let unsigned = signedness.get(i).as_deref().copied().unwrap_or_default();
+                let mut column_flags = ColumnFlags::empty();
+                if unsigned {
+                    column_flags |= ColumnFlags::UNSIGNED_FLAG;
+                }
+                let column = Column::new(column_type)
+                    // column name – `@<i>` where i is a column offset in a table
+                    .with_name(format!("@{}", i).as_bytes())
+                    .with_flags(column_flags)
+                    .with_schema(&table_info.database_name.0[..])
+                    .with_org_table(&table_info.table_name.0[..])
+                    .with_table(&table_info.table_name.0[..]);
+                columns.push(column);
+
+                // check if column is null
+                if null_bitmap
+                    .get(image_idx)
+                    .as_deref()
+                    .copied()
+                    .unwrap_or(true)
+                {
+                    values.push(Some(BinlogValue::Value(Value::NULL)));
+                } else {
+                    values.push(Some(
+                        BinlogValue::deserialize(
+                            (column_type, column_meta, signedness[i], is_partial),
+                            &mut *buf,
+                        )?
+                        .into_owned(),
+                    ));
+                }
+
+                image_idx += 1;
+            }
+        }
+
+        Ok(BinlogRow::new(values, columns.into_boxed_slice().into()))
+    }
+}
+
+impl fmt::Debug for BinlogRow {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut debug = f.debug_struct("BinlogRow");
+        for (val, column) in self.values.iter().zip(self.columns.iter()) {
+            match *val {
+                Some(ref val) => {
+                    debug.field(column.name_str().as_ref(), val);
+                }
+                None => {
+                    debug.field(column.name_str().as_ref(), &"<taken>");
+                }
+            }
+        }
+        debug.finish()
+    }
+}
 
 /// Depending on the MySQL Version that created the binlog the format is slightly different.
 #[repr(u8)]
@@ -85,6 +312,37 @@ impl TryFrom<u16> for BinlogVersion {
             3 => Ok(Self::Version3),
             4 => Ok(Self::Version4),
             x => Err(UnknownBinlogVersion(x)),
+        }
+    }
+}
+
+/// Bonlog rows event row value options.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[allow(non_camel_case_types)]
+#[repr(u64)]
+pub enum BinlogRowValueOptions {
+    /// Store JSON updates in partial form
+    PARTIAL_JSON_UPDATES = 1,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, thiserror::Error)]
+#[error("Unknown binlog version {}", _0)]
+#[repr(transparent)]
+pub struct UnknownBinlogRowValueOptions(pub u64);
+
+impl From<UnknownBinlogRowValueOptions> for u64 {
+    fn from(x: UnknownBinlogRowValueOptions) -> Self {
+        x.0
+    }
+}
+
+impl TryFrom<u64> for BinlogRowValueOptions {
+    type Error = UnknownBinlogRowValueOptions;
+
+    fn try_from(value: u64) -> Result<Self, Self::Error> {
+        match value {
+            1 => Ok(Self::PARTIAL_JSON_UPDATES),
+            x => Err(UnknownBinlogRowValueOptions(x)),
         }
     }
 }
@@ -208,6 +466,10 @@ impl TryFrom<u8> for EventType {
             0x21 => Ok(Self::GTID_EVENT),
             0x22 => Ok(Self::ANONYMOUS_GTID_EVENT),
             0x23 => Ok(Self::PREVIOUS_GTIDS_EVENT),
+            0x24 => Ok(Self::TRANSACTION_CONTEXT_EVENT),
+            0x25 => Ok(Self::VIEW_CHANGE_EVENT),
+            0x26 => Ok(Self::XA_PREPARE_LOG_EVENT),
+            0x27 => Ok(Self::PARTIAL_UPDATE_ROWS_EVENT),
             x => Err(UnknownEventType(x)),
         }
     }
@@ -338,7 +600,7 @@ impl BinlogStruct for BinlogFileHeader {
 ///
 /// It'll maintain actual fde and must be used
 /// to read binlog files and binlog event streams from server.
-#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct EventStreamReader {
     fde: FormatDescriptionEvent,
 }
@@ -354,9 +616,10 @@ impl EventStreamReader {
     /// Will read next event from the given stream using actual fde.
     pub fn read<T: Read>(&mut self, input: T) -> io::Result<Event> {
         let event = Event::read(0, &self.fde, input)?;
+        let event_type = event.header.event_type.0;
 
-        // we'll redefine fde with an actual one
-        if event.header.event_type.get() == Ok(EventType::FORMAT_DESCRIPTION_EVENT) {
+        if event_type == EventType::FORMAT_DESCRIPTION_EVENT as u8 {
+            // we'll redefine fde with an actual one
             self.fde = match event.read_event::<FormatDescriptionEvent>() {
                 Ok(mut fde) => {
                     fde.footer = event.footer;
@@ -373,7 +636,7 @@ impl EventStreamReader {
 /// Binlog file.
 ///
 /// It's an iterator over events in a binlog file.
-#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct BinlogFile<T> {
     reader: EventStreamReader,
     read: T,
@@ -460,7 +723,7 @@ pub enum EventData {
     /// Not yet implemented.
     XaPrepareLogEvent(Vec<u8>),
     /// Not yet implemented.
-    PartialUpdateRowsEvent(Vec<u8>),
+    PartialUpdateRowsEvent(PartialUpdateRowsEvent),
 }
 
 impl EventData {
@@ -506,7 +769,7 @@ impl EventData {
             EventData::TransactionContextEvent(ev) => output.write_all(&ev),
             EventData::ViewChangeEvent(ev) => output.write_all(&ev),
             EventData::XaPrepareLogEvent(ev) => output.write_all(&ev),
-            EventData::PartialUpdateRowsEvent(ev) => output.write_all(&ev),
+            EventData::PartialUpdateRowsEvent(ev) => ev.write(version, output),
         }
     }
 }
@@ -549,7 +812,7 @@ impl TryFrom<u8> for BinlogChecksumAlg {
 ///
 /// A binlog event starts with a Binlog Event header and is followed by a Binlog Event Type
 /// specific data part.
-#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct Event {
     /// Format description event.
     pub fde: FormatDescriptionEvent,
@@ -634,7 +897,7 @@ impl Event {
             TRANSACTION_CONTEXT_EVENT => EventData::TransactionContextEvent(self.data.clone()),
             VIEW_CHANGE_EVENT => EventData::ViewChangeEvent(self.data.clone()),
             XA_PREPARE_LOG_EVENT => EventData::XaPrepareLogEvent(self.data.clone()),
-            PARTIAL_UPDATE_ROWS_EVENT => EventData::PartialUpdateRowsEvent(self.data.clone()),
+            PARTIAL_UPDATE_ROWS_EVENT => EventData::PartialUpdateRowsEvent(self.read_event()?),
         };
 
         Ok(Some(event_data))
@@ -2953,6 +3216,15 @@ impl TableMapEvent {
         self.columns_type.0.len()
     }
 
+    /// Ruturns a number of JSON columns.
+    pub fn json_column_count(&self) -> usize {
+        self.columns_type
+            .0
+            .iter()
+            .filter(|x| **x == ColumnType::MYSQL_TYPE_JSON as u8)
+            .count()
+    }
+
     /// Returns metadata for the given column.
     ///
     /// Returns `None` if column index is out of bounds or if offset couldn't be calculated
@@ -3154,6 +3426,8 @@ my_bitflags! {
 /// Common base structure for all row-containing binary log events.
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct RowsEvent {
+    /// An actual `EventType` of this wrapped object.
+    pub event_type: EventType,
     /// Table identifier.
     ///
     /// If the table id is `0x00ffffff` it is a dummy event that should have
@@ -3258,6 +3532,7 @@ impl RowsEvent {
         };
 
         Ok(Self {
+            event_type,
             table_id,
             flags: RawFlags(flags),
             extra_data,
@@ -3292,6 +3567,7 @@ impl RowsEvent {
         if event_type == EventType::WRITE_ROWS_EVENT
             || event_type == EventType::UPDATE_ROWS_EVENT
             || event_type == EventType::DELETE_ROWS_EVENT
+            || event_type == EventType::PARTIAL_UPDATE_ROWS_EVENT
         {
             output.write_u16::<LittleEndian>(min(
                 self.extra_data.len().saturating_add(2),
@@ -3358,146 +3634,39 @@ impl RowsEvent {
         RowsEventRows {
             rows_event: self,
             table_map_event,
-            rows_data: &self.rows_data[..],
+            rows_data: ParseBuf(&self.rows_data[..]),
         }
     }
 }
 
 /// Iterator over rows in a `RowsEvent`.
-#[derive(Clone, Eq, PartialEq, Hash)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct RowsEventRows<'a> {
     rows_event: &'a RowsEvent,
     table_map_event: &'a TableMapEvent,
-    rows_data: &'a [u8],
+    rows_data: ParseBuf<'a>,
 }
 
 impl<'a> Iterator for RowsEventRows<'a> {
-    type Item = io::Result<(Option<Row>, Option<Row>)>;
+    type Item = io::Result<(Option<BinlogRow>, Option<BinlogRow>)>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let mut row_before = None;
         let mut row_after = None;
-
-        fn read_row<T: Read>(
-            mut input: T,
-            num_columns: u64,
-            cols: &BitVec<Lsb0, u8>,
-            tme: &TableMapEvent,
-        ) -> io::Result<Row> {
-            let mut values = vec![];
-            let mut columns = vec![];
-
-            let num_bits = cols.count_ones();
-            let bitmap_len = (num_bits + 7) / 8;
-            let mut bitmap_buf = vec![0_u8; bitmap_len];
-            input.read_exact(&mut bitmap_buf)?;
-            let mut null_bitmap = BitVec::<Lsb0, u8>::from_vec(bitmap_buf);
-            null_bitmap.truncate(num_bits);
-
-            let mut image_idx = 0;
-            let signedness = tme
-                .iter_optional_meta()
-                .find_map(|m| {
-                    m.map(|f| match f {
-                        OptionalMetadataField::Signedness(bit_vec) => Some(bit_vec),
-                        _ => None,
-                    })
-                    .unwrap_or(None)
-                })
-                .unwrap_or_else(|| {
-                    BitVec::<Lsb0, u8>::from_vec(vec![0_u8; (num_columns as usize + 7) / 8])
-                });
-            for i in 0..(num_columns as usize) {
-                // check if column is in columns list
-                if cols.get(i).as_deref().copied().unwrap_or(false) {
-                    let raw_column_type = tme.columns_type.get(i);
-
-                    // TableMapEvent must define column type for the current column.
-                    let raw_column_type = match raw_column_type {
-                        Some(ty) => ty,
-                        None => {
-                            return Err(io::Error::new(
-                                io::ErrorKind::InvalidData,
-                                "No column type",
-                            ))
-                        }
-                    };
-
-                    // Column type must be known.
-                    let raw_column_type = match raw_column_type.get() {
-                        Ok(ty) => ty,
-                        Err(_) => {
-                            return Err(io::Error::new(
-                                io::ErrorKind::InvalidData,
-                                "Unknown column type",
-                            ))
-                        }
-                    };
-
-                    let column_meta = tme.get_column_metadata(i).unwrap_or(&[]);
-                    let column_type = match raw_column_type {
-                        ColumnType::MYSQL_TYPE_STRING => {
-                            let real_type = column_meta[0];
-                            if real_type == ColumnType::MYSQL_TYPE_ENUM as u8
-                                || real_type == ColumnType::MYSQL_TYPE_SET as u8
-                            {
-                                ColumnType::try_from(real_type).unwrap_or(raw_column_type)
-                            } else {
-                                raw_column_type
-                            }
-                        }
-                        ColumnType::MYSQL_TYPE_DATE => ColumnType::MYSQL_TYPE_NEWDATE,
-                        other => other,
-                    };
-
-                    let unsigned = signedness.get(i).as_deref().copied().unwrap_or_default();
-                    let mut column_flags = ColumnFlags::empty();
-                    if unsigned {
-                        column_flags |= ColumnFlags::UNSIGNED_FLAG;
-                    }
-                    let column = Column::new(column_type)
-                        .with_flags(column_flags)
-                        .with_schema(&tme.database_name.0[..])
-                        .with_org_table(&tme.table_name.0[..])
-                        .with_table(&tme.table_name.0[..]);
-                    columns.push(column);
-
-                    // check if column is null
-                    if null_bitmap
-                        .get(image_idx)
-                        .as_deref()
-                        .copied()
-                        .unwrap_or(true)
-                    {
-                        values.push(Value::NULL);
-                    } else {
-                        let column_meta = tme.get_column_metadata(i).unwrap_or(&[]);
-                        values.push(Value::read_binlog(
-                            &mut input,
-                            column_type,
-                            column_meta,
-                            signedness[i],
-                            false,
-                        )?);
-                    }
-
-                    image_idx += 1;
-                }
-            }
-
-            Ok(new_row(values, columns.into_boxed_slice().into()))
-        }
 
         if self.rows_data.len() == 0 {
             return None;
         }
 
         if let Some(ref cols) = self.rows_event.columns_before_image {
-            row_before = match read_row(
+            row_before = match BinlogRow::deserialize(
+                (
+                    self.rows_event.num_columns,
+                    cols.as_bitslice(),
+                    false,
+                    self.table_map_event,
+                ),
                 &mut self.rows_data,
-                self.rows_event.num_columns,
-                cols,
-                self.table_map_event,
             ) {
                 Ok(row_before) => Some(row_before),
                 Err(err) => return Some(Err(err)),
@@ -3505,11 +3674,14 @@ impl<'a> Iterator for RowsEventRows<'a> {
         }
 
         if let Some(ref cols) = self.rows_event.columns_after_image {
-            row_after = match read_row(
+            row_after = match BinlogRow::deserialize(
+                (
+                    self.rows_event.num_columns,
+                    cols.as_bitslice(),
+                    self.rows_event.event_type == EventType::PARTIAL_UPDATE_ROWS_EVENT,
+                    self.table_map_event,
+                ),
                 &mut self.rows_data,
-                self.rows_event.num_columns,
-                cols,
-                self.table_map_event,
             ) {
                 Ok(row_after) => Some(row_after),
                 Err(err) => return Some(Err(err)),
@@ -3694,6 +3866,39 @@ pub struct DeleteRowsEvent(pub RowsEvent);
 
 impl BinlogStruct for DeleteRowsEvent {
     const EVENT_TYPE: Option<EventType> = Some(EventType::DELETE_ROWS_EVENT);
+
+    fn read<T: Read>(event_size: usize, fde: &FormatDescriptionEvent, input: T) -> io::Result<Self>
+    where
+        Self: Sized,
+    {
+        let version = fde.binlog_version.get().unwrap_or(BinlogVersion::Version4);
+        Ok(Self(RowsEvent::read(
+            Self::EVENT_TYPE.unwrap(),
+            event_size,
+            fde,
+            version,
+            input,
+        )?))
+    }
+
+    fn write<T: Write>(&self, version: BinlogVersion, output: T) -> io::Result<()> {
+        self.0.write(Self::EVENT_TYPE.unwrap(), version, output)
+    }
+
+    fn len(&self, version: BinlogVersion) -> usize {
+        self.0.len(version)
+    }
+}
+
+/// Partial update rows event.
+///
+/// Extension of UPDATE_ROWS_EVENT, allowing partial values according to binlog_row_value_options.
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+#[repr(transparent)]
+pub struct PartialUpdateRowsEvent(pub RowsEvent);
+
+impl BinlogStruct for PartialUpdateRowsEvent {
+    const EVENT_TYPE: Option<EventType> = Some(EventType::PARTIAL_UPDATE_ROWS_EVENT);
 
     fn read<T: Read>(event_size: usize, fde: &FormatDescriptionEvent, input: T) -> io::Result<Self>
     where
@@ -4402,6 +4607,7 @@ mod tests {
             let mut binlog_file = BinlogFile::new(BinlogVersion::Version4, &file_data[..])?;
 
             let mut ev_pos = 4;
+            let mut table_map_events = HashMap::new();
 
             while let Some(ev) = binlog_file.next() {
                 let ev = ev?;
@@ -4417,7 +4623,36 @@ mod tests {
                 ev.write(binlog_version, &mut output)?;
 
                 let event = match ev.read_data() {
-                    Ok(event) => event.unwrap(),
+                    Ok(event) => {
+                        let event = event.unwrap_or_else(|| {
+                            dbg!(&ev);
+                            panic!()
+                        });
+                        match event {
+                            EventData::TableMapEvent(ref ev) => {
+                                // store table maps for later use
+                                table_map_events.insert(ev.table_id, ev.clone());
+
+                                event
+                            }
+                            EventData::WriteRowsEventV1(WriteRowsEventV1(ref ev))
+                            | EventData::UpdateRowsEventV1(UpdateRowsEventV1(ref ev))
+                            | EventData::DeleteRowsEventV1(DeleteRowsEventV1(ref ev))
+                            | EventData::WriteRowsEvent(WriteRowsEvent(ref ev))
+                            | EventData::UpdateRowsEvent(UpdateRowsEvent(ref ev))
+                            | EventData::DeleteRowsEvent(DeleteRowsEvent(ref ev))
+                            | EventData::PartialUpdateRowsEvent(PartialUpdateRowsEvent(ref ev)) => {
+                                // iterate rows in a rows event
+                                let table_map_event = table_map_events.get(&ev.table_id).unwrap();
+                                for ev in ev.rows(table_map_event) {
+                                    ev.unwrap();
+                                }
+
+                                event
+                            }
+                            _ => event,
+                        }
+                    }
                     Err(err)
                         if err.kind() == std::io::ErrorKind::Other
                             && ev.header.event_type.get() == Ok(EventType::XID_EVENT)

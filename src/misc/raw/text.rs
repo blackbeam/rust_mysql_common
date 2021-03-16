@@ -6,13 +6,15 @@
 // option. All files in the project carrying such notice may not be copied,
 // modified, or distributed except according to those terms.
 
-use std::{borrow::Cow, cmp::min, fmt, io, marker::PhantomData};
+use std::{borrow::Cow, cmp::min, fmt, io, marker::PhantomData, ops::Deref};
 
 use bytes::BufMut;
 
 use crate::{
+    binlog::jsonb::{deserialize_variable_length, serialize_variable_lenght},
     io::{BufMutExt, ParseBuf},
     misc::unexpected_buf_eof,
+    proto::{MyDeserialize, MySerialize},
 };
 
 /// Wrapper for a raw text value, that came from a server.
@@ -40,6 +42,34 @@ impl<'a, T> RawText<'a, T> {
             Some(position) => String::from_utf8_lossy(&slice[..position]),
             None => String::from_utf8_lossy(slice),
         }
+    }
+}
+
+impl<T> PartialEq<[u8]> for RawText<'_, T> {
+    fn eq(&self, other: &[u8]) -> bool {
+        self.0.as_ref().eq(other)
+    }
+}
+
+impl<T> Deref for RawText<'_, T> {
+    type Target = [u8];
+
+    fn deref(&self) -> &Self::Target {
+        self.0.as_ref()
+    }
+}
+
+impl<T: TextRepr> MySerialize for RawText<'_, T> {
+    fn serialize(&self, buf: &mut Vec<u8>) {
+        T::serialize(self.0.as_ref(), buf)
+    }
+}
+
+impl<'de, T: TextRepr> MyDeserialize<'de> for RawText<'de, T> {
+    type Ctx = T::Ctx;
+
+    fn deserialize(ctx: Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+        Ok(Self(T::deserialize(ctx, buf)?, PhantomData))
     }
 }
 
@@ -211,5 +241,29 @@ impl<const LEN: usize> TextRepr for FixedLengthText<LEN> {
         buf.checked_eat(LEN)
             .map(Cow::Borrowed)
             .ok_or_else(unexpected_buf_eof)
+    }
+}
+
+/// Variable-length text (used within JSONB).
+///
+/// Truncates text on serialization if its too length.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct VarLenText;
+
+impl TextRepr for VarLenText {
+    type Ctx = ();
+
+    fn serialize(mut text: &[u8], buf: &mut Vec<u8>) {
+        let len = min(u32::MAX as usize, text.len());
+        text = &text[..len];
+        serialize_variable_lenght(len as u32, buf);
+        buf.put_slice(text);
+    }
+
+    fn deserialize<'de>((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Cow<'de, [u8]>> {
+        let len = deserialize_variable_length(buf)? as usize;
+        buf.checked_eat(len)
+            .ok_or_else(unexpected_buf_eof)
+            .map(Cow::Borrowed)
     }
 }

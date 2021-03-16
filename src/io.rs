@@ -8,7 +8,7 @@
 
 use byteorder::{LittleEndian as LE, ReadBytesExt, WriteBytesExt};
 use bytes::BufMut;
-use std::io;
+use std::{cmp::min, io};
 
 pub trait BufMutExt: BufMut {
     /// Writes an unsigned integer to self as MySql length-encoded integer.
@@ -52,6 +52,15 @@ impl<T: BufMut> BufMutExt for T {}
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct ParseBuf<'a>(pub &'a [u8]);
+
+impl io::Read for ParseBuf<'_> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let count = min(self.0.len(), buf.len());
+        (buf[..count]).copy_from_slice(&self.0[..count]);
+        self.0 = &self.0[count..];
+        Ok(count)
+    }
+}
 
 macro_rules! eat_num {
     ($name:ident, $checked:ident, $t:ident::$fn:ident) => {
