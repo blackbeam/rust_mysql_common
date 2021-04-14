@@ -15,6 +15,9 @@ pub trait Bitflags: Copy {
     fn bits(&self) -> Self::Repr;
     fn from_bits(bits: Self::Repr) -> Option<Self>;
     fn from_bits_truncate(bits: Self::Repr) -> Self;
+    /// # Safety
+    ///
+    /// Safety requirements are defined by the [`bitflags!`] macro.
     unsafe fn from_bits_unchecked(bits: Self::Repr) -> Self;
     fn is_empty(&self) -> bool;
     fn is_all(&self) -> bool;

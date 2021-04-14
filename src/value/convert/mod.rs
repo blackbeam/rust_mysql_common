@@ -215,10 +215,7 @@ where
         }
     }
     fn commit(self) -> Option<T> {
-        match self.ir {
-            Some(ir) => Some(ir.commit()),
-            None => None,
-        }
+        self.ir.map(|ir| ir.commit())
     }
     fn rollback(self) -> Value {
         let OptionIr { value, ir } = self;
@@ -1476,11 +1473,11 @@ mod tests {
                         // since we don't generate values that low or high,
                         // and should be parsed with time::Duration instead.
                         ParseError::InvalidHour => assert!(/*h < 0 || */h > 23),
-                        ParseError::InvalidDayOfMonth => assert!(d < 1 || d > 31),
+                        ParseError::InvalidDayOfMonth => assert!(!(1..=31).contains(&d)),
                         ParseError::InvalidMonth => assert!(m < 1000 || m <= 12),
                         // For InvalidYear, ensure that the year isn't also 0,
                         // which is a valid value with non-strict-mode MySQL.
-                        ParseError::InvalidYear => assert!(y != 0 && (y < 1000 || y > 9999)),
+                        ParseError::InvalidYear => assert!(y != 0 && !(1000..=9999).contains(&y)),
                         ParseError::ComponentOutOfRange(_) |
                         ParseError::InsufficientInformation => {
                             // We may receive an ComponentOutOfRange or InsufficientInformation
@@ -1499,11 +1496,11 @@ mod tests {
                             // for each value separately.
 
                             if Date::try_from_ymd(y as i32, 1, 1).is_err() {
-                                assert!(y != 0 && (y < 1000 || y > 9999));
+                                assert!(y != 0 && !(1000..=9999).contains(&y));
                             } else if Date::try_from_ymd(0, m as u8, 1).is_err() {
                                 assert!(m < 1000 || m <= 12);
                             } else if Date::try_from_ymd(0, 1, d as u8).is_err() {
-                                assert!(d < 1 || d > 31);
+                                assert!(!(1..=31).contains(&d));
                             } else if Time::try_from_hms_micro(h as u8, 0, 0, 0).is_err() {
                                 assert!(/*h < 0 || */h > 23);
                             } else if Time::try_from_hms_micro(0, i as u8, 0, 0).is_err() {
@@ -1560,7 +1557,7 @@ mod tests {
 
             assert_eq!(Value::from(from_value::<u128>(val_bytes.clone())), val_bytes);
             assert_eq!(Value::from(from_value::<u128>(val_uint.clone())), val_uint);
-            assert_eq!(Value::from(from_value::<u128>(val_int.clone())), Value::UInt(int as u64));
+            assert_eq!(Value::from(from_value::<u128>(val_int)), Value::UInt(int as u64));
         }
 
         #[test]
@@ -1568,7 +1565,7 @@ mod tests {
             let val = Value::Float(n);
             let val_bytes = Value::Bytes(n.to_string().into());
             assert_eq!(Value::from(from_value::<f32>(val.clone())), val);
-            assert_eq!(Value::from(from_value::<f32>(val_bytes.clone())), val);
+            assert_eq!(Value::from(from_value::<f32>(val_bytes)), val);
         }
 
         #[test]
@@ -1576,7 +1573,7 @@ mod tests {
             let val = Value::Double(n);
             let val_bytes = Value::Bytes(n.to_string().into());
             assert_eq!(Value::from(from_value::<f64>(val.clone())), val);
-            assert_eq!(Value::from(from_value::<f64>(val_bytes.clone())), val);
+            assert_eq!(Value::from(from_value::<f64>(val_bytes)), val);
         }
     }
 
@@ -1602,7 +1599,7 @@ mod tests {
         assert!(from_value_opt::<u64>(value.clone()).is_err());
         assert!(from_value_opt::<i64>(value.clone()).is_err());
         assert!(from_value_opt::<u128>(value.clone()).is_err());
-        assert!(from_value_opt::<i128>(value.clone()).is_err());
+        assert!(from_value_opt::<i128>(value).is_err());
     }
 
     #[test]
@@ -1617,7 +1614,7 @@ mod tests {
         assert!(from_value_opt::<u64>(value.clone()).is_err());
         assert!(from_value_opt::<i64>(value.clone()).is_err());
         assert!(from_value_opt::<u128>(value.clone()).is_err());
-        assert!(from_value_opt::<i128>(value.clone()).is_err());
+        assert!(from_value_opt::<i128>(value).is_err());
     }
 
     #[cfg(feature = "nightly")]
@@ -1642,7 +1639,7 @@ mod tests {
 
     #[test]
     fn value_float_read_conversions_work() {
-        let original_f32 = 3.14;
+        let original_f32 = std::f32::consts::PI;
         let float_value = Value::Float(original_f32);
 
         // Reading an f32 from a MySQL float works.
@@ -1650,13 +1647,13 @@ mod tests {
         assert_eq!(converted_f32, original_f32);
 
         // Reading an f64 from a MySQL float also works (lossless cast).
-        let converted_f64: f64 = f64::from_value_opt(float_value.clone()).unwrap();
+        let converted_f64: f64 = f64::from_value_opt(float_value).unwrap();
         assert_eq!(converted_f64, original_f32 as f64);
     }
 
     #[test]
     fn value_double_read_conversions_work() {
-        let original_f64 = 3.14159265359;
+        let original_f64 = std::f64::consts::PI;
         let double_value = Value::Double(original_f64);
 
         // Reading an f64 from a MySQL double works.

@@ -145,9 +145,9 @@ macro_rules! into_params_impl {
         impl<$($A: Into<Value>,)*> From<($($A,)*)> for Params {
             fn from(x: ($($A,)*)) -> Params {
                 let ($($a,)*) = x;
-                let mut params = Vec::new();
-                $(params.push($a.into());)*
-                Params::Positional(params)
+                Params::Positional(vec![
+                    $($a.into(),)*
+                ])
             }
         }
     );

@@ -614,10 +614,10 @@ impl<'de, T: OkPacketKind> MyDeserialize<'de> for OkPacketDeserializer<'de, T> {
             let ok = OkPacket::try_from(body)?;
             Ok(Self(ok, PhantomData))
         } else {
-            return Err(io::Error::new(
+            Err(io::Error::new(
                 io::ErrorKind::InvalidData,
                 InvalidOkPacketHeader,
-            ));
+            ))
         }
     }
 }
@@ -1564,7 +1564,7 @@ impl<'a> HandshakeResponse<'a> {
     pub fn connect_attributes(&self) -> Option<HashMap<String, String>> {
         self.connect_attributes.as_ref().map(|attrs| {
             attrs
-                .into_iter()
+                .iter()
                 .map(|(k, v)| (k.as_str().into_owned(), v.as_str().into_owned()))
                 .collect()
         })
@@ -1874,7 +1874,7 @@ impl ComStmtExecuteRequestBuilder {
 }
 
 impl ComStmtExecuteRequestBuilder {
-    pub fn build<'a>(self, params: &'a [Value]) -> (ComStmtExecuteRequest<'a>, bool) {
+    pub fn build(self, params: &[Value]) -> (ComStmtExecuteRequest<'_>, bool) {
         let bitmap_len = NullBitmap::<ClientSide>::bitmap_len(params.len());
 
         let mut bitmap_bytes = vec![0; bitmap_len];

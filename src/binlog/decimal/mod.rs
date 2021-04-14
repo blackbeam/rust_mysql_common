@@ -152,7 +152,9 @@ impl Decimal {
         input.read_exact(&mut buffer)?;
 
         // we should invert back the very first bit of a binary representation
-        buffer.get_mut(0).map(|x| *x ^= 0x80);
+        if let Some(x) = buffer.get_mut(0) {
+            *x ^= 0x80
+        }
 
         // is it negative or not
         let mask = if buffer.get(0).copied().unwrap_or(0) & 0x80 == 0 {
@@ -322,7 +324,7 @@ impl FromStr for Decimal {
             from = &from[1..];
         }
 
-        let point_idx = from.find('.').unwrap_or(from.len());
+        let point_idx = from.find('.').unwrap_or_else(|| from.len());
         let (mut integral, mut fractional) = from.split_at(point_idx);
         fractional = fractional.get(1..).unwrap_or(fractional);
 
@@ -343,7 +345,7 @@ impl FromStr for Decimal {
         if prefix_len == 0 {
             prefix_len = DIG_PER_DEC;
         }
-        while integral.len() > 0 {
+        while !integral.is_empty() {
             let prefix = &integral[..prefix_len];
             let x: i32 = prefix.parse().expect("should not fail");
             out.buf.push(x);
@@ -351,7 +353,7 @@ impl FromStr for Decimal {
             prefix_len = DIG_PER_DEC;
         }
 
-        while fractional.len() > 0 {
+        while !fractional.is_empty() {
             let len = std::cmp::min(DIG_PER_DEC, fractional.len());
             let prefix = &fractional[..len];
             let mut x: i32 = prefix.parse().expect("should not fail");

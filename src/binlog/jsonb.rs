@@ -255,19 +255,19 @@ impl<'a, T: StorageFormat> ComplexValue<'a, T, Object> {
     }
 
     /// Returns an iterator over keys of an object.
-    pub fn keys<'b>(&'b self) -> ObjectKeys<'b, T> {
+    pub fn keys(&'a self) -> ObjectKeys<'a, T> {
         ObjectKeys { cur: 0, obj: self }
     }
 
     /// Returns an iterator over entries of an object.
-    pub fn iter<'b>(&'b self) -> ObjectIter<'b, T> {
+    pub fn iter(&'a self) -> ObjectIter<'a, T> {
         ObjectIter { cur: 0, obj: self }
     }
 }
 
 impl<'a, T: StorageFormat> ComplexValue<'a, T, Array> {
     /// Returns an iterator over entries of an array.
-    pub fn iter<'b>(&'b self) -> ArrayIter<'b, T> {
+    pub fn iter(&'a self) -> ArrayIter<'a, T> {
         ArrayIter { cur: 0, arr: self }
     }
 }
@@ -279,7 +279,7 @@ impl<'a, T: StorageFormat, U: ComplexType> ComplexValue<'a, T, U> {
     /// * for objects returns an element with the given key index.
     ///
     /// Returns `None` if `pos >= self.element_count()`.
-    pub fn elem_at<'b>(&'b self, pos: u32) -> io::Result<Option<Value<'b>>> {
+    pub fn elem_at(&'a self, pos: u32) -> io::Result<Option<Value<'a>>> {
         if pos >= self.element_count {
             return Ok(None);
         }
@@ -317,7 +317,7 @@ impl<'a, T: StorageFormat> TryInto<serde_json::Value> for ComplexValue<'a, T, Ar
         Ok(serde_json::Value::Array(
             self.iter()
                 .map(|x| {
-                    x.map_err(|e| Self::Error::InvalidJsonb(e))
+                    x.map_err(Self::Error::InvalidJsonb)
                         .and_then(TryInto::try_into)
                 })
                 .collect::<Result<Vec<_>, Self::Error>>()?,
@@ -332,10 +332,9 @@ impl<'a, T: StorageFormat> TryInto<serde_json::Value> for ComplexValue<'a, T, Ob
         Ok(serde_json::Value::Object(
             self.iter()
                 .map(|x| {
-                    x.map_err(|e| Self::Error::InvalidJsonb(e))
-                        .and_then(|(k, v)| {
-                            Ok((from_utf8(k.value_raw())?.to_owned(), v.try_into()?))
-                        })
+                    x.map_err(Self::Error::InvalidJsonb).and_then(|(k, v)| {
+                        Ok((from_utf8(k.value_raw())?.to_owned(), v.try_into()?))
+                    })
                 })
                 .collect::<Result<serde_json::Map<_, _>, Self::Error>>()?,
         ))
@@ -481,7 +480,7 @@ impl<'a> Value<'a> {
             JsonbType::JSONB_TYPE_UINT32 => buf.parse::<RawInt<LeU32>>(()).map(|x| Value::U32(*x)),
             JsonbType::JSONB_TYPE_INT64 => buf.parse::<RawInt<LeI64>>(()).map(|x| Value::I64(*x)),
             JsonbType::JSONB_TYPE_UINT64 => buf.parse::<RawInt<LeU64>>(()).map(|x| Value::U64(*x)),
-            JsonbType::JSONB_TYPE_DOUBLE => buf.parse::<f64>(()).map(|x| Value::F64(x)),
+            JsonbType::JSONB_TYPE_DOUBLE => buf.parse(()).map(Value::F64),
             JsonbType::JSONB_TYPE_STRING => Value::deserialize_string(buf),
             JsonbType::JSONB_TYPE_OPAQUE => Value::deserialize_opaque(buf),
             JsonbType::JSONB_TYPE_SMALL_OBJECT
@@ -516,42 +515,27 @@ impl<'a> Value<'a> {
 
     /// Returns true if this value is an array.
     pub fn is_array(&self) -> bool {
-        match self {
-            Value::SmallArray { .. } | Value::LargeArray { .. } => true,
-            _ => false,
-        }
+        matches!(self, Value::SmallArray { .. } | Value::LargeArray { .. })
     }
 
     /// Returns true if this value is an object.
     pub fn is_object(&self) -> bool {
-        match self {
-            Value::SmallObject { .. } | Value::LargeObject { .. } => true,
-            _ => false,
-        }
+        matches!(self, Value::SmallObject { .. } | Value::LargeObject { .. })
     }
 
     /// Returns true if this value is an int (i16, i32 or i64).
     pub fn is_int(&self) -> bool {
-        match self {
-            Value::I16(_) | Value::I32(_) | Value::I64(_) => true,
-            _ => false,
-        }
+        matches!(self, Value::I16(_) | Value::I32(_) | Value::I64(_))
     }
 
     /// Returns true if this value is an int (u16, u32 or u64).
     pub fn is_uint(&self) -> bool {
-        match self {
-            Value::U16(_) | Value::U32(_) | Value::U64(_) => true,
-            _ => false,
-        }
+        matches!(self, Value::U16(_) | Value::U32(_) | Value::U64(_))
     }
 
     /// Returns true if this value is f64.
     pub fn is_double(&self) -> bool {
-        match self {
-            Value::F64(_) => true,
-            _ => false,
-        }
+        matches!(self, Value::F64(_))
     }
 
     /// Returns the number of lements in array or buffer.

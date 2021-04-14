@@ -305,7 +305,7 @@ impl<'a> Iterator for RowsEventRows<'a> {
         let mut row_before = None;
         let mut row_after = None;
 
-        if self.rows_data.len() == 0 {
+        if self.rows_data.is_empty() {
             return None;
         }
 

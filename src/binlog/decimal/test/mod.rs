@@ -50,7 +50,7 @@ impl decimal_t {
     pub fn rust_string2decimal(string: &str) -> Result<decimal_t, i32> {
         let mut to = Self::new();
         let result = unsafe {
-            let end = &mut (string.as_ptr().offset(string.len() as isize) as *const i8);
+            let end = &mut (string.as_ptr().add(string.len()) as *const i8);
             c_string2decimal(string.as_ptr() as *const i8, &mut to, end)
         };
         to.len = slice_end(to.as_ref(), 0x80000000_u32 as i32).len() as i32;

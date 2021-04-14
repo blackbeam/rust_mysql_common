@@ -291,7 +291,7 @@ impl<'a> DefaultCharset<'a> {
         let mut buf = ParseBuf(self.non_default.as_bytes());
         std::iter::from_fn(move || {
             if buf.is_empty() || error {
-                return None;
+                None
             } else {
                 let result = buf.parse_unchecked(());
                 error = result.is_err();

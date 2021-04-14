@@ -76,7 +76,7 @@ pub trait IntRepr {
     type Primitive: fmt::Debug + Default + Copy + Eq + Ord + Hash;
 
     fn serialize(val: Self::Primitive, buf: &mut Vec<u8>);
-    fn deserialize<'de>(buf: &mut ParseBuf<'de>) -> io::Result<Self::Primitive>;
+    fn deserialize(buf: &mut ParseBuf<'_>) -> io::Result<Self::Primitive>;
 }
 
 impl IntRepr for u8 {
@@ -87,7 +87,7 @@ impl IntRepr for u8 {
         buf.put_u8(val)
     }
 
-    fn deserialize<'de>(buf: &mut ParseBuf<'de>) -> io::Result<Self::Primitive> {
+    fn deserialize(buf: &mut ParseBuf<'_>) -> io::Result<Self::Primitive> {
         Ok(buf.eat_u8())
     }
 }
@@ -100,7 +100,7 @@ impl IntRepr for i8 {
         buf.put_i8(val)
     }
 
-    fn deserialize<'de>(buf: &mut ParseBuf<'de>) -> io::Result<Self::Primitive> {
+    fn deserialize(buf: &mut ParseBuf<'_>) -> io::Result<Self::Primitive> {
         Ok(buf.eat_i8())
     }
 }
@@ -194,7 +194,7 @@ impl IntRepr for LeU32LowerHalf {
         LeU16::serialize((val & 0x0000_FFFF) as u16, buf);
     }
 
-    fn deserialize<'de>(buf: &mut ParseBuf<'de>) -> io::Result<Self::Primitive> {
+    fn deserialize(buf: &mut ParseBuf<'_>) -> io::Result<Self::Primitive> {
         LeU16::deserialize(buf).map(|x| x as u32)
     }
 }
@@ -211,7 +211,7 @@ impl IntRepr for LeU32UpperHalf {
         LeU16::serialize((val >> 16) as u16, buf);
     }
 
-    fn deserialize<'de>(buf: &mut ParseBuf<'de>) -> io::Result<Self::Primitive> {
+    fn deserialize(buf: &mut ParseBuf<'_>) -> io::Result<Self::Primitive> {
         LeU16::deserialize(buf).map(|x| (x as u32) << 16)
     }
 }
@@ -312,7 +312,7 @@ impl IntRepr for VarLen {
         }
     }
 
-    fn deserialize<'de>(buf: &mut ParseBuf<'de>) -> io::Result<Self::Primitive> {
+    fn deserialize(buf: &mut ParseBuf<'_>) -> io::Result<Self::Primitive> {
         // variable-length integer should take up to 5 bytes
         const MAX_REPR_LEN: usize = 5;
 
@@ -331,9 +331,9 @@ impl IntRepr for VarLen {
             }
         }
 
-        return Err(io::Error::new(
+        Err(io::Error::new(
             io::ErrorKind::InvalidData,
             "invalid variable-length value (more than 5 bytes)",
-        ));
+        ))
     }
 }

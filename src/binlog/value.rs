@@ -72,7 +72,7 @@ impl<'de> MyDeserialize<'de> for BinlogValue<'de> {
                     length = byte1;
                 }
             } else {
-                length = (ParseBuf(&col_meta[..])).eat_u16_le() as usize;
+                length = (ParseBuf(col_meta)).eat_u16_le() as usize;
             }
         }
 
@@ -236,12 +236,10 @@ impl<'de> MyDeserialize<'de> for BinlogValue<'de> {
                 let bytes: &[u8] = buf.parse(nbytes)?;
                 Ok(BinlogValue::Value(Bytes(bytes.into())))
             }
-            _ => {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    "Don't know how to handle column",
-                ))
-            }
+            _ => Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Don't know how to handle column",
+            )),
         }
     }
 }

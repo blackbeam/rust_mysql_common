@@ -129,7 +129,7 @@ impl Event {
 
         let footer = if is_fde {
             let footer = BinlogEventFooter::read(&data)?;
-            if !footer.checksum_alg.is_none() {
+            if footer.checksum_alg.is_some() {
                 // truncate checksum algorithm description
                 bytes_to_truncate += BinlogEventFooter::BINLOG_CHECKSUM_ALG_DESC_LEN;
             }
@@ -141,7 +141,7 @@ impl Event {
         };
 
         // fde will always contain checksum (see WL#2540)
-        let contains_checksum = !footer.checksum_alg.is_none()
+        let contains_checksum = footer.checksum_alg.is_some()
             && (is_fde || footer.checksum_alg != Some(RawConst::new(0)));
 
         if contains_checksum {
@@ -153,8 +153,8 @@ impl Event {
         data.truncate(data.len() - bytes_to_truncate);
 
         Ok(Self {
-            header,
             fde,
+            header,
             data,
             footer,
             checksum,
@@ -171,16 +171,13 @@ impl Event {
         output.write_all(&header_buf)?;
         output.write_all(&self.data)?;
 
-        match self.footer.get_checksum_alg() {
-            Ok(Some(alg)) => {
-                if is_fde {
-                    output.write_u8(alg as u8)?;
-                }
-                if alg == BinlogChecksumAlg::BINLOG_CHECKSUM_ALG_CRC32 || is_fde {
-                    output.write_u32::<LittleEndian>(self.calc_checksum(alg))?;
-                }
+        if let Ok(Some(alg)) = self.footer.get_checksum_alg() {
+            if is_fde {
+                output.write_u8(alg as u8)?;
             }
-            _ => (),
+            if alg == BinlogChecksumAlg::BINLOG_CHECKSUM_ALG_CRC32 || is_fde {
+                output.write_u32::<LittleEndian>(self.calc_checksum(alg))?;
+            }
         }
 
         Ok(())
@@ -193,16 +190,13 @@ impl Event {
 
         len += S(BinlogEventHeader::LEN);
         len += S(self.data.len());
-        match self.footer.get_checksum_alg() {
-            Ok(Some(alg)) => {
-                if is_fde {
-                    len += S(BinlogEventFooter::BINLOG_CHECKSUM_ALG_DESC_LEN);
-                }
-                if is_fde || alg != BinlogChecksumAlg::BINLOG_CHECKSUM_ALG_OFF {
-                    len += S(BinlogEventFooter::BINLOG_CHECKSUM_LEN);
-                }
+        if let Ok(Some(alg)) = self.footer.get_checksum_alg() {
+            if is_fde {
+                len += S(BinlogEventFooter::BINLOG_CHECKSUM_ALG_DESC_LEN);
             }
-            _ => (),
+            if is_fde || alg != BinlogChecksumAlg::BINLOG_CHECKSUM_ALG_OFF {
+                len += S(BinlogEventFooter::BINLOG_CHECKSUM_LEN);
+            }
         }
 
         min(len.0, u32::MAX as usize - BinlogEventHeader::LEN)
@@ -230,7 +224,7 @@ impl Event {
 
     /// Returns the checksum, if it is defined.
     pub fn checksum(&self) -> Option<[u8; BinlogEventFooter::BINLOG_CHECKSUM_LEN]> {
-        let contains_checksum = !self.footer.checksum_alg.is_none()
+        let contains_checksum = self.footer.checksum_alg.is_some()
             && (self.header.event_type.0 == (EventType::FORMAT_DESCRIPTION_EVENT as u8)
                 || self.footer.checksum_alg != Some(RawConst::new(0)));
         contains_checksum.then(|| self.checksum)
@@ -341,7 +335,7 @@ impl Event {
 
         let mut hasher = crc32fast::Hasher::new();
         let mut header = Vec::with_capacity(BinlogEventHeader::LEN);
-        let mut header_struct = self.header.clone();
+        let mut header_struct = self.header;
         if header_struct
             .flags
             .get()

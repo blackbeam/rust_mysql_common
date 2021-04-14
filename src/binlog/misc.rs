@@ -94,23 +94,29 @@ pub fn datetime_from_packed(mut tmp: i64) -> Value {
     if tmp < 0 {
         tmp = -tmp;
     }
-    let u = my_packed_time_get_frac_part(tmp);
+    let usec = my_packed_time_get_frac_part(tmp);
     let ymdhms = my_packed_time_get_int_part(tmp);
 
     let ymd = ymdhms >> 17;
     let ym = ymd >> 5;
     let hms = ymdhms % (1 << 17);
 
-    let d = ymd % (1 << 5);
-    let m = ym % 13;
-    let y = (ym / 13) as u32;
+    let day = ymd % (1 << 5);
+    let mon = ym % 13;
+    let year = (ym / 13) as u32;
 
-    let s = hms % (1 << 6);
-    let i = (hms >> 6) % (1 << 6);
-    let h = (hms >> 12) as u32;
+    let sec = hms % (1 << 6);
+    let min = (hms >> 6) % (1 << 6);
+    let hour = (hms >> 12) as u32;
 
     Value::Date(
-        y as u16, m as u8, d as u8, h as u8, i as u8, s as u8, u as u32,
+        year as u16,
+        mon as u8,
+        day as u8,
+        hour as u8,
+        min as u8,
+        sec as u8,
+        usec as u32,
     )
 }
 
@@ -132,7 +138,7 @@ pub(crate) struct LimitedWrite<T> {
 
 impl<T> LimitedWrite<T> {
     pub fn new(write: T, limit: S<usize>) -> Self {
-        Self { write, limit }
+        Self { limit, write }
     }
 }
 

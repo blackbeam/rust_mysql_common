@@ -577,60 +577,43 @@ pub enum ColumnType {
 impl ColumnType {
     pub fn is_numeric_type(&self) -> bool {
         use ColumnType::*;
-        match self {
+        matches!(
+            self,
             MYSQL_TYPE_TINY
-            | MYSQL_TYPE_SHORT
-            | MYSQL_TYPE_INT24
-            | MYSQL_TYPE_LONG
-            | MYSQL_TYPE_LONGLONG
-            | MYSQL_TYPE_DECIMAL
-            | MYSQL_TYPE_NEWDECIMAL
-            | MYSQL_TYPE_FLOAT
-            | MYSQL_TYPE_DOUBLE => true,
-            _ => false,
-        }
+                | MYSQL_TYPE_SHORT
+                | MYSQL_TYPE_INT24
+                | MYSQL_TYPE_LONG
+                | MYSQL_TYPE_LONGLONG
+                | MYSQL_TYPE_DECIMAL
+                | MYSQL_TYPE_NEWDECIMAL
+                | MYSQL_TYPE_FLOAT
+                | MYSQL_TYPE_DOUBLE
+        )
     }
 
     pub fn is_character_type(&self) -> bool {
         use ColumnType::*;
-        match self {
-            MYSQL_TYPE_STRING | MYSQL_TYPE_VAR_STRING | MYSQL_TYPE_VARCHAR | MYSQL_TYPE_BLOB => {
-                true
-            }
-            _ => false,
-        }
+        matches!(
+            self,
+            MYSQL_TYPE_STRING | MYSQL_TYPE_VAR_STRING | MYSQL_TYPE_VARCHAR | MYSQL_TYPE_BLOB
+        )
     }
 
     pub fn is_enum_or_set_type(&self) -> bool {
         use ColumnType::*;
-        match self {
-            MYSQL_TYPE_ENUM | MYSQL_TYPE_SET => true,
-            _ => false,
-        }
+        matches!(self, MYSQL_TYPE_ENUM | MYSQL_TYPE_SET)
     }
 
     pub fn is_enum_type(&self) -> bool {
-        use ColumnType::*;
-        match self {
-            MYSQL_TYPE_ENUM => true,
-            _ => false,
-        }
+        matches!(self, ColumnType::MYSQL_TYPE_ENUM)
     }
 
     pub fn is_set_type(&self) -> bool {
-        use ColumnType::*;
-        match self {
-            MYSQL_TYPE_SET => true,
-            _ => false,
-        }
+        matches!(self, ColumnType::MYSQL_TYPE_SET)
     }
 
     pub fn is_geometry_type(&self) -> bool {
-        use ColumnType::*;
-        match self {
-            MYSQL_TYPE_GEOMETRY => true,
-            _ => false,
-        }
+        matches!(self, ColumnType::MYSQL_TYPE_GEOMETRY)
     }
 }
 

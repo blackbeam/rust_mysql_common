@@ -87,30 +87,30 @@ impl MySerialize for Value {
             Value::Date(0u16, 0u8, 0u8, 0u8, 0u8, 0u8, 0u32) => {
                 buf.put_u8(0);
             }
-            Value::Date(y, m, d, 0u8, 0u8, 0u8, 0u32) => {
+            Value::Date(year, mon, day, 0u8, 0u8, 0u8, 0u32) => {
                 buf.put_u8(4);
-                buf.put_u16_le(*y);
-                buf.put_u8(*m);
-                buf.put_u8(*d);
+                buf.put_u16_le(*year);
+                buf.put_u8(*mon);
+                buf.put_u8(*day);
             }
-            Value::Date(y, m, d, h, i, s, 0u32) => {
+            Value::Date(year, mon, day, hour, min, sec, 0u32) => {
                 buf.put_u8(7);
-                buf.put_u16_le(*y);
-                buf.put_u8(*m);
-                buf.put_u8(*d);
-                buf.put_u8(*h);
-                buf.put_u8(*i);
-                buf.put_u8(*s);
+                buf.put_u16_le(*year);
+                buf.put_u8(*mon);
+                buf.put_u8(*day);
+                buf.put_u8(*hour);
+                buf.put_u8(*min);
+                buf.put_u8(*sec);
             }
-            Value::Date(y, m, d, h, i, s, u) => {
+            Value::Date(year, mon, day, hour, min, sec, usec) => {
                 buf.put_u8(11);
-                buf.put_u16_le(*y);
-                buf.put_u8(*m);
-                buf.put_u8(*d);
-                buf.put_u8(*h);
-                buf.put_u8(*i);
-                buf.put_u8(*s);
-                buf.put_u32_le(*u);
+                buf.put_u16_le(*year);
+                buf.put_u8(*mon);
+                buf.put_u8(*day);
+                buf.put_u8(*hour);
+                buf.put_u8(*min);
+                buf.put_u8(*sec);
+                buf.put_u32_le(*usec);
             }
             Value::Time(_, 0u32, 0u8, 0u8, 0u8, 0u32) => {
                 buf.put_u8(0);
@@ -123,14 +123,14 @@ impl MySerialize for Value {
                 buf.put_u8(*m);
                 buf.put_u8(*s);
             }
-            Value::Time(neg, d, h, m, s, u) => {
+            Value::Time(neg, days, hours, mins, secs, usecs) => {
                 buf.put_u8(12);
                 buf.put_u8(if *neg { 1 } else { 0 });
-                buf.put_u32_le(*d);
-                buf.put_u8(*h);
-                buf.put_u8(*m);
-                buf.put_u8(*s);
-                buf.put_u32_le(*u);
+                buf.put_u32_le(*days);
+                buf.put_u8(*hours);
+                buf.put_u8(*mins);
+                buf.put_u8(*secs);
+                buf.put_u32_le(*usecs);
             }
         }
     }
