@@ -18,7 +18,6 @@ use crate::{
     value::Value::*,
 };
 
-pub mod binlog;
 pub mod convert;
 pub mod json;
 
@@ -144,6 +143,7 @@ impl MySerialize for Value {
 pub struct ValueDeserializer<T>(pub Value, PhantomData<T>);
 
 impl<'de> MyDeserialize<'de> for ValueDeserializer<TextValue> {
+    const SIZE: Option<usize> = None;
     type Ctx = ();
 
     fn deserialize((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
@@ -153,6 +153,7 @@ impl<'de> MyDeserialize<'de> for ValueDeserializer<TextValue> {
 }
 
 impl<'de> MyDeserialize<'de> for ValueDeserializer<BinValue> {
+    const SIZE: Option<usize> = None;
     type Ctx = (ColumnType, ColumnFlags);
 
     fn deserialize((col_type, col_flags): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
@@ -390,7 +391,7 @@ impl Value {
         ))
     }
 
-    fn deserialize_bin(
+    pub(crate) fn deserialize_bin(
         (column_type, column_flags): (ColumnType, ColumnFlags),
         buf: &mut ParseBuf<'_>,
     ) -> io::Result<Self> {

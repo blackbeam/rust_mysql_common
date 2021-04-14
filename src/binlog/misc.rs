@@ -7,8 +7,12 @@
 // modified, or distributed except according to those terms.
 
 use byteorder::{BigEndian as BE, ReadBytesExt};
+use saturating::Saturating as S;
 
-use std::io;
+use std::{
+    cmp::min,
+    io::{self, Write},
+};
 
 use crate::value::Value;
 
@@ -120,3 +124,35 @@ pub fn my_timestamp_from_binary<T: io::Read>(mut input: T, dec: u8) -> io::Resul
     };
     Ok((sec, usec))
 }
+
+pub(crate) struct LimitedWrite<T> {
+    limit: S<usize>,
+    write: T,
+}
+
+impl<T> LimitedWrite<T> {
+    pub fn new(write: T, limit: S<usize>) -> Self {
+        Self { write, limit }
+    }
+}
+
+impl<T: Write> Write for LimitedWrite<T> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        let limit = min(buf.len(), self.limit.0);
+        let count = self.write.write(&buf[..limit])?;
+        self.limit -= S(count);
+        Ok(count)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.write.flush()
+    }
+}
+
+pub(crate) trait LimitWrite: Write + Sized {
+    fn limit(&mut self, limit: S<usize>) -> LimitedWrite<&mut Self> {
+        LimitedWrite::new(self, limit)
+    }
+}
+
+impl<T: Write> LimitWrite for T {}

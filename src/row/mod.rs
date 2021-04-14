@@ -225,6 +225,7 @@ impl<S, P> From<RowDeserializer<S, P>> for Row {
 }
 
 impl<'de, T> MyDeserialize<'de> for RowDeserializer<T, Text> {
+    const SIZE: Option<usize> = None;
     type Ctx = Arc<[Column]>;
 
     fn deserialize(columns: Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
@@ -241,6 +242,7 @@ impl<'de, T> MyDeserialize<'de> for RowDeserializer<T, Text> {
 }
 
 impl<'de, S: SerializationSide> MyDeserialize<'de> for RowDeserializer<S, Binary> {
+    const SIZE: Option<usize> = None;
     type Ctx = Arc<[Column]>;
 
     fn deserialize(columns: Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {

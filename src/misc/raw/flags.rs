@@ -8,19 +8,27 @@
 
 use num_traits::{Bounded, PrimInt};
 
-use std::fmt;
+use std::{fmt, io, marker::PhantomData, mem::size_of};
 
-use crate::bitflags_ext::Bitflags;
+use crate::{
+    bitflags_ext::Bitflags,
+    io::ParseBuf,
+    proto::{MyDeserialize, MySerialize},
+};
+
+use super::{int::IntRepr, RawInt};
 
 /// Wrapper for raw flags value.
-#[derive(Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
+///
+/// Deserialization of this type won't lead to an error if value contains unknown flags.
+#[derive(Clone, Default, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
 #[repr(transparent)]
-pub struct RawFlags<T: Bitflags>(pub T::Repr);
+pub struct RawFlags<T: Bitflags, U>(pub T::Repr, PhantomData<U>);
 
-impl<T: Bitflags> RawFlags<T> {
+impl<T: Bitflags, U> RawFlags<T, U> {
     /// Create new flags.
     pub fn new(value: T::Repr) -> Self {
-        Self(value)
+        Self(value, PhantomData)
     }
 
     /// Returns parsed flags. Unknown bits will be truncated.
@@ -29,7 +37,7 @@ impl<T: Bitflags> RawFlags<T> {
     }
 }
 
-impl<T: fmt::Debug> fmt::Debug for RawFlags<T>
+impl<T: fmt::Debug, U> fmt::Debug for RawFlags<T, U>
 where
     T: Bitflags,
     T::Repr: fmt::Binary,
@@ -46,5 +54,27 @@ where
             )?
         }
         Ok(())
+    }
+}
+
+impl<'de, T: Bitflags, U> MyDeserialize<'de> for RawFlags<T, U>
+where
+    U: IntRepr<Primitive = T::Repr>,
+{
+    const SIZE: Option<usize> = Some(size_of::<T::Repr>());
+    type Ctx = ();
+
+    fn deserialize((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+        let value = buf.parse_unchecked::<RawInt<U>>(())?;
+        Ok(Self::new(*value))
+    }
+}
+
+impl<T: Bitflags, U> MySerialize for RawFlags<T, U>
+where
+    U: IntRepr<Primitive = T::Repr>,
+{
+    fn serialize(&self, buf: &mut Vec<u8>) {
+        RawInt::<U>::new(self.0).serialize(buf);
     }
 }

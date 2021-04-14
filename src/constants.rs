@@ -16,7 +16,10 @@ pub static UTF8_GENERAL_CI: u16 = 33;
 pub static UTF8MB4_GENERAL_CI: u16 = 45;
 
 my_bitflags! {
-    StatusFlags, u16,
+    StatusFlags,
+    #[error("Unknown flags in the raw value of StatusFlags (raw={:b})", _0)]
+    UnknownStatusFlags,
+    u16,
 
     /// MySql server status flags
     pub struct StatusFlags: u16 {
@@ -72,7 +75,10 @@ my_bitflags! {
 }
 
 my_bitflags! {
-    CapabilityFlags, u32,
+    CapabilityFlags,
+    #[error("Unknown flags in the raw value of CapabilityFlags (raw={:b})", _0)]
+    UnknownCapabilityFlags,
+    u32,
 
     /// Client capability flags
     pub struct CapabilityFlags: u32 {
@@ -305,7 +311,49 @@ my_bitflags! {
 }
 
 my_bitflags! {
-    ColumnFlags, u16,
+    CursorType,
+    #[error("Unknown flags in the raw value of CursorType (raw={:b})", _0)]
+    UnknownCursorType,
+    u8,
+
+    /// Mysql cursor type.
+    pub struct CursorType: u8 {
+        const CURSOR_TYPE_NO_CURSOR  = 0_u8;
+        const CURSOR_TYPE_READ_ONLY  = 1_u8;
+        const CURSOR_TYPE_FOR_UPDATE = 2_u8;
+        const CURSOR_TYPE_SCROLLABLE = 4_u8;
+    }
+}
+
+my_bitflags! {
+    StmtExecuteParamsFlags,
+    #[error("Unknown flags in the raw value of StmtExecuteParamsFlags (raw={:b})", _0)]
+    UnknownStmtExecuteParamsFlags,
+    u8,
+
+    /// MySql stmt execute params flags.
+    pub struct StmtExecuteParamsFlags: u8 {
+        const NEW_PARAMS_BOUND  = 1_u8;
+    }
+}
+
+my_bitflags! {
+    StmtExecuteParamFlags,
+    #[error("Unknown flags in the raw value of StmtExecuteParamFlags (raw={:b})", _0)]
+    UnknownStmtExecuteParamFlags,
+    u8,
+
+    /// MySql stmt execute params flags.
+    pub struct StmtExecuteParamFlags: u8 {
+        const UNSIGNED  = 128_u8;
+    }
+}
+
+my_bitflags! {
+    ColumnFlags,
+    #[error("Unknown flags in the raw value of ColumnFlags (raw={:b})", _0)]
+    UnknownColumnFlags,
+    u16,
 
     /// MySql column flags
     pub struct ColumnFlags: u16 {
@@ -416,6 +464,12 @@ pub enum SessionStateType {
     SESSION_TRACK_TRANSACTION_CHARACTERISTICS,
     /// Transaction state.
     SESSION_TRACK_TRANSACTION_STATE,
+}
+
+impl From<SessionStateType> for u8 {
+    fn from(x: SessionStateType) -> u8 {
+        x as u8
+    }
 }
 
 impl TryFrom<u8> for SessionStateType {
@@ -621,8 +675,17 @@ impl TryFrom<u8> for ColumnType {
     }
 }
 
+impl From<ColumnType> for u8 {
+    fn from(val: ColumnType) -> u8 {
+        val as u8
+    }
+}
+
 my_bitflags! {
-    Flags2, u32,
+    Flags2,
+    #[error("Unknown flags in the raw value of Flags2 (raw={:b})", _0)]
+    UnknownFlags2,
+    u32,
 
     /// Bitmask of flags that are usually set with `SET`.
     pub struct Flags2: u32 {
@@ -634,7 +697,10 @@ my_bitflags! {
 }
 
 my_bitflags! {
-    SqlMode, u64,
+    SqlMode,
+    #[error("Unknown flags in the raw value of SqlMode (raw={:b})", _0)]
+    UnknownSqlMode,
+    u64,
 
     /// Bitmask of flags that are usually set with `SET sql_mode`.
     pub struct SqlMode: u64 {

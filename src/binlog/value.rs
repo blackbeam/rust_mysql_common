@@ -12,16 +12,16 @@ use crate::{
     binlog::{decimal, jsonb, jsondiff::JsonDiff, misc::*},
     constants::{ColumnFlags, ColumnType},
     io::ParseBuf,
-    misc::unexpected_buf_eof,
+    misc::raw::int::*,
     proto::MyDeserialize,
-    value::Value::*,
+    value::Value::{self, *},
 };
 
 /// Value of a binlog event.
 #[derive(Debug, Clone, PartialEq)]
 pub enum BinlogValue<'a> {
     /// MySql value.
-    Value(super::Value),
+    Value(Value),
     /// JSONB value.
     Jsonb(jsonb::Value<'a>),
     /// Value of a partial JSON modification event.
@@ -42,6 +42,7 @@ impl<'a> BinlogValue<'a> {
 }
 
 impl<'de> MyDeserialize<'de> for BinlogValue<'de> {
+    const SIZE: Option<usize> = None;
     /// <col_type, col_meta, is_unsigned, is_partial>
     type Ctx = (ColumnType, &'de [u8], bool, bool);
 
@@ -80,35 +81,35 @@ impl<'de> MyDeserialize<'de> for BinlogValue<'de> {
             | MYSQL_TYPE_FLOAT | MYSQL_TYPE_DOUBLE => {
                 let mut flags = ColumnFlags::empty();
                 flags.set(ColumnFlags::UNSIGNED_FLAG, is_unsigned);
-                super::Value::deserialize_bin((col_type, flags), &mut *buf).map(BinlogValue::Value)
+                Value::deserialize_bin((col_type, flags), &mut *buf).map(BinlogValue::Value)
             }
             MYSQL_TYPE_TIMESTAMP => {
-                let val = buf.checked_eat_u32_le().ok_or_else(unexpected_buf_eof)?;
-                Ok(BinlogValue::Value(Int(val as i64)))
+                let val: RawInt<LeU32> = buf.parse(())?;
+                Ok(BinlogValue::Value(Int(*val as i64)))
             }
             MYSQL_TYPE_INT24 => {
                 if is_unsigned {
-                    let val = buf.checked_eat_u24_le().ok_or_else(unexpected_buf_eof)?;
-                    Ok(BinlogValue::Value(Int(val as i64)))
+                    let val: RawInt<LeU24> = buf.parse(())?;
+                    Ok(BinlogValue::Value(Int(*val as i64)))
                 } else {
-                    let val = buf.checked_eat_i24_le().ok_or_else(unexpected_buf_eof)?;
-                    Ok(BinlogValue::Value(Int(val as i64)))
+                    let val: RawInt<LeI24> = buf.parse(())?;
+                    Ok(BinlogValue::Value(Int(*val as i64)))
                 }
             }
             MYSQL_TYPE_TIME => {
-                let tmp = buf.checked_eat_u24_le().ok_or_else(unexpected_buf_eof)?;
-                let h = tmp / 10000;
-                let m = (tmp % 10000) / 100;
-                let s = tmp % 100;
+                let tmp: RawInt<LeU24> = buf.parse(())?;
+                let h = *tmp / 10000;
+                let m = (*tmp % 10000) / 100;
+                let s = *tmp % 100;
                 Ok(BinlogValue::Value(Time(
                     false, 0, h as u8, m as u8, s as u8, 0,
                 )))
             }
             MYSQL_TYPE_DATETIME => {
                 // read YYYYMMDDHHMMSS representaion
-                let raw = buf.checked_eat_u64_le().ok_or_else(unexpected_buf_eof)?;
-                let d_part = raw / 1_000_000;
-                let t_part = raw % 1_000_000;
+                let raw: RawInt<LeU64> = buf.parse(())?;
+                let d_part = *raw / 1_000_000;
+                let t_part = *raw % 1_000_000;
                 Ok(BinlogValue::Value(Date(
                     (d_part / 10000) as u16,
                     ((d_part % 10000) / 100) as u8,
@@ -120,13 +121,13 @@ impl<'de> MyDeserialize<'de> for BinlogValue<'de> {
                 )))
             }
             MYSQL_TYPE_YEAR => {
-                let y = buf.checked_eat_u8().ok_or_else(unexpected_buf_eof)? as i32;
+                let y = *buf.parse::<RawInt<u8>>(())? as i32;
                 Ok(BinlogValue::Value(Bytes(
                     (1900 + y).to_string().into_bytes(),
                 )))
             }
             MYSQL_TYPE_NEWDATE => {
-                let tmp = buf.checked_eat_u24_le().ok_or_else(unexpected_buf_eof)?;
+                let tmp = *buf.parse::<RawInt<LeU24>>(())?;
                 let d = tmp & 31;
                 let m = (tmp >> 5) & 15;
                 let y = tmp >> 9;
@@ -137,7 +138,7 @@ impl<'de> MyDeserialize<'de> for BinlogValue<'de> {
             MYSQL_TYPE_BIT => {
                 let nbits = col_meta[0] as usize * 8 + (col_meta[1] as usize);
                 let nbytes = (nbits + 7) / 8;
-                let bytes = buf.checked_eat(nbytes).ok_or_else(unexpected_buf_eof)?;
+                let bytes: &[u8] = buf.parse(nbytes)?;
                 Ok(BinlogValue::Value(Bytes(bytes.into())))
             }
             MYSQL_TYPE_TIMESTAMP2 => {
@@ -164,18 +165,16 @@ impl<'de> MyDeserialize<'de> for BinlogValue<'de> {
                     .map(BinlogValue::Value)
             }
             MYSQL_TYPE_JSON => {
-                length = buf.checked_eat_u32_le().ok_or_else(unexpected_buf_eof)? as usize;
-                let mut json_value_buf =
-                    buf.checked_eat_buf(length).ok_or_else(unexpected_buf_eof)?;
+                length = *buf.parse::<RawInt<LeU32>>(())? as usize;
+                let mut json_value_buf: ParseBuf = buf.parse(length)?;
                 if is_partial {
                     let mut diffs = Vec::new();
                     while !json_value_buf.is_empty() {
-                        diffs.push(JsonDiff::deserialize((), &mut json_value_buf)?);
+                        diffs.push(json_value_buf.parse(())?);
                     }
                     Ok(BinlogValue::JsonDiff(diffs))
                 } else {
-                    let value = jsonb::Value::deserialize((), &mut json_value_buf)?;
-                    Ok(BinlogValue::Jsonb(value.into_owned()))
+                    Ok(BinlogValue::Jsonb(json_value_buf.parse(())?))
                 }
             }
             MYSQL_TYPE_NEWDECIMAL => {
@@ -190,18 +189,18 @@ impl<'de> MyDeserialize<'de> for BinlogValue<'de> {
             }
             MYSQL_TYPE_ENUM => match col_meta[1] {
                 1 => {
-                    let val = buf.checked_eat_u8().ok_or_else(unexpected_buf_eof)?;
-                    Ok(BinlogValue::Value(Int(val as i64)))
+                    let val = buf.parse::<RawInt<u8>>(())?;
+                    Ok(BinlogValue::Value(Int(*val as i64)))
                 }
                 2 => {
-                    let val = buf.checked_eat_u16_le().ok_or_else(unexpected_buf_eof)?;
-                    Ok(BinlogValue::Value(Int(val as i64)))
+                    let val = buf.parse::<RawInt<LeU16>>(())?;
+                    Ok(BinlogValue::Value(Int(*val as i64)))
                 }
                 _ => Err(io::Error::new(io::ErrorKind::InvalidData, "Unknown ENUM")),
             },
             MYSQL_TYPE_SET => {
                 let nbytes = col_meta[1] as usize * 8;
-                let bytes = buf.checked_eat(nbytes).ok_or_else(unexpected_buf_eof)?;
+                let bytes: &[u8] = buf.parse(nbytes)?;
                 Ok(BinlogValue::Value(Bytes(bytes.into())))
             }
             MYSQL_TYPE_TINY_BLOB
@@ -209,32 +208,32 @@ impl<'de> MyDeserialize<'de> for BinlogValue<'de> {
             | MYSQL_TYPE_LONG_BLOB
             | MYSQL_TYPE_BLOB => {
                 let nbytes = match col_meta[0] {
-                    1 => buf.checked_eat_u8().ok_or_else(unexpected_buf_eof)? as usize,
-                    2 => buf.checked_eat_u16_le().ok_or_else(unexpected_buf_eof)? as usize,
-                    3 => buf.checked_eat_u24_le().ok_or_else(unexpected_buf_eof)? as usize,
-                    4 => buf.checked_eat_u32_le().ok_or_else(unexpected_buf_eof)? as usize,
+                    1 => *buf.parse::<RawInt<u8>>(())? as usize,
+                    2 => *buf.parse::<RawInt<LeU16>>(())? as usize,
+                    3 => *buf.parse::<RawInt<LeU24>>(())? as usize,
+                    4 => *buf.parse::<RawInt<LeU32>>(())? as usize,
                     _ => return Err(io::Error::new(io::ErrorKind::InvalidData, "Unknown BLOB")),
                 };
-                let bytes = buf.checked_eat(nbytes).ok_or_else(unexpected_buf_eof)?;
+                let bytes: &[u8] = buf.parse(nbytes)?;
                 Ok(BinlogValue::Value(Bytes(bytes.into())))
             }
             MYSQL_TYPE_VARCHAR | MYSQL_TYPE_VAR_STRING => {
                 let type_len = (col_meta[0] as u16 | ((col_meta[1] as u16) << 8)) as usize;
                 let nbytes = if type_len < 256 {
-                    buf.checked_eat_u8().ok_or_else(unexpected_buf_eof)? as usize
+                    *buf.parse::<RawInt<u8>>(())? as usize
                 } else {
-                    buf.checked_eat_u16_le().ok_or_else(unexpected_buf_eof)? as usize
+                    *buf.parse::<RawInt<LeU16>>(())? as usize
                 };
-                let bytes = buf.checked_eat(nbytes).ok_or_else(unexpected_buf_eof)?;
+                let bytes: &[u8] = buf.parse(nbytes)?;
                 Ok(BinlogValue::Value(Bytes(bytes.into())))
             }
             MYSQL_TYPE_STRING => {
                 let nbytes = if length < 256 {
-                    buf.checked_eat_u8().ok_or_else(unexpected_buf_eof)? as usize
+                    *buf.parse::<RawInt<u8>>(())? as usize
                 } else {
-                    buf.checked_eat_u16_le().ok_or_else(unexpected_buf_eof)? as usize
+                    *buf.parse::<RawInt<LeU16>>(())? as usize
                 };
-                let bytes = buf.checked_eat(nbytes).ok_or_else(unexpected_buf_eof)?;
+                let bytes: &[u8] = buf.parse(nbytes)?;
                 Ok(BinlogValue::Value(Bytes(bytes.into())))
             }
             _ => {

@@ -140,7 +140,6 @@ macro_rules! params {
     }
 }
 
-pub mod binlog;
 pub mod constants;
 pub mod crypto;
 pub mod io;
@@ -153,6 +152,8 @@ pub mod proto;
 pub mod row;
 pub mod scramble;
 pub mod value;
+
+pub mod binlog;
 
 #[cfg(test)]
 #[test]

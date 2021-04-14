@@ -16,19 +16,14 @@ use std::{
     str::{from_utf8, Utf8Error},
 };
 
-use bytes::BufMut;
-
 use crate::{
     constants::ColumnType,
     io::ParseBuf,
     misc::{
-        raw::{
-            text::{BareText, VarLenText},
-            RawText,
-        },
+        raw::{bytes::BareU16Bytes, int::*, Const, RawBytes},
         unexpected_buf_eof,
     },
-    proto::MyDeserialize,
+    proto::{MyDeserialize, MySerialize},
 };
 
 impl fmt::Debug for Value<'_> {
@@ -80,6 +75,73 @@ impl<'a, T: StorageFormat> Iterator for ArrayIter<'a, T> {
     }
 }
 
+/// A key of a JSONB object.
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+#[repr(transparent)]
+pub struct ObjectKey<'a>(RawBytes<'a, BareU16Bytes>);
+
+impl<'a> ObjectKey<'a> {
+    pub fn new(key: impl Into<Cow<'a, [u8]>>) -> Self {
+        Self(RawBytes::new(key))
+    }
+
+    /// Returns the raw value of a key.
+    pub fn value_raw(&'a self) -> &'a [u8] {
+        self.0.as_bytes()
+    }
+
+    /// Returns the value of a key as a string (lossy converted).
+    pub fn value(&'a self) -> Cow<'a, str> {
+        self.0.as_str()
+    }
+}
+
+/// A key of a JSONB object.
+#[derive(Clone, Eq, PartialEq, Hash)]
+#[repr(transparent)]
+pub struct JsonbString<'a>(RawBytes<'a, VarLen>);
+
+impl<'a> JsonbString<'a> {
+    pub fn new(string: impl Into<Cow<'a, [u8]>>) -> Self {
+        Self(RawBytes::new(string))
+    }
+
+    /// Returns the raw string value.
+    pub fn str_raw(&'a self) -> &'a [u8] {
+        self.0.as_bytes()
+    }
+
+    /// Returns the string value as UTF-8 string (lossy converted).
+    pub fn str(&'a self) -> Cow<'a, str> {
+        self.0.as_str()
+    }
+
+    pub fn into_owned(self) -> JsonbString<'static> {
+        JsonbString(self.0.into_owned())
+    }
+}
+
+impl fmt::Debug for JsonbString<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.str())
+    }
+}
+
+impl<'de> MyDeserialize<'de> for JsonbString<'de> {
+    const SIZE: Option<usize> = None;
+    type Ctx = ();
+
+    fn deserialize((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+        Ok(Self(buf.parse(())?))
+    }
+}
+
+impl MySerialize for JsonbString<'_> {
+    fn serialize(&self, buf: &mut Vec<u8>) {
+        self.0.serialize(buf);
+    }
+}
+
 /// An iterator over entries of an object.
 #[derive(Copy, Clone, PartialEq)]
 pub struct ObjectIter<'a, T> {
@@ -88,7 +150,7 @@ pub struct ObjectIter<'a, T> {
 }
 
 impl<'a, T: StorageFormat> Iterator for ObjectIter<'a, T> {
-    type Item = io::Result<(RawText<'a, BareText>, Value<'a>)>;
+    type Item = io::Result<(ObjectKey<'a>, Value<'a>)>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let key = self.obj.key_at(self.cur).transpose();
@@ -114,7 +176,7 @@ pub struct ObjectKeys<'a, T> {
 }
 
 impl<'a, T: StorageFormat> Iterator for ObjectKeys<'a, T> {
-    type Item = io::Result<RawText<'a, BareText>>;
+    type Item = io::Result<ObjectKey<'a>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         match self.obj.key_at(self.cur).transpose() {
@@ -151,11 +213,21 @@ impl<'a, T, U> ComplexValue<'a, T, U> {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum JsonbError {
+    #[error("Malformed jsonb: invalid key offset pointer.")]
+    InvalidKeyOffsetPointer,
+    #[error("Malformed jsonb: invalid value offset pointer.")]
+    InvalidValueOffsetPointer,
+    #[error("Malformed jsonb: jsonb array/object size is larger than the whole array/object.")]
+    SizeOverflow,
+}
+
 impl<'a, T: StorageFormat> ComplexValue<'a, T, Object> {
     /// Returns a key with the given index.
     ///
     /// Returns `None` if `pos >= self.element_count()`.
-    pub fn key_at<'b>(&'b self, pos: u32) -> io::Result<Option<RawText<'b, BareText>>> {
+    pub fn key_at(&'a self, pos: u32) -> io::Result<Option<ObjectKey<'a>>> {
         if pos >= self.element_count {
             return Ok(None);
         }
@@ -174,13 +246,12 @@ impl<'a, T: StorageFormat> ComplexValue<'a, T, Object> {
         {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
-                "malformed jsonb: invalid key offset pointer",
+                JsonbError::InvalidKeyOffsetPointer,
             ));
         }
 
-        Ok(Some(RawText::new(
-            &self.data[key_offset..(key_offset + key_length)],
-        )))
+        let key_val = &self.data[key_offset..(key_offset + key_length)];
+        Ok(Some(ObjectKey::new(key_val)))
     }
 
     /// Returns an iterator over keys of an object.
@@ -231,7 +302,7 @@ impl<'a, T: StorageFormat, U: ComplexType> ComplexValue<'a, T, U> {
         if self.data.len() < value_offset || value_offset < entry_offset + entry_size {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
-                "malformed jsonb: invalid value offset pointer",
+                JsonbError::InvalidValueOffsetPointer,
             ));
         }
 
@@ -262,7 +333,9 @@ impl<'a, T: StorageFormat> TryInto<serde_json::Value> for ComplexValue<'a, T, Ob
             self.iter()
                 .map(|x| {
                     x.map_err(|e| Self::Error::InvalidJsonb(e))
-                        .and_then(|(k, v)| Ok((from_utf8(k.0.as_ref())?.to_owned(), v.try_into()?)))
+                        .and_then(|(k, v)| {
+                            Ok((from_utf8(k.value_raw())?.to_owned(), v.try_into()?))
+                        })
                 })
                 .collect::<Result<serde_json::Map<_, _>, Self::Error>>()?,
         ))
@@ -270,6 +343,7 @@ impl<'a, T: StorageFormat> TryInto<serde_json::Value> for ComplexValue<'a, T, Ob
 }
 
 impl<'de, T: StorageFormat, U: ComplexType> MyDeserialize<'de> for ComplexValue<'de, T, U> {
+    const SIZE: Option<usize> = None;
     type Ctx = ();
 
     fn deserialize((): Self::Ctx, whole_buf: &mut ParseBuf<'de>) -> io::Result<Self> {
@@ -283,7 +357,7 @@ impl<'de, T: StorageFormat, U: ComplexType> MyDeserialize<'de> for ComplexValue<
         if bytes as usize > whole_buf.len() {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
-                "jsonb array/object size is larger than the whole array/object",
+                JsonbError::SizeOverflow,
             ));
         }
 
@@ -292,7 +366,7 @@ impl<'de, T: StorageFormat, U: ComplexType> MyDeserialize<'de> for ComplexValue<
         if header_size > bytes as usize {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
-                "jsonb array/object header is larger than the whole array/object",
+                JsonbError::SizeOverflow,
             ));
         }
 
@@ -311,15 +385,37 @@ impl<'de, T: StorageFormat, U: ComplexType> MyDeserialize<'de> for ComplexValue<
 /// JSONB opaque value
 #[derive(Debug, Clone, PartialEq)]
 pub struct OpaqueValue<'a> {
-    pub value_type: ColumnType,
-    pub data: Cow<'a, [u8]>,
+    value_type: Const<ColumnType, u8>,
+    data: RawBytes<'a, VarLen>,
 }
 
 impl<'a> OpaqueValue<'a> {
+    pub fn new(value_type: ColumnType, data: impl Into<Cow<'a, [u8]>>) -> Self {
+        Self {
+            value_type: Const::new(value_type),
+            data: RawBytes::new(data),
+        }
+    }
+
+    /// Returns the value type.
+    pub fn value_type(&self) -> ColumnType {
+        self.value_type.0
+    }
+
+    /// Returns the raw value data.
+    pub fn data_raw(&'a self) -> &'a [u8] {
+        self.data.as_bytes()
+    }
+
+    /// Returns the value data as a string (lossy converted).
+    pub fn data(&'a self) -> Cow<'a, str> {
+        self.data.as_str()
+    }
+
     pub fn into_owned(self) -> OpaqueValue<'static> {
         OpaqueValue {
             value_type: self.value_type,
-            data: Cow::Owned(self.data.into_owned()),
+            data: self.data.into_owned(),
         }
     }
 }
@@ -336,7 +432,7 @@ pub enum Value<'a> {
     I64(i64),
     U64(u64),
     F64(f64),
-    String(RawText<'a, VarLenText>),
+    String(JsonbString<'a>),
     SmallArray(ComplexValue<'a, Small, Array>),
     LargeArray(ComplexValue<'a, Large, Array>),
     SmallObject(ComplexValue<'a, Small, Object>),
@@ -368,18 +464,10 @@ impl<'a> Value<'a> {
 
     fn deserialize_value(value_type: JsonbType, buf: &mut ParseBuf<'a>) -> io::Result<Self> {
         match value_type {
-            JsonbType::JSONB_TYPE_SMALL_OBJECT => {
-                Ok(Value::SmallObject(ComplexValue::deserialize((), buf)?))
-            }
-            JsonbType::JSONB_TYPE_LARGE_OBJECT => {
-                Ok(Value::LargeObject(ComplexValue::deserialize((), buf)?))
-            }
-            JsonbType::JSONB_TYPE_SMALL_ARRAY => {
-                Ok(Value::SmallArray(ComplexValue::deserialize((), buf)?))
-            }
-            JsonbType::JSONB_TYPE_LARGE_ARRAY => {
-                Ok(Value::LargeArray(ComplexValue::deserialize((), buf)?))
-            }
+            JsonbType::JSONB_TYPE_SMALL_OBJECT => Ok(Value::SmallObject(buf.parse(())?)),
+            JsonbType::JSONB_TYPE_LARGE_OBJECT => Ok(Value::LargeObject(buf.parse(())?)),
+            JsonbType::JSONB_TYPE_SMALL_ARRAY => Ok(Value::SmallArray(buf.parse(())?)),
+            JsonbType::JSONB_TYPE_LARGE_ARRAY => Ok(Value::LargeArray(buf.parse(())?)),
             _ => Value::deserialize_simple(value_type, buf),
         }
     }
@@ -387,34 +475,13 @@ impl<'a> Value<'a> {
     fn deserialize_simple(value_type: JsonbType, buf: &mut ParseBuf<'a>) -> io::Result<Self> {
         match value_type {
             JsonbType::JSONB_TYPE_LITERAL => Value::deserialize_literal(buf),
-            JsonbType::JSONB_TYPE_INT16 => buf
-                .checked_eat_i16_le()
-                .ok_or_else(unexpected_buf_eof)
-                .map(Value::I16),
-            JsonbType::JSONB_TYPE_UINT16 => buf
-                .checked_eat_u16_le()
-                .ok_or_else(unexpected_buf_eof)
-                .map(Value::U16),
-            JsonbType::JSONB_TYPE_INT32 => buf
-                .checked_eat_i32_le()
-                .ok_or_else(unexpected_buf_eof)
-                .map(Value::I32),
-            JsonbType::JSONB_TYPE_UINT32 => buf
-                .checked_eat_u32_le()
-                .ok_or_else(unexpected_buf_eof)
-                .map(Value::U32),
-            JsonbType::JSONB_TYPE_INT64 => buf
-                .checked_eat_i64_le()
-                .ok_or_else(unexpected_buf_eof)
-                .map(Value::I64),
-            JsonbType::JSONB_TYPE_UINT64 => buf
-                .checked_eat_u64_le()
-                .ok_or_else(unexpected_buf_eof)
-                .map(Value::U64),
-            JsonbType::JSONB_TYPE_DOUBLE => buf
-                .checked_eat_f64_le()
-                .ok_or_else(unexpected_buf_eof)
-                .map(Value::F64),
+            JsonbType::JSONB_TYPE_INT16 => buf.parse::<RawInt<LeI16>>(()).map(|x| Value::I16(*x)),
+            JsonbType::JSONB_TYPE_UINT16 => buf.parse::<RawInt<LeU16>>(()).map(|x| Value::U16(*x)),
+            JsonbType::JSONB_TYPE_INT32 => buf.parse::<RawInt<LeI32>>(()).map(|x| Value::I32(*x)),
+            JsonbType::JSONB_TYPE_UINT32 => buf.parse::<RawInt<LeU32>>(()).map(|x| Value::U32(*x)),
+            JsonbType::JSONB_TYPE_INT64 => buf.parse::<RawInt<LeI64>>(()).map(|x| Value::I64(*x)),
+            JsonbType::JSONB_TYPE_UINT64 => buf.parse::<RawInt<LeU64>>(()).map(|x| Value::U64(*x)),
+            JsonbType::JSONB_TYPE_DOUBLE => buf.parse::<f64>(()).map(|x| Value::F64(x)),
             JsonbType::JSONB_TYPE_STRING => Value::deserialize_string(buf),
             JsonbType::JSONB_TYPE_OPAQUE => Value::deserialize_opaque(buf),
             JsonbType::JSONB_TYPE_SMALL_OBJECT
@@ -437,19 +504,13 @@ impl<'a> Value<'a> {
     }
 
     fn deserialize_string(buf: &mut ParseBuf<'a>) -> io::Result<Self> {
-        let string = RawText::<'a, VarLenText>::deserialize((), buf)?;
-        Ok(Value::String(string))
+        buf.parse(()).map(Value::String)
     }
 
     fn deserialize_opaque(buf: &mut ParseBuf<'a>) -> io::Result<Self> {
-        let column_type = buf.checked_eat_u8().ok_or_else(unexpected_buf_eof)?;
-        let column_type = ColumnType::try_from(column_type)
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-        let len = deserialize_variable_length(buf)? as usize;
-        let data = buf.checked_eat(len).ok_or_else(unexpected_buf_eof)?;
         Ok(Value::Opaque(OpaqueValue {
-            value_type: column_type,
-            data: Cow::Borrowed(data),
+            value_type: buf.parse(())?,
+            data: buf.parse(())?,
         }))
     }
 
@@ -507,7 +568,7 @@ impl<'a> Value<'a> {
     /// Returns the field type of an opaque value.
     pub fn field_type(&self) -> Option<ColumnType> {
         match self {
-            Value::Opaque(OpaqueValue { value_type, .. }) => Some(*value_type),
+            Value::Opaque(OpaqueValue { value_type, .. }) => Some(**value_type),
             _ => None,
         }
     }
@@ -527,7 +588,7 @@ impl<'a> TryInto<serde_json::Value> for Value<'a> {
             Value::I64(x) => Ok(x.into()),
             Value::U64(x) => Ok(x.into()),
             Value::F64(x) => Ok(x.into()),
-            Value::String(s) => Ok(from_utf8(s.as_ref())?.into()),
+            Value::String(s) => Ok(from_utf8(s.str_raw())?.into()),
             Value::SmallArray(x) => x.try_into(),
             Value::LargeArray(x) => x.try_into(),
             Value::SmallObject(x) => x.try_into(),
@@ -548,6 +609,7 @@ pub enum JsonbToJsonError {
 }
 
 impl<'de> MyDeserialize<'de> for Value<'de> {
+    const SIZE: Option<usize> = None;
     type Ctx = ();
 
     fn deserialize((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
@@ -614,7 +676,7 @@ impl ComplexType for Array {
     }
 }
 
-/// JSONB storage format for objects and arrays.
+/// JSONB storage format for objects and arrays. See [`ComplexType`].
 pub trait StorageFormat {
     const IS_LARGE: bool;
     /// The size of offset or size fields.
@@ -749,47 +811,6 @@ impl TryFrom<u8> for LiteralType {
             0x1 => Ok(Self::JSONB_TRUE_LITERAL),
             0x2 => Ok(Self::JSONB_FALSE_LITERAL),
             x => Err(UnknownLiteralType(x)),
-        }
-    }
-}
-
-/// Deserializes varialbe-length (an ineger) that is used within JSONB.
-pub fn deserialize_variable_length<'de>(buf: &mut ParseBuf<'de>) -> io::Result<u32> {
-    // variable-length takes up to 5 bytes
-    const MAX_REPR_LEN: usize = 5;
-
-    let mut len = 0_u64;
-    for i in 0..MAX_REPR_LEN {
-        let byte = buf.checked_eat_u8().ok_or_else(unexpected_buf_eof)? as u64;
-        len |= (byte & 0x7f) << (7 * i);
-        if byte & 0x80 == 0 {
-            if len > (u32::MAX as u64) {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    "invalid variable-length value (> u32::MAX)",
-                ));
-            }
-            return Ok(len as u32);
-        }
-    }
-
-    return Err(io::Error::new(
-        io::ErrorKind::InvalidData,
-        "invalid variable-length value (more than 5 bytes)",
-    ));
-}
-
-/// Serializes variable-length (an integer) that is used within JSONB.
-pub fn serialize_variable_lenght(mut length: u32, buf: &mut Vec<u8>) {
-    loop {
-        let mut byte = (length & 0x7F) as u8;
-        length >>= 7;
-        if length != 0 {
-            byte |= 0x80;
-            buf.put_u8(byte);
-            break;
-        } else {
-            buf.put_u8(byte);
         }
     }
 }

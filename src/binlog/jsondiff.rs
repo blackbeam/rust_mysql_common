@@ -10,10 +10,7 @@ use std::{borrow::Cow, convert::TryFrom, io};
 
 use crate::{
     io::ParseBuf,
-    misc::{
-        raw::{text::LengthEncodedText, RawText},
-        unexpected_buf_eof,
-    },
+    misc::raw::{bytes::LenEnc, Const, RawBytes, RawInt},
     proto::MyDeserialize,
 };
 
@@ -62,25 +59,25 @@ impl TryFrom<u8> for JsonDiffOperation {
 /// without sending the whole updated document.
 #[derive(Debug, Clone, PartialEq)]
 pub struct JsonDiff<'a> {
-    path: RawText<'a, LengthEncodedText>,
-    operation: JsonDiffOperation,
+    path: RawBytes<'a, LenEnc>,
+    operation: Const<JsonDiffOperation, u8>,
     value: Option<jsonb::Value<'a>>,
 }
 
 impl<'a> JsonDiff<'a> {
-    /// Returns JsonDiff path as a slice of bytes.
-    pub fn path_ref(&self) -> &[u8] {
-        self.path.0.as_ref()
+    /// Returns the raw JsonDiff path.
+    pub fn path(&'a self) -> &'a [u8] {
+        self.path.as_bytes()
     }
 
-    /// Returns JsonDiff path as a string (lossy converted).
+    /// Returns the JsonDiff path as a string (lossy converted).
     pub fn path_str(&'a self) -> Cow<'a, str> {
         self.path.as_str()
     }
 
     /// Returns JsonDiff operation.
     pub fn operation(&self) -> JsonDiffOperation {
-        self.operation
+        *self.operation
     }
 
     /// Returns JsonDiff value (if any).
@@ -99,25 +96,16 @@ impl<'a> JsonDiff<'a> {
 }
 
 impl<'de> MyDeserialize<'de> for JsonDiff<'de> {
+    const SIZE: Option<usize> = None;
     type Ctx = ();
 
     fn deserialize((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
-        let operation = buf
-            .checked_eat_u8()
-            .ok_or_else(unexpected_buf_eof)
-            .and_then(|op| {
-                JsonDiffOperation::try_from(op)
-                    .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
-            })?;
-        let path = RawText::<'_, LengthEncodedText>::deserialize((), &mut *buf)?;
-        let value = if operation != JsonDiffOperation::REMOVE {
-            let value_len = buf
-                .checked_eat_lenenc_int()
-                .ok_or_else(unexpected_buf_eof)? as usize;
-            let mut value_buf = buf
-                .checked_eat_buf(value_len)
-                .ok_or_else(unexpected_buf_eof)?;
-            Some(jsonb::Value::deserialize((), &mut value_buf)?)
+        let operation: Const<JsonDiffOperation, u8> = buf.parse(())?;
+        let path = buf.parse(())?;
+        let value = if *operation != JsonDiffOperation::REMOVE {
+            let len: RawInt<LenEnc> = buf.parse(())?;
+            let mut value: ParseBuf = buf.parse(*len as usize)?;
+            Some(value.parse(())?)
         } else {
             None
         };

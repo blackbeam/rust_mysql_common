@@ -10,6 +10,8 @@ use byteorder::{LittleEndian as LE, ReadBytesExt, WriteBytesExt};
 use bytes::BufMut;
 use std::{cmp::min, io};
 
+use crate::proto::MyDeserialize;
+
 pub trait BufMutExt: BufMut {
     /// Writes an unsigned integer to self as MySql length-encoded integer.
     fn put_lenenc_int(&mut self, n: u64) {
@@ -31,6 +33,31 @@ pub trait BufMutExt: BufMut {
     fn put_lenenc_str(&mut self, s: &[u8]) {
         self.put_lenenc_int(s.len() as u64);
         self.put_slice(s);
+    }
+
+    /// Writes a 3-bytes unsigned integer.
+    fn put_u24_le(&mut self, x: u32) {
+        self.put_uint_le(x as u64, 3);
+    }
+
+    /// Writes a 3-bytes signed integer.
+    fn put_i24_le(&mut self, x: i32) {
+        self.put_int_le(x as i64, 3);
+    }
+
+    /// Writes a 6-bytes unsigned integer.
+    fn put_u48_le(&mut self, x: u64) {
+        self.put_uint_le(x, 6);
+    }
+
+    /// Writes a 7-bytes unsigned integer.
+    fn put_u56_le(&mut self, x: u64) {
+        self.put_uint_le(x, 7);
+    }
+
+    /// Writes a 7-bytes signed integer.
+    fn put_i56_le(&mut self, x: i64) {
+        self.put_int_le(x, 7);
     }
 
     /// Writes a string with u8 length prefix. Truncates, if the length is greater that `u8::MAX`.
@@ -104,6 +131,32 @@ macro_rules! eat_num {
 }
 
 impl<'a> ParseBuf<'a> {
+    /// Returns `T: MyDeserialize` deserialized from `self`.
+    ///
+    /// Note, that this may panic if `T::SIZE.is_some()` and less than `self.0.len()`.
+    #[inline(always)]
+    pub fn parse_unchecked<T>(&mut self, ctx: T::Ctx) -> io::Result<T>
+    where
+        T: MyDeserialize<'a>,
+    {
+        T::deserialize(ctx, self)
+    }
+
+    /// Checked `parse`.
+    #[inline(always)]
+    pub fn parse<T>(&mut self, ctx: T::Ctx) -> io::Result<T>
+    where
+        T: MyDeserialize<'a>,
+    {
+        match T::SIZE {
+            Some(size) => {
+                let mut buf: ParseBuf = self.parse_unchecked(size)?;
+                buf.parse_unchecked(ctx)
+            }
+            None => self.parse_unchecked(ctx),
+        }
+    }
+
     /// Returns true if buffer is empty.
     pub fn is_empty(&self) -> bool {
         self.len() == 0
@@ -281,6 +334,10 @@ impl<'a> ParseBuf<'a> {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[error("Invalid length-encoded integer value (starts with 0xfb|0xff)")]
+pub struct InvalidLenghEncodedInteger;
+
 pub trait ReadMysqlExt: ReadBytesExt {
     /// Reads MySql's length-encoded integer.
     fn read_lenenc_int(&mut self) -> io::Result<u64> {
@@ -291,7 +348,7 @@ pub trait ReadMysqlExt: ReadBytesExt {
             0xfe => self.read_uint::<LE>(8),
             0xfb | 0xff => Err(io::Error::new(
                 io::ErrorKind::Other,
-                "Invalid length-encoded integer value",
+                InvalidLenghEncodedInteger,
             )),
             _ => unreachable!(),
         }
