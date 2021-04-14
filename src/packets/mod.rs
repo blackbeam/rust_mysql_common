@@ -31,7 +31,7 @@ use crate::{
             },
             int::{ConstU32, ConstU8, LeU16, LeU24, LeU32, LeU32LowerHalf, LeU32UpperHalf, LeU64},
             seq::Seq,
-            Const, Either, RawBytes, RawInt, Skip,
+            Const, Either, RawBytes, RawConst, RawInt, Skip,
         },
         unexpected_buf_eof,
     },
@@ -1218,20 +1218,20 @@ impl<'de> MyDeserialize<'de> for HandshakePacket<'de> {
         let connection_id = sbuf.parse_unchecked(())?;
         let scramble_1 = sbuf.parse_unchecked(())?;
         let __filler = sbuf.parse_unchecked(())?;
-        let capabilities_1: Const<CapabilityFlags, LeU32LowerHalf> = sbuf.parse_unchecked(())?;
+        let capabilities_1: RawConst<LeU32LowerHalf, CapabilityFlags> = sbuf.parse_unchecked(())?;
         let default_collation = sbuf.parse_unchecked(())?;
         let status_flags = sbuf.parse_unchecked(())?;
-        let capabilities_2: Const<CapabilityFlags, LeU32UpperHalf> = sbuf.parse_unchecked(())?;
+        let capabilities_2: RawConst<LeU32UpperHalf, CapabilityFlags> = sbuf.parse_unchecked(())?;
         let auth_plugin_data_len: RawInt<u8> = sbuf.parse_unchecked(())?;
         let __reserved = sbuf.parse_unchecked(())?;
         let mut scramble_2 = None;
-        if capabilities_1.contains(CapabilityFlags::CLIENT_SECURE_CONNECTION) {
+        if capabilities_1.0 & CapabilityFlags::CLIENT_SECURE_CONNECTION.bits() > 0 {
             let len = max(12, auth_plugin_data_len.0 as i8 - 9) as usize;
             scramble_2 = buf.parse(len).map(Some)?;
             buf.parse::<Skip<1>>(())?;
         }
         let mut auth_plugin_name = None;
-        if capabilities_2.contains(CapabilityFlags::CLIENT_PLUGIN_AUTH) {
+        if capabilities_2.0 & CapabilityFlags::CLIENT_PLUGIN_AUTH.bits() > 0 {
             auth_plugin_name = match buf.eat_all() {
                 [head @ .., 0] => Some(RawBytes::new(head)),
                 // missing trailing `0` is a known bug in mysql
@@ -1245,10 +1245,10 @@ impl<'de> MyDeserialize<'de> for HandshakePacket<'de> {
             connection_id,
             scramble_1,
             __filler,
-            capabilities_1,
+            capabilities_1: Const::new(CapabilityFlags::from_bits_truncate(capabilities_1.0)),
             default_collation,
             status_flags,
-            capabilities_2,
+            capabilities_2: Const::new(CapabilityFlags::from_bits_truncate(capabilities_2.0)),
             auth_plugin_data_len,
             __reserved,
             scramble_2,
@@ -1577,34 +1577,34 @@ impl<'de> MyDeserialize<'de> for HandshakeResponse<'de> {
 
     fn deserialize((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
         let mut sbuf: ParseBuf = buf.parse(4 + 4 + 1 + 23)?;
-        let client_flags: Const<CapabilityFlags, LeU32> = sbuf.parse_unchecked(())?;
+        let client_flags: RawConst<LeU32, CapabilityFlags> = sbuf.parse_unchecked(())?;
         sbuf.parse_unchecked::<Skip<4>>(())?;
         let collation = sbuf.parse_unchecked(())?;
         sbuf.parse_unchecked::<Skip<23>>(())?;
 
         let user = buf.parse(())?;
         let scramble_buf =
-            if client_flags.contains(CapabilityFlags::CLIENT_PLUGIN_AUTH_LENENC_CLIENT_DATA) {
+            if client_flags.0 & CapabilityFlags::CLIENT_PLUGIN_AUTH_LENENC_CLIENT_DATA.bits() > 0 {
                 Either::Left(buf.parse(())?)
-            } else if client_flags.contains(CapabilityFlags::CLIENT_SECURE_CONNECTION) {
+            } else if client_flags.0 & CapabilityFlags::CLIENT_SECURE_CONNECTION.bits() > 0 {
                 Either::Right(Either::Left(buf.parse(())?))
             } else {
                 Either::Right(Either::Right(buf.parse(())?))
             };
 
         let mut db_name = None;
-        if client_flags.contains(CapabilityFlags::CLIENT_CONNECT_WITH_DB) {
+        if client_flags.0 & CapabilityFlags::CLIENT_CONNECT_WITH_DB.bits() > 0 {
             db_name = buf.parse(()).map(Some)?;
         }
 
         let mut auth_plugin = None;
-        if client_flags.contains(CapabilityFlags::CLIENT_PLUGIN_AUTH) {
+        if client_flags.0 & CapabilityFlags::CLIENT_PLUGIN_AUTH.bits() > 0 {
             let auth_plugin_name = buf.eat_null_str();
             auth_plugin = Some(AuthPlugin::from_bytes(auth_plugin_name));
         }
 
         let mut connect_attributes = None;
-        if client_flags.contains(CapabilityFlags::CLIENT_CONNECT_ATTRS) {
+        if client_flags.0 & CapabilityFlags::CLIENT_CONNECT_ATTRS.bits() > 0 {
             let data_len = buf.parse::<RawInt<LenEnc>>(())?;
             let mut data: ParseBuf = buf.parse(data_len.0 as usize)?;
             let mut attrs = HashMap::new();
@@ -1617,7 +1617,7 @@ impl<'de> MyDeserialize<'de> for HandshakeResponse<'de> {
         }
 
         Ok(Self {
-            capabilities: client_flags,
+            capabilities: Const::new(CapabilityFlags::from_bits_truncate(client_flags.0)),
             collation,
             scramble_buf,
             user,

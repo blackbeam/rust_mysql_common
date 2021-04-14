@@ -297,6 +297,38 @@ my_bitflags! {
         /// EOF_Packet is deprecated as of MySQL 5.7.5.
         const CLIENT_DEPRECATE_EOF                  = 0x0100_0000;
 
+        /// The client can handle optional metadata information in the resultset.
+        const CLIENT_OPTIONAL_RESULTSET_METADATA    = 0x0200_0000;
+
+        /// Compression protocol extended to support zstd compression method.
+        ///
+        /// This capability flag is used to send zstd compression level between client and server
+        /// provided both client and server are enabled with this flag.
+        ///
+        /// # Server
+        ///
+        /// Server sets this flag when global variable protocol-compression-algorithms has zstd
+        /// in its list of supported values.
+        ///
+        /// # Client
+        ///
+        /// Client sets this flag when it is configured to use zstd compression method.
+        const CLIENT_ZSTD_COMPRESSION_ALGORITHM     = 0x0400_0000;
+
+        /// Support optional extension for query parameters into the COM_QUERY
+        /// and COM_STMT_EXECUTE packets.
+        ///
+        /// # Server
+        ///
+        /// Expects an optional part containing the query parameter set(s).
+        /// Executes the query for each set of parameters or returns an error if more than 1 set
+        /// of parameters is sent and the server can't execute it.
+        ///
+        /// # Client
+        ///
+        /// Can send the optional part containing the query parameter set(s).
+        const CLIENT_QUERY_ATTRIBUTES               = 0x0800_0000;
+
         /// Client or server supports progress reports within error packet.
         const CLIENT_PROGRESS_OBSOLETE              = 0x2000_0000;
 
