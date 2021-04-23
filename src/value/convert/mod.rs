@@ -6,19 +6,24 @@
 // option. All files in the project carrying such notice may not be copied,
 // modified, or distributed except according to those terms.
 
+#[cfg(feature = "chrono")]
 use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 use lexical::parse;
 use num_traits::{FromPrimitive, ToPrimitive};
 use regex::bytes::Regex;
+#[cfg(feature = "time")]
 use time::{Date, ParseError, PrimitiveDateTime, Time};
+#[cfg(feature = "uuid")]
 use uuid::Uuid;
 
 use std::{any::type_name, error::Error, fmt, str::from_utf8, time::Duration};
 
 use crate::value::Value;
 
+#[cfg(feature = "bigdecimal")]
 mod bigdecimal;
 mod bigint;
+#[cfg(feature = "rust_decimal")]
 mod decimal;
 
 lazy_static! {
@@ -463,6 +468,7 @@ impl ConvIr<Vec<u8>> for Vec<u8> {
     }
 }
 
+#[cfg(feature = "time")]
 impl ConvIr<PrimitiveDateTime> for ParseIr<PrimitiveDateTime> {
     fn new(value: Value) -> Result<ParseIr<PrimitiveDateTime>, FromValueError> {
         match value {
@@ -494,6 +500,7 @@ impl ConvIr<PrimitiveDateTime> for ParseIr<PrimitiveDateTime> {
 }
 
 /// Converts a MySQL `DATE` value to a `time::Date`.
+#[cfg(feature = "time")]
 impl ConvIr<Date> for ParseIr<Date> {
     fn new(value: Value) -> Result<ParseIr<Date>, FromValueError> {
         match value {
@@ -531,6 +538,7 @@ impl ConvIr<Date> for ParseIr<Date> {
 /// Note: `time::Time` only allows for time values in the 00:00:00 - 23:59:59 range.
 /// If you're expecting `TIME` values in MySQL's `TIME` value range of -838:59:59 - 838:59:59,
 /// use time::Duration instead.
+#[cfg(feature = "time")]
 impl ConvIr<Time> for ParseIr<Time> {
     fn new(value: Value) -> Result<ParseIr<Time>, FromValueError> {
         match value {
@@ -559,6 +567,7 @@ impl ConvIr<Time> for ParseIr<Time> {
     }
 }
 
+#[cfg(feature = "time")]
 fn create_primitive_date_time(
     year: u16,
     month: u8,
@@ -577,18 +586,21 @@ fn create_primitive_date_time(
     None
 }
 
+#[cfg(feature = "time")]
 fn parse_mysql_datetime_string_with_time(bytes: &[u8]) -> Result<PrimitiveDateTime, ParseError> {
     from_utf8(&*bytes)
         .map_err(|_| ParseError::InsufficientInformation)
         .and_then(|s| time::parse(s, "%Y-%m-%d %H:%M:%S").or_else(|_| time::parse(s, "%Y-%m-%d")))
 }
 
+#[cfg(feature = "time")]
 fn parse_mysql_time_string_with_time(bytes: &[u8]) -> Result<Time, ParseError> {
     from_utf8(&*bytes)
         .map_err(|_| ParseError::InsufficientInformation)
         .and_then(|s| Time::parse(s, "%H:%M:%S"))
 }
 
+#[cfg(feature = "chrono")]
 impl ConvIr<NaiveDateTime> for ParseIr<NaiveDateTime> {
     fn new(value: Value) -> Result<ParseIr<NaiveDateTime>, FromValueError> {
         let result = match value {
@@ -639,6 +651,7 @@ impl ConvIr<NaiveDateTime> for ParseIr<NaiveDateTime> {
     }
 }
 
+#[cfg(feature = "chrono")]
 impl ConvIr<NaiveDate> for ParseIr<NaiveDate> {
     fn new(value: Value) -> Result<ParseIr<NaiveDate>, FromValueError> {
         let result = match value {
@@ -695,6 +708,7 @@ fn parse_micros(micros_bytes: &[u8]) -> u32 {
 }
 
 /// Returns (year, month, day, hour, minute, second, micros)
+#[cfg(feature = "chrono")]
 fn parse_mysql_datetime_string(bytes: &[u8]) -> Option<(u32, u32, u32, u32, u32, u32, u32)> {
     let len = bytes.len();
 
@@ -799,6 +813,7 @@ fn parse_mysql_time_string(mut bytes: &[u8]) -> Option<(bool, u32, u32, u32, u32
     ))
 }
 
+#[cfg(feature = "chrono")]
 impl ConvIr<NaiveTime> for ParseIr<NaiveTime> {
     fn new(value: Value) -> Result<ParseIr<NaiveTime>, FromValueError> {
         let result = match value {
@@ -874,6 +889,7 @@ impl ConvIr<Duration> for ParseIr<Duration> {
     }
 }
 
+#[cfg(feature = "time")]
 impl ConvIr<time::Duration> for ParseIr<time::Duration> {
     fn new(v: Value) -> Result<ParseIr<time::Duration>, FromValueError> {
         match v {
@@ -922,6 +938,7 @@ impl ConvIr<time::Duration> for ParseIr<time::Duration> {
     }
 }
 
+#[cfg(feature = "chrono")]
 impl ConvIr<chrono::Duration> for ParseIr<chrono::Duration> {
     fn new(v: Value) -> Result<ParseIr<chrono::Duration>, FromValueError> {
         match v {
@@ -970,14 +987,23 @@ impl ConvIr<chrono::Duration> for ParseIr<chrono::Duration> {
     }
 }
 
+#[cfg(feature = "chrono")]
 impl_from_value!(NaiveDateTime, ParseIr<NaiveDateTime>);
+#[cfg(feature = "chrono")]
 impl_from_value!(NaiveDate, ParseIr<NaiveDate>);
+#[cfg(feature = "chrono")]
 impl_from_value!(NaiveTime, ParseIr<NaiveTime>);
+#[cfg(feature = "time")]
 impl_from_value!(PrimitiveDateTime, ParseIr<PrimitiveDateTime>);
+#[cfg(feature = "time")]
 impl_from_value!(Date, ParseIr<Date>);
+#[cfg(feature = "time")]
 impl_from_value!(Time, ParseIr<Time>);
+#[cfg(feature = "time")]
 impl_from_value!(Duration, ParseIr<Duration>);
+#[cfg(feature = "time")]
 impl_from_value!(time::Duration, ParseIr<time::Duration>);
+#[cfg(feature = "chrono")]
 impl_from_value!(chrono::Duration, ParseIr<chrono::Duration>);
 impl_from_value!(String, Vec<u8>);
 impl_from_value!(Vec<u8>, Vec<u8>);
@@ -1115,6 +1141,7 @@ impl From<String> for Value {
     }
 }
 
+#[cfg(feature = "chrono")]
 impl From<NaiveDateTime> for Value {
     fn from(x: NaiveDateTime) -> Value {
         if 1000 > x.year() || x.year() > 9999 {
@@ -1132,6 +1159,7 @@ impl From<NaiveDateTime> for Value {
     }
 }
 
+#[cfg(feature = "chrono")]
 impl From<NaiveDate> for Value {
     fn from(x: NaiveDate) -> Value {
         if 1000 > x.year() || x.year() > 9999 {
@@ -1141,6 +1169,7 @@ impl From<NaiveDate> for Value {
     }
 }
 
+#[cfg(feature = "chrono")]
 impl From<NaiveTime> for Value {
     fn from(x: NaiveTime) -> Value {
         Value::Time(
@@ -1154,6 +1183,7 @@ impl From<NaiveTime> for Value {
     }
 }
 
+#[cfg(feature = "time")]
 impl From<PrimitiveDateTime> for Value {
     fn from(x: PrimitiveDateTime) -> Value {
         Value::Date(
@@ -1168,12 +1198,14 @@ impl From<PrimitiveDateTime> for Value {
     }
 }
 
+#[cfg(feature = "time")]
 impl From<Date> for Value {
     fn from(x: Date) -> Value {
         Value::Date(x.year() as u16, x.month(), x.day(), 0, 0, 0, 0)
     }
 }
 
+#[cfg(feature = "time")]
 impl From<Time> for Value {
     fn from(x: Time) -> Value {
         Value::Time(
@@ -1187,6 +1219,7 @@ impl From<Time> for Value {
     }
 }
 
+#[cfg(feature = "time")]
 impl From<Duration> for Value {
     fn from(x: Duration) -> Value {
         let mut secs_total = x.as_secs();
@@ -1208,6 +1241,7 @@ impl From<Duration> for Value {
     }
 }
 
+#[cfg(feature = "time")]
 impl From<time::Duration> for Value {
     fn from(mut x: time::Duration) -> Value {
         let negative = x < time::Duration::zero();
@@ -1274,6 +1308,7 @@ from_array_impl!(30);
 from_array_impl!(31);
 from_array_impl!(32);
 
+#[cfg(feature = "uuid")]
 impl From<Uuid> for Value {
     fn from(uuid: Uuid) -> Value {
         Value::Bytes(uuid.as_bytes().to_vec())
@@ -1281,12 +1316,14 @@ impl From<Uuid> for Value {
 }
 
 /// Intermediate result of a Value-to-Uuid conversion.
+#[cfg(feature = "uuid")]
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct UuidIr {
     val: Uuid,
     bytes: Vec<u8>,
 }
 
+#[cfg(feature = "uuid")]
 impl ConvIr<Uuid> for UuidIr {
     fn new(v: Value) -> Result<UuidIr, FromValueError> {
         match v {
@@ -1305,6 +1342,7 @@ impl ConvIr<Uuid> for UuidIr {
     }
 }
 
+#[cfg(feature = "uuid")]
 impl FromValue for Uuid {
     type Intermediate = UuidIr;
 }

@@ -16,11 +16,11 @@ travis-ci = { repository = "blackbeam/rust_mysql_common" }
 
 [dependencies]
 base64 = "0.13"
-bigdecimal = { version = "0.2", features = ["serde"] }
+bigdecimal = { version = "0.2", features = ["serde"], optional = true }
 bitflags = "1"
 byteorder = "1"
 bytes = "1.0"
-chrono = { version = "0.4.19", features = ["serde"] }
+chrono = { version = "0.4.19", features = ["serde"], optional = true }
 flate2 = { version = "1.0", default-features = false }
 lazy_static = "1"
 lexical = "5.2"
@@ -28,14 +28,14 @@ num-bigint = { version = "0.3" }
 num-traits = { version = "0.2", features = ["i128"] }
 rand = "0.8.3"
 regex = "1"
-rust_decimal = "1.0"
+rust_decimal = { version = "1.0", optional = true }
 sha1 = "0.6"
 sha2 = "0.9"
 smallvec = { version = "1.6.1", features = ["union", "write"] }
 thiserror = "1.0.24"
-time = { version = "0.2", default-features = false, features = ["std"] }
+time = { version = "0.2", default-features = false, features = ["std"], optional = true }
 twox-hash = "1"
-uuid = "0.8"
+uuid = { version = "0.8", optional = true }
 serde = "1"
 serde_json = "1"
 
@@ -46,5 +46,5 @@ proptest = "1.0"
 debug = true
 
 [features]
-default = ["flate2/zlib"]
+default = ["flate2/zlib", "bigdecimal", "chrono", "rust_decimal", "time"]
 nightly = []
