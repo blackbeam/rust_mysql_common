@@ -198,7 +198,7 @@ mod tests {
         assert!(framed.next_packet(&mut dst).unwrap());
         assert_eq!(dst, vec![0_u8; MAX_PAYLOAD_LEN]);
         dst.clear();
-        assert!(framed.next_packet(&mut dst).unwrap() == false);
+        assert!(!framed.next_packet(&mut dst).unwrap());
     }
 
     #[test]

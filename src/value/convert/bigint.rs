@@ -151,7 +151,7 @@ mod tests {
 
             assert_eq!(Value::from(from_value::<BigUint>(val_bytes.clone())), val_bytes);
             assert_eq!(Value::from(from_value::<BigUint>(val_uint.clone())), val_uint);
-            assert_eq!(Value::from(from_value::<BigUint>(val_int.clone())), Value::UInt(int as u64));
+            assert_eq!(Value::from(from_value::<BigUint>(val_int)), Value::UInt(int as u64));
         }
     }
 }

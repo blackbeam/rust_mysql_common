@@ -1,5 +1,3 @@
-use std::convert::TryFrom;
-
 // Copyright (c) 2017 Anatoly Ikorsky
 //
 // Licensed under the Apache License, Version 2.0
@@ -8,6 +6,8 @@ use std::convert::TryFrom;
 // option. All files in the project carrying such notice may not be copied,
 // modified, or distributed except according to those terms.
 
+use std::convert::TryFrom;
+
 pub static MAX_PAYLOAD_LEN: usize = 16_777_215;
 pub static DEFAULT_MAX_ALLOWED_PACKET: usize = 4 * 1024 * 1024;
 pub static MIN_COMPRESS_LENGTH: usize = 50;
@@ -15,7 +15,12 @@ pub static MIN_COMPRESS_LENGTH: usize = 50;
 pub static UTF8_GENERAL_CI: u16 = 33;
 pub static UTF8MB4_GENERAL_CI: u16 = 45;
 
-bitflags! {
+my_bitflags! {
+    StatusFlags,
+    #[error("Unknown flags in the raw value of StatusFlags (raw={:b})", _0)]
+    UnknownStatusFlags,
+    u16,
+
     /// MySql server status flags
     pub struct StatusFlags: u16 {
         /// Is raised when a multi-statement transaction has been started, either explicitly,
@@ -69,7 +74,12 @@ bitflags! {
     }
 }
 
-bitflags! {
+my_bitflags! {
+    CapabilityFlags,
+    #[error("Unknown flags in the raw value of CapabilityFlags (raw={:b})", _0)]
+    UnknownCapabilityFlags,
+    u32,
+
     /// Client capability flags
     pub struct CapabilityFlags: u32 {
         /// Use the improved version of Old Password Authentication. Assumed to be set since 4.1.1.
@@ -300,7 +310,51 @@ bitflags! {
     }
 }
 
-bitflags! {
+my_bitflags! {
+    CursorType,
+    #[error("Unknown flags in the raw value of CursorType (raw={:b})", _0)]
+    UnknownCursorType,
+    u8,
+
+    /// Mysql cursor type.
+    pub struct CursorType: u8 {
+        const CURSOR_TYPE_NO_CURSOR  = 0_u8;
+        const CURSOR_TYPE_READ_ONLY  = 1_u8;
+        const CURSOR_TYPE_FOR_UPDATE = 2_u8;
+        const CURSOR_TYPE_SCROLLABLE = 4_u8;
+    }
+}
+
+my_bitflags! {
+    StmtExecuteParamsFlags,
+    #[error("Unknown flags in the raw value of StmtExecuteParamsFlags (raw={:b})", _0)]
+    UnknownStmtExecuteParamsFlags,
+    u8,
+
+    /// MySql stmt execute params flags.
+    pub struct StmtExecuteParamsFlags: u8 {
+        const NEW_PARAMS_BOUND  = 1_u8;
+    }
+}
+
+my_bitflags! {
+    StmtExecuteParamFlags,
+    #[error("Unknown flags in the raw value of StmtExecuteParamFlags (raw={:b})", _0)]
+    UnknownStmtExecuteParamFlags,
+    u8,
+
+    /// MySql stmt execute params flags.
+    pub struct StmtExecuteParamFlags: u8 {
+        const UNSIGNED  = 128_u8;
+    }
+}
+
+my_bitflags! {
+    ColumnFlags,
+    #[error("Unknown flags in the raw value of ColumnFlags (raw={:b})", _0)]
+    UnknownColumnFlags,
+    u16,
+
     /// MySql column flags
     pub struct ColumnFlags: u16 {
         /// Field can't be NULL.
@@ -412,6 +466,12 @@ pub enum SessionStateType {
     SESSION_TRACK_TRANSACTION_STATE,
 }
 
+impl From<SessionStateType> for u8 {
+    fn from(x: SessionStateType) -> u8 {
+        x as u8
+    }
+}
+
 impl TryFrom<u8> for SessionStateType {
     type Error = UnknownSessionStateType;
 
@@ -431,6 +491,49 @@ impl TryFrom<u8> for SessionStateType {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 #[error("Unknown session state type {}", _0)]
 pub struct UnknownSessionStateType(pub u8);
+
+/// Geometry type.
+#[derive(Clone, Copy, Eq, PartialEq, Debug, Hash)]
+#[allow(non_camel_case_types)]
+#[repr(u8)]
+pub enum GeometryType {
+    GEOM_GEOMETRY,
+    GEOM_POINT,
+    GEOM_LINESTRING,
+    GEOM_POLYGON,
+    GEOM_MULTIPOINT,
+    GEOM_MULTILINESTRING,
+    GEOM_MULTIPOLYGON,
+    GEOM_GEOMETRYCOLLECTION,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[error("Unknown geometry type {}", _0)]
+#[repr(transparent)]
+pub struct UnknownGeometryType(pub u8);
+
+impl From<UnknownGeometryType> for u8 {
+    fn from(x: UnknownGeometryType) -> Self {
+        x.0
+    }
+}
+
+impl TryFrom<u8> for GeometryType {
+    type Error = UnknownGeometryType;
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(GeometryType::GEOM_GEOMETRY),
+            1 => Ok(GeometryType::GEOM_POINT),
+            2 => Ok(GeometryType::GEOM_LINESTRING),
+            3 => Ok(GeometryType::GEOM_POLYGON),
+            4 => Ok(GeometryType::GEOM_MULTIPOINT),
+            5 => Ok(GeometryType::GEOM_MULTILINESTRING),
+            6 => Ok(GeometryType::GEOM_MULTIPOLYGON),
+            7 => Ok(GeometryType::GEOM_GEOMETRYCOLLECTION),
+            x => Err(UnknownGeometryType(x)),
+        }
+    }
+}
 
 /// Type of MySql column field
 #[allow(non_camel_case_types)]
@@ -457,6 +560,7 @@ pub enum ColumnType {
     MYSQL_TYPE_TIMESTAMP2,
     MYSQL_TYPE_DATETIME2,
     MYSQL_TYPE_TIME2,
+    MYSQL_TYPE_TYPED_ARRAY, // Used for replication only
     MYSQL_TYPE_JSON = 245,
     MYSQL_TYPE_NEWDECIMAL = 246,
     MYSQL_TYPE_ENUM = 247,
@@ -468,6 +572,49 @@ pub enum ColumnType {
     MYSQL_TYPE_VAR_STRING = 253,
     MYSQL_TYPE_STRING = 254,
     MYSQL_TYPE_GEOMETRY = 255,
+}
+
+impl ColumnType {
+    pub fn is_numeric_type(&self) -> bool {
+        use ColumnType::*;
+        matches!(
+            self,
+            MYSQL_TYPE_TINY
+                | MYSQL_TYPE_SHORT
+                | MYSQL_TYPE_INT24
+                | MYSQL_TYPE_LONG
+                | MYSQL_TYPE_LONGLONG
+                | MYSQL_TYPE_DECIMAL
+                | MYSQL_TYPE_NEWDECIMAL
+                | MYSQL_TYPE_FLOAT
+                | MYSQL_TYPE_DOUBLE
+        )
+    }
+
+    pub fn is_character_type(&self) -> bool {
+        use ColumnType::*;
+        matches!(
+            self,
+            MYSQL_TYPE_STRING | MYSQL_TYPE_VAR_STRING | MYSQL_TYPE_VARCHAR | MYSQL_TYPE_BLOB
+        )
+    }
+
+    pub fn is_enum_or_set_type(&self) -> bool {
+        use ColumnType::*;
+        matches!(self, MYSQL_TYPE_ENUM | MYSQL_TYPE_SET)
+    }
+
+    pub fn is_enum_type(&self) -> bool {
+        matches!(self, ColumnType::MYSQL_TYPE_ENUM)
+    }
+
+    pub fn is_set_type(&self) -> bool {
+        matches!(self, ColumnType::MYSQL_TYPE_SET)
+    }
+
+    pub fn is_geometry_type(&self) -> bool {
+        matches!(self, ColumnType::MYSQL_TYPE_GEOMETRY)
+    }
 }
 
 impl TryFrom<u8> for ColumnType {
@@ -494,6 +641,7 @@ impl TryFrom<u8> for ColumnType {
             0x11_u8 => Ok(ColumnType::MYSQL_TYPE_TIMESTAMP2),
             0x12_u8 => Ok(ColumnType::MYSQL_TYPE_DATETIME2),
             0x13_u8 => Ok(ColumnType::MYSQL_TYPE_TIME2),
+            0x14_u8 => Ok(ColumnType::MYSQL_TYPE_TYPED_ARRAY),
             0xf5_u8 => Ok(ColumnType::MYSQL_TYPE_JSON),
             0xf6_u8 => Ok(ColumnType::MYSQL_TYPE_NEWDECIMAL),
             0xf7_u8 => Ok(ColumnType::MYSQL_TYPE_ENUM),
@@ -510,6 +658,123 @@ impl TryFrom<u8> for ColumnType {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+impl From<ColumnType> for u8 {
+    fn from(val: ColumnType) -> u8 {
+        val as u8
+    }
+}
+
+my_bitflags! {
+    Flags2,
+    #[error("Unknown flags in the raw value of Flags2 (raw={:b})", _0)]
+    UnknownFlags2,
+    u32,
+
+    /// Bitmask of flags that are usually set with `SET`.
+    pub struct Flags2: u32 {
+        const OPTION_AUTO_IS_NULL          = 0x00004000;
+        const OPTION_NOT_AUTOCOMMIT        = 0x00080000;
+        const OPTION_NO_FOREIGN_KEY_CHECKS = 0x04000000;
+        const OPTION_RELAXED_UNIQUE_CHECKS = 0x08000000;
+    }
+}
+
+my_bitflags! {
+    SqlMode,
+    #[error("Unknown flags in the raw value of SqlMode (raw={:b})", _0)]
+    UnknownSqlMode,
+    u64,
+
+    /// Bitmask of flags that are usually set with `SET sql_mode`.
+    pub struct SqlMode: u64 {
+        const MODE_REAL_AS_FLOAT              = 0x00000001;
+        const MODE_PIPES_AS_CONCAT            = 0x00000002;
+        const MODE_ANSI_QUOTES                = 0x00000004;
+        const MODE_IGNORE_SPACE               = 0x00000008;
+        const MODE_NOT_USED                   = 0x00000010;
+        const MODE_ONLY_FULL_GROUP_BY         = 0x00000020;
+        const MODE_NO_UNSIGNED_SUBTRACTION    = 0x00000040;
+        const MODE_NO_DIR_IN_CREATE           = 0x00000080;
+        const MODE_POSTGRESQL                 = 0x00000100;
+        const MODE_ORACLE                     = 0x00000200;
+        const MODE_MSSQL                      = 0x00000400;
+        const MODE_DB2                        = 0x00000800;
+        const MODE_MAXDB                      = 0x00001000;
+        const MODE_NO_KEY_OPTIONS             = 0x00002000;
+        const MODE_NO_FIELD_OPTIONS           = 0x00008000;
+        const MODE_NO_TABLE_OPTIONS           = 0x00004000;
+        const MODE_MYSQL40                    = 0x00020000;
+        const MODE_MYSQL323                   = 0x00010000;
+        const MODE_ANSI                       = 0x00040000;
+        const MODE_NO_AUTO_VALUE_ON_ZERO      = 0x00080000;
+        const MODE_NO_BACKSLASH_ESCAPES       = 0x00100000;
+        const MODE_STRICT_TRANS_TABLES        = 0x00200000;
+        const MODE_STRICT_ALL_TABLES          = 0x00400000;
+        const MODE_NO_ZERO_IN_DATE            = 0x00800000;
+        const MODE_NO_ZERO_DATE               = 0x01000000;
+        const MODE_INVALID_DATES              = 0x02000000;
+        const MODE_ERROR_FOR_DIVISION_BY_ZERO = 0x04000000;
+        const MODE_TRADITIONAL                = 0x08000000;
+        const MODE_NO_AUTO_CREATE_USER        = 0x10000000;
+        const MODE_HIGH_NOT_PRECEDENCE        = 0x20000000;
+        const MODE_NO_ENGINE_SUBSTITUTION     = 0x40000000;
+        const MODE_PAD_CHAR_TO_FULL_LENGTH    = 0x80000000;
+        const MODE_TIME_TRUNCATE_FRACTIONAL   = 0x100000000;
+        const MODE_LAST                       = 0x200000000;
+    }
+}
+
+/// Type of the user defined function return slot and arguments.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
+#[allow(non_camel_case_types)]
+#[repr(i8)]
+pub enum ItemResult {
+    /// not valid for UDFs
+    INVALID_RESULT = -1,
+    /// char *
+    STRING_RESULT = 0,
+    REAL_RESULT,
+    /// double
+    /// long long
+    INT_RESULT,
+    /// not valid for UDFs
+    ROW_RESULT,
+    /// char *, to be converted to/from a decimal
+    DECIMAL_RESULT,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, thiserror::Error)]
+#[error("Unknown item result type {}", _0)]
+pub struct UnknownItemResultType(pub i8);
+
+impl From<UnknownItemResultType> for i8 {
+    fn from(x: UnknownItemResultType) -> Self {
+        x.0
+    }
+}
+
+impl TryFrom<i8> for ItemResult {
+    type Error = UnknownItemResultType;
+
+    fn try_from(value: i8) -> Result<Self, Self::Error> {
+        match value {
+            -1 => Ok(ItemResult::INVALID_RESULT),
+            0 => Ok(ItemResult::STRING_RESULT),
+            1 => Ok(ItemResult::REAL_RESULT),
+            2 => Ok(ItemResult::INT_RESULT),
+            3 => Ok(ItemResult::ROW_RESULT),
+            4 => Ok(ItemResult::DECIMAL_RESULT),
+            x => Err(UnknownItemResultType(x)),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, thiserror::Error)]
 #[error("Unknown column type {}", _0)]
 pub struct UnknownColumnType(pub u8);
+
+impl From<UnknownColumnType> for u8 {
+    fn from(x: UnknownColumnType) -> Self {
+        x.0
+    }
+}

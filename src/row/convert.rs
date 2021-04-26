@@ -765,14 +765,9 @@ where
 fn bench_from_row(bencher: &mut test::Bencher) {
     use std::sync::Arc;
 
-    use crate::{
-        constants::ColumnType,
-        io::WriteMysqlExt,
-        packets::{column_from_payload, Column},
-        value::Value,
-    };
+    use crate::{constants::ColumnType, io::WriteMysqlExt, packets::Column, value::Value};
 
-    fn col(name: &str, ty: ColumnType) -> Column {
+    fn col(name: &str, ty: ColumnType) -> Column<'static> {
         let mut payload = b"\x00def".to_vec();
         for _ in 0..5 {
             payload.write_lenenc_str(name.as_bytes()).unwrap();
@@ -780,7 +775,7 @@ fn bench_from_row(bencher: &mut test::Bencher) {
         payload.extend_from_slice(&b"_\x2d\x00\xff\xff\xff\xff"[..]);
         payload.push(ty as u8);
         payload.extend_from_slice(&b"\x00\x00\x00"[..]);
-        column_from_payload(payload).unwrap()
+        Column::read(&payload[..]).unwrap()
     }
 
     let row = Row {
