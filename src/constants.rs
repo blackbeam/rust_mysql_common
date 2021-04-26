@@ -593,6 +593,7 @@ pub enum ColumnType {
     MYSQL_TYPE_DATETIME2,
     MYSQL_TYPE_TIME2,
     MYSQL_TYPE_TYPED_ARRAY, // Used for replication only
+    MYSQL_TYPE_UNKNOWN = 243,
     MYSQL_TYPE_JSON = 245,
     MYSQL_TYPE_NEWDECIMAL = 246,
     MYSQL_TYPE_ENUM = 247,
@@ -674,6 +675,7 @@ impl TryFrom<u8> for ColumnType {
             0x12_u8 => Ok(ColumnType::MYSQL_TYPE_DATETIME2),
             0x13_u8 => Ok(ColumnType::MYSQL_TYPE_TIME2),
             0x14_u8 => Ok(ColumnType::MYSQL_TYPE_TYPED_ARRAY),
+            0xf3_u8 => Ok(ColumnType::MYSQL_TYPE_UNKNOWN),
             0xf5_u8 => Ok(ColumnType::MYSQL_TYPE_JSON),
             0xf6_u8 => Ok(ColumnType::MYSQL_TYPE_NEWDECIMAL),
             0xf7_u8 => Ok(ColumnType::MYSQL_TYPE_ENUM),
