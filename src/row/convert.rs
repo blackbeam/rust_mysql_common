@@ -43,7 +43,7 @@ pub fn from_row_opt<T: FromRow>(row: Row) -> Result<T, FromRowError> {
     FromRow::from_row_opt(row)
 }
 
-/// Trait to convert `Row` into a tuple of `FromValue` implementors up to arity 12.
+/// Trait to convert `Row` into a tuple of `FromValue` implementors up to arity 16.
 ///
 /// This trait is convenient way to convert mysql row to a tuple or rust types and relies on
 /// `FromValue` trait, i.e. calling `from_row::<(T, U)>(row)` is similar to calling
@@ -756,6 +756,712 @@ where
             ir10.commit(),
             ir11.commit(),
             ir12.commit(),
+        ))
+    }
+}
+
+
+impl<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13> FromRow
+    for (T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13)
+where
+    T1: FromValue,
+    T2: FromValue,
+    T3: FromValue,
+    T4: FromValue,
+    T5: FromValue,
+    T6: FromValue,
+    T7: FromValue,
+    T8: FromValue,
+    T9: FromValue,
+    T10: FromValue,
+    T11: FromValue,
+    T12: FromValue,
+    T13: FromValue,
+{
+    fn from_row_opt(
+        mut row: Row,
+    ) -> Result<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13), FromRowError> {
+        if row.len() != 13 {
+            return Err(FromRowError(row));
+        }
+        let ir1 = take_or_place!(row, 0, T1);
+        let ir2 = take_or_place!(row, 1, T2, [0, ir1]);
+        let ir3 = take_or_place!(row, 2, T3, [0, ir1], [1, ir2]);
+        let ir4 = take_or_place!(row, 3, T4, [0, ir1], [1, ir2], [2, ir3]);
+        let ir5 = take_or_place!(row, 4, T5, [0, ir1], [1, ir2], [2, ir3], [3, ir4]);
+        let ir6 = take_or_place!(row, 5, T6, [0, ir1], [1, ir2], [2, ir3], [3, ir4], [4, ir5]);
+        let ir7 = take_or_place!(
+            row,
+            6,
+            T7,
+            [0, ir1],
+            [1, ir2],
+            [2, ir3],
+            [3, ir4],
+            [4, ir5],
+            [5, ir6]
+        );
+        let ir8 = take_or_place!(
+            row,
+            7,
+            T8,
+            [0, ir1],
+            [1, ir2],
+            [2, ir3],
+            [3, ir4],
+            [4, ir5],
+            [5, ir6],
+            [6, ir7]
+        );
+        let ir9 = take_or_place!(
+            row,
+            8,
+            T9,
+            [0, ir1],
+            [1, ir2],
+            [2, ir3],
+            [3, ir4],
+            [4, ir5],
+            [5, ir6],
+            [6, ir7],
+            [7, ir8]
+        );
+        let ir10 = take_or_place!(
+            row,
+            9,
+            T10,
+            [0, ir1],
+            [1, ir2],
+            [2, ir3],
+            [3, ir4],
+            [4, ir5],
+            [5, ir6],
+            [6, ir7],
+            [7, ir8],
+            [8, ir9]
+        );
+        let ir11 = take_or_place!(
+            row,
+            10,
+            T11,
+            [0, ir1],
+            [1, ir2],
+            [2, ir3],
+            [3, ir4],
+            [4, ir5],
+            [5, ir6],
+            [6, ir7],
+            [7, ir8],
+            [8, ir9],
+            [9, ir10]
+        );
+        let ir12 = take_or_place!(
+            row,
+            11,
+            T12,
+            [0, ir1],
+            [1, ir2],
+            [2, ir3],
+            [3, ir4],
+            [4, ir5],
+            [5, ir6],
+            [6, ir7],
+            [7, ir8],
+            [8, ir9],
+            [9, ir10],
+            [10, ir11]
+        );
+        let ir13 = take_or_place!(
+            row,
+            12,
+            T13,
+            [0, ir1],
+            [1, ir2],
+            [2, ir3],
+            [3, ir4],
+            [4, ir5],
+            [5, ir6],
+            [6, ir7],
+            [7, ir8],
+            [8, ir9],
+            [9, ir10],
+            [10, ir11],
+            [11, ir12]
+        );
+        Ok((
+            ir1.commit(),
+            ir2.commit(),
+            ir3.commit(),
+            ir4.commit(),
+            ir5.commit(),
+            ir6.commit(),
+            ir7.commit(),
+            ir8.commit(),
+            ir9.commit(),
+            ir10.commit(),
+            ir11.commit(),
+            ir12.commit(),
+            ir13.commit(),
+        ))
+    }
+}
+
+impl<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14> FromRow
+    for (T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14)
+where
+    T1: FromValue,
+    T2: FromValue,
+    T3: FromValue,
+    T4: FromValue,
+    T5: FromValue,
+    T6: FromValue,
+    T7: FromValue,
+    T8: FromValue,
+    T9: FromValue,
+    T10: FromValue,
+    T11: FromValue,
+    T12: FromValue,
+    T13: FromValue,
+    T14: FromValue,
+{
+    fn from_row_opt(
+        mut row: Row,
+    ) -> Result<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14), FromRowError> {
+        if row.len() != 14 {
+            return Err(FromRowError(row));
+        }
+        let ir1 = take_or_place!(row, 0, T1);
+        let ir2 = take_or_place!(row, 1, T2, [0, ir1]);
+        let ir3 = take_or_place!(row, 2, T3, [0, ir1], [1, ir2]);
+        let ir4 = take_or_place!(row, 3, T4, [0, ir1], [1, ir2], [2, ir3]);
+        let ir5 = take_or_place!(row, 4, T5, [0, ir1], [1, ir2], [2, ir3], [3, ir4]);
+        let ir6 = take_or_place!(row, 5, T6, [0, ir1], [1, ir2], [2, ir3], [3, ir4], [4, ir5]);
+        let ir7 = take_or_place!(
+            row,
+            6,
+            T7,
+            [0, ir1],
+            [1, ir2],
+            [2, ir3],
+            [3, ir4],
+            [4, ir5],
+            [5, ir6]
+        );
+        let ir8 = take_or_place!(
+            row,
+            7,
+            T8,
+            [0, ir1],
+            [1, ir2],
+            [2, ir3],
+            [3, ir4],
+            [4, ir5],
+            [5, ir6],
+            [6, ir7]
+        );
+        let ir9 = take_or_place!(
+            row,
+            8,
+            T9,
+            [0, ir1],
+            [1, ir2],
+            [2, ir3],
+            [3, ir4],
+            [4, ir5],
+            [5, ir6],
+            [6, ir7],
+            [7, ir8]
+        );
+        let ir10 = take_or_place!(
+            row,
+            9,
+            T10,
+            [0, ir1],
+            [1, ir2],
+            [2, ir3],
+            [3, ir4],
+            [4, ir5],
+            [5, ir6],
+            [6, ir7],
+            [7, ir8],
+            [8, ir9]
+        );
+        let ir11 = take_or_place!(
+            row,
+            10,
+            T11,
+            [0, ir1],
+            [1, ir2],
+            [2, ir3],
+            [3, ir4],
+            [4, ir5],
+            [5, ir6],
+            [6, ir7],
+            [7, ir8],
+            [8, ir9],
+            [9, ir10]
+        );
+        let ir12 = take_or_place!(
+            row,
+            11,
+            T12,
+            [0, ir1],
+            [1, ir2],
+            [2, ir3],
+            [3, ir4],
+            [4, ir5],
+            [5, ir6],
+            [6, ir7],
+            [7, ir8],
+            [8, ir9],
+            [9, ir10],
+            [10, ir11]
+        );
+        let ir13 = take_or_place!(
+            row,
+            12,
+            T13,
+            [0, ir1],
+            [1, ir2],
+            [2, ir3],
+            [3, ir4],
+            [4, ir5],
+            [5, ir6],
+            [6, ir7],
+            [7, ir8],
+            [8, ir9],
+            [9, ir10],
+            [10, ir11],
+            [11, ir12]
+        );
+        let ir14 = take_or_place!(
+            row,
+            13,
+            T14,
+            [0, ir1],
+            [1, ir2],
+            [2, ir3],
+            [3, ir4],
+            [4, ir5],
+            [5, ir6],
+            [6, ir7],
+            [7, ir8],
+            [8, ir9],
+            [9, ir10],
+            [10, ir11],
+            [11, ir12],
+            [12, ir13]
+        );
+        Ok((
+            ir1.commit(),
+            ir2.commit(),
+            ir3.commit(),
+            ir4.commit(),
+            ir5.commit(),
+            ir6.commit(),
+            ir7.commit(),
+            ir8.commit(),
+            ir9.commit(),
+            ir10.commit(),
+            ir11.commit(),
+            ir12.commit(),
+            ir13.commit(),
+            ir14.commit(),
+        ))
+    }
+}
+
+impl<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15> FromRow
+    for (T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15)
+where
+    T1: FromValue,
+    T2: FromValue,
+    T3: FromValue,
+    T4: FromValue,
+    T5: FromValue,
+    T6: FromValue,
+    T7: FromValue,
+    T8: FromValue,
+    T9: FromValue,
+    T10: FromValue,
+    T11: FromValue,
+    T12: FromValue,
+    T13: FromValue,
+    T14: FromValue,
+    T15: FromValue,
+{
+    fn from_row_opt(
+        mut row: Row,
+    ) -> Result<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15), FromRowError> {
+        if row.len() != 15 {
+            return Err(FromRowError(row));
+        }
+        let ir1 = take_or_place!(row, 0, T1);
+        let ir2 = take_or_place!(row, 1, T2, [0, ir1]);
+        let ir3 = take_or_place!(row, 2, T3, [0, ir1], [1, ir2]);
+        let ir4 = take_or_place!(row, 3, T4, [0, ir1], [1, ir2], [2, ir3]);
+        let ir5 = take_or_place!(row, 4, T5, [0, ir1], [1, ir2], [2, ir3], [3, ir4]);
+        let ir6 = take_or_place!(row, 5, T6, [0, ir1], [1, ir2], [2, ir3], [3, ir4], [4, ir5]);
+        let ir7 = take_or_place!(
+            row,
+            6,
+            T7,
+            [0, ir1],
+            [1, ir2],
+            [2, ir3],
+            [3, ir4],
+            [4, ir5],
+            [5, ir6]
+        );
+        let ir8 = take_or_place!(
+            row,
+            7,
+            T8,
+            [0, ir1],
+            [1, ir2],
+            [2, ir3],
+            [3, ir4],
+            [4, ir5],
+            [5, ir6],
+            [6, ir7]
+        );
+        let ir9 = take_or_place!(
+            row,
+            8,
+            T9,
+            [0, ir1],
+            [1, ir2],
+            [2, ir3],
+            [3, ir4],
+            [4, ir5],
+            [5, ir6],
+            [6, ir7],
+            [7, ir8]
+        );
+        let ir10 = take_or_place!(
+            row,
+            9,
+            T10,
+            [0, ir1],
+            [1, ir2],
+            [2, ir3],
+            [3, ir4],
+            [4, ir5],
+            [5, ir6],
+            [6, ir7],
+            [7, ir8],
+            [8, ir9]
+        );
+        let ir11 = take_or_place!(
+            row,
+            10,
+            T11,
+            [0, ir1],
+            [1, ir2],
+            [2, ir3],
+            [3, ir4],
+            [4, ir5],
+            [5, ir6],
+            [6, ir7],
+            [7, ir8],
+            [8, ir9],
+            [9, ir10]
+        );
+        let ir12 = take_or_place!(
+            row,
+            11,
+            T12,
+            [0, ir1],
+            [1, ir2],
+            [2, ir3],
+            [3, ir4],
+            [4, ir5],
+            [5, ir6],
+            [6, ir7],
+            [7, ir8],
+            [8, ir9],
+            [9, ir10],
+            [10, ir11]
+        );
+        let ir13 = take_or_place!(
+            row,
+            12,
+            T13,
+            [0, ir1],
+            [1, ir2],
+            [2, ir3],
+            [3, ir4],
+            [4, ir5],
+            [5, ir6],
+            [6, ir7],
+            [7, ir8],
+            [8, ir9],
+            [9, ir10],
+            [10, ir11],
+            [11, ir12]
+        );
+        let ir14 = take_or_place!(
+            row,
+            13,
+            T14,
+            [0, ir1],
+            [1, ir2],
+            [2, ir3],
+            [3, ir4],
+            [4, ir5],
+            [5, ir6],
+            [6, ir7],
+            [7, ir8],
+            [8, ir9],
+            [9, ir10],
+            [10, ir11],
+            [11, ir12],
+            [12, ir13]
+        );
+        let ir15 = take_or_place!(
+            row,
+            14,
+            T15,
+            [0, ir1],
+            [1, ir2],
+            [2, ir3],
+            [3, ir4],
+            [4, ir5],
+            [5, ir6],
+            [6, ir7],
+            [7, ir8],
+            [8, ir9],
+            [9, ir10],
+            [10, ir11],
+            [11, ir12],
+            [12, ir13],
+            [13, ir14]
+        );
+        Ok((
+            ir1.commit(),
+            ir2.commit(),
+            ir3.commit(),
+            ir4.commit(),
+            ir5.commit(),
+            ir6.commit(),
+            ir7.commit(),
+            ir8.commit(),
+            ir9.commit(),
+            ir10.commit(),
+            ir11.commit(),
+            ir12.commit(),
+            ir13.commit(),
+            ir14.commit(),
+            ir15.commit(),
+        ))
+    }
+}
+
+impl<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16> FromRow
+    for (T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16)
+where
+    T1: FromValue,
+    T2: FromValue,
+    T3: FromValue,
+    T4: FromValue,
+    T5: FromValue,
+    T6: FromValue,
+    T7: FromValue,
+    T8: FromValue,
+    T9: FromValue,
+    T10: FromValue,
+    T11: FromValue,
+    T12: FromValue,
+    T13: FromValue,
+    T14: FromValue,
+    T15: FromValue,
+    T16: FromValue,
+{
+    fn from_row_opt(
+        mut row: Row,
+    ) -> Result<(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16), FromRowError> {
+        if row.len() != 16 {
+            return Err(FromRowError(row));
+        }
+        let ir1 = take_or_place!(row, 0, T1);
+        let ir2 = take_or_place!(row, 1, T2, [0, ir1]);
+        let ir3 = take_or_place!(row, 2, T3, [0, ir1], [1, ir2]);
+        let ir4 = take_or_place!(row, 3, T4, [0, ir1], [1, ir2], [2, ir3]);
+        let ir5 = take_or_place!(row, 4, T5, [0, ir1], [1, ir2], [2, ir3], [3, ir4]);
+        let ir6 = take_or_place!(row, 5, T6, [0, ir1], [1, ir2], [2, ir3], [3, ir4], [4, ir5]);
+        let ir7 = take_or_place!(
+            row,
+            6,
+            T7,
+            [0, ir1],
+            [1, ir2],
+            [2, ir3],
+            [3, ir4],
+            [4, ir5],
+            [5, ir6]
+        );
+        let ir8 = take_or_place!(
+            row,
+            7,
+            T8,
+            [0, ir1],
+            [1, ir2],
+            [2, ir3],
+            [3, ir4],
+            [4, ir5],
+            [5, ir6],
+            [6, ir7]
+        );
+        let ir9 = take_or_place!(
+            row,
+            8,
+            T9,
+            [0, ir1],
+            [1, ir2],
+            [2, ir3],
+            [3, ir4],
+            [4, ir5],
+            [5, ir6],
+            [6, ir7],
+            [7, ir8]
+        );
+        let ir10 = take_or_place!(
+            row,
+            9,
+            T10,
+            [0, ir1],
+            [1, ir2],
+            [2, ir3],
+            [3, ir4],
+            [4, ir5],
+            [5, ir6],
+            [6, ir7],
+            [7, ir8],
+            [8, ir9]
+        );
+        let ir11 = take_or_place!(
+            row,
+            10,
+            T11,
+            [0, ir1],
+            [1, ir2],
+            [2, ir3],
+            [3, ir4],
+            [4, ir5],
+            [5, ir6],
+            [6, ir7],
+            [7, ir8],
+            [8, ir9],
+            [9, ir10]
+        );
+        let ir12 = take_or_place!(
+            row,
+            11,
+            T12,
+            [0, ir1],
+            [1, ir2],
+            [2, ir3],
+            [3, ir4],
+            [4, ir5],
+            [5, ir6],
+            [6, ir7],
+            [7, ir8],
+            [8, ir9],
+            [9, ir10],
+            [10, ir11]
+        );
+        let ir13 = take_or_place!(
+            row,
+            12,
+            T13,
+            [0, ir1],
+            [1, ir2],
+            [2, ir3],
+            [3, ir4],
+            [4, ir5],
+            [5, ir6],
+            [6, ir7],
+            [7, ir8],
+            [8, ir9],
+            [9, ir10],
+            [10, ir11],
+            [11, ir12]
+        );
+        let ir14 = take_or_place!(
+            row,
+            13,
+            T14,
+            [0, ir1],
+            [1, ir2],
+            [2, ir3],
+            [3, ir4],
+            [4, ir5],
+            [5, ir6],
+            [6, ir7],
+            [7, ir8],
+            [8, ir9],
+            [9, ir10],
+            [10, ir11],
+            [11, ir12],
+            [12, ir13]
+        );
+        let ir15 = take_or_place!(
+            row,
+            14,
+            T15,
+            [0, ir1],
+            [1, ir2],
+            [2, ir3],
+            [3, ir4],
+            [4, ir5],
+            [5, ir6],
+            [6, ir7],
+            [7, ir8],
+            [8, ir9],
+            [9, ir10],
+            [10, ir11],
+            [11, ir12],
+            [12, ir13],
+            [13, ir14]
+        );
+        let ir16 = take_or_place!(
+            row,
+            15,
+            T16,
+            [0, ir1],
+            [1, ir2],
+            [2, ir3],
+            [3, ir4],
+            [4, ir5],
+            [5, ir6],
+            [6, ir7],
+            [7, ir8],
+            [8, ir9],
+            [9, ir10],
+            [10, ir11],
+            [11, ir12],
+            [12, ir13],
+            [13, ir14],
+            [14, ir15]
+        );
+
+        Ok((
+            ir1.commit(),
+            ir2.commit(),
+            ir3.commit(),
+            ir4.commit(),
+            ir5.commit(),
+            ir6.commit(),
+            ir7.commit(),
+            ir8.commit(),
+            ir9.commit(),
+            ir10.commit(),
+            ir11.commit(),
+            ir12.commit(),
+            ir13.commit(),
+            ir14.commit(),
+            ir15.commit(),
+            ir16.commit(),
         ))
     }
 }
