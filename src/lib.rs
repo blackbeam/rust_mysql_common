@@ -63,14 +63,25 @@ extern crate test;
 
 #[macro_use]
 pub mod bitflags_ext;
+
+#[cfg(feature = "bigdecimal")]
 pub use bigdecimal;
+
+#[cfg(feature = "chrono")]
 pub use chrono;
-pub use num_bigint;
+
+#[cfg(feature = "rust_decimal")]
 pub use rust_decimal;
+
+#[cfg(feature = "time")]
+pub use time;
+
+#[cfg(feature = "uuid")]
+pub use uuid;
+
+pub use num_bigint;
 pub use serde;
 pub use serde_json;
-pub use time;
-pub use uuid;
 
 /// This macro is a convenient way to pass named parameters to a statement.
 ///
