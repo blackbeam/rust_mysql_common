@@ -37,7 +37,6 @@ sha2 = "0.9"
 smallvec = { version = "1.6.1", features = ["union", "write"] }
 thiserror = "1.0.24"
 time = { version = "0.2", default-features = false, features = ["std"] }
-twox-hash = "1"
 uuid = "0.8"
 saturating = "0.1"
 serde = "1"
