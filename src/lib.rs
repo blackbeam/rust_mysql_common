@@ -79,9 +79,9 @@ pub use time;
 #[cfg(feature = "uuid")]
 pub use uuid;
 
+pub use num_bigint;
 pub use serde;
 pub use serde_json;
-pub use num_bigint;
 
 /// This macro is a convenient way to pass named parameters to a statement.
 ///
