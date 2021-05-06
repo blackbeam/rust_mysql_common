@@ -13,7 +13,7 @@ use crate::{
     proto::{Binary, MyDeserialize, Text},
     value::{
         convert::{from_value, from_value_opt, FromValue, FromValueError},
-        SerializationSide, Value, ValueRepr,
+        BinValue, SerializationSide, TextValue, Value, ValueDeserializer,
     },
 };
 use std::{borrow::Cow, fmt, io, marker::PhantomData, ops::Index, sync::Arc};
@@ -225,13 +225,16 @@ impl<S, P> From<RowDeserializer<S, P>> for Row {
 }
 
 impl<'de, T> MyDeserialize<'de> for RowDeserializer<T, Text> {
+    const SIZE: Option<usize> = None;
     type Ctx = Arc<[Column]>;
 
     fn deserialize(columns: Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
         let mut values = Vec::with_capacity(columns.len());
 
         for _ in 0..columns.len() {
-            values.push(Some(Value::deserialize(ValueRepr::Text, &mut *buf)?))
+            values.push(Some(
+                ValueDeserializer::<TextValue>::deserialize((), &mut *buf)?.0,
+            ))
         }
 
         Ok(Self(Row { values, columns }, PhantomData))
@@ -239,6 +242,7 @@ impl<'de, T> MyDeserialize<'de> for RowDeserializer<T, Text> {
 }
 
 impl<'de, S: SerializationSide> MyDeserialize<'de> for RowDeserializer<S, Binary> {
+    const SIZE: Option<usize> = None;
     type Ctx = Arc<[Column]>;
 
     fn deserialize(columns: Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
@@ -253,10 +257,13 @@ impl<'de, S: SerializationSide> MyDeserialize<'de> for RowDeserializer<S, Binary
             if bitmap.is_null(i) {
                 values.push(Some(NULL))
             } else {
-                values.push(Some(Value::deserialize(
-                    ValueRepr::Binary(column.column_type(), column.flags()),
-                    &mut *buf,
-                )?));
+                values.push(Some(
+                    ValueDeserializer::<BinValue>::deserialize(
+                        (column.column_type(), column.flags()),
+                        &mut *buf,
+                    )?
+                    .0,
+                ));
             }
         }
 

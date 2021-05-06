@@ -6,8 +6,6 @@
 // option. All files in the project carrying such notice may not be copied,
 // modified, or distributed except according to those terms.
 
-use twox_hash::XxHash;
-
 use std::{
     collections::{
         hash_map::{Entry, Entry::Occupied},
@@ -15,7 +13,6 @@ use std::{
     },
     error::Error,
     fmt,
-    hash::BuildHasherDefault,
 };
 
 use crate::value::{convert::ToValue, Value};
@@ -40,7 +37,7 @@ impl Error for MissingNamedParameterError {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Params {
     Empty,
-    Named(HashMap<String, Value, BuildHasherDefault<XxHash>>),
+    Named(HashMap<String, Value>),
     Positional(Vec<Value>),
 }
 
@@ -145,9 +142,9 @@ macro_rules! into_params_impl {
         impl<$($A: Into<Value>,)*> From<($($A,)*)> for Params {
             fn from(x: ($($A,)*)) -> Params {
                 let ($($a,)*) = x;
-                let mut params = Vec::new();
-                $(params.push($a.into());)*
-                Params::Positional(params)
+                Params::Positional(vec![
+                    $($a.into(),)*
+                ])
             }
         }
     );

@@ -772,7 +772,7 @@ mod tests {
         encoder.compress(Compression::none());
         decoder.compress(Compression::none());
 
-        encoder.encode(&mut &PLAIN[..], &mut src).unwrap();
+        encoder.encode(&mut PLAIN, &mut src).unwrap();
         let mut dst = vec![];
         let result = decoder.decode(&mut src, &mut dst).unwrap();
         assert!(result);

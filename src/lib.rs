@@ -52,26 +52,36 @@
 //! [1]: https://dev.mysql.com/doc/internals/en/binary-protocol-value.html
 #![cfg_attr(feature = "nightly", feature(test, const_fn))]
 
-#[macro_use]
-extern crate bitflags;
-#[macro_use]
-extern crate lazy_static;
+// The `test` feature is required to compile tests.
+// It'll bind test binaries to an official C++ impl of MySql decimals (see build.rs)
+// The idea is to test our rust impl agaist C++ impl.
+#[cfg(all(not(feature = "test"), test))]
+compile_error!("Please invoke `cargo test` with `--features test` flags");
+
 #[cfg(feature = "nightly")]
 extern crate test;
 
+#[macro_use]
+pub mod bitflags_ext;
+
 #[cfg(feature = "bigdecimal")]
 pub use bigdecimal;
+
 #[cfg(feature = "chrono")]
 pub use chrono;
-pub use num_bigint;
+
 #[cfg(feature = "rust_decimal")]
 pub use rust_decimal;
-pub use serde;
-pub use serde_json;
+
 #[cfg(feature = "time")]
 pub use time;
+
 #[cfg(feature = "uuid")]
 pub use uuid;
+
+pub use serde;
+pub use serde_json;
+pub use num_bigint;
 
 /// This macro is a convenient way to pass named parameters to a statement.
 ///
@@ -153,6 +163,8 @@ pub mod proto;
 pub mod row;
 pub mod scramble;
 pub mod value;
+
+pub mod binlog;
 
 #[cfg(test)]
 #[test]

@@ -8,7 +8,7 @@
 
 use bytes::BufMut;
 
-use std::{convert::TryFrom, fmt, io, str::from_utf8};
+use std::{convert::TryFrom, fmt, io, marker::PhantomData, str::from_utf8};
 
 use crate::{
     constants::{ColumnFlags, ColumnType},
@@ -42,14 +42,11 @@ impl SerializationSide for ClientSide {
     const BIT_OFFSET: usize = 0;
 }
 
-/// Value representation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum ValueRepr {
-    /// Text protocol value
-    Text,
-    /// Binary protocol value.
-    Binary(ColumnType, ColumnFlags),
-}
+/// Textual value representation.
+pub struct TextValue;
+
+/// Binary value representation.
+pub struct BinValue;
 
 /// Client side representation of a value of MySql column.
 ///
@@ -90,30 +87,30 @@ impl MySerialize for Value {
             Value::Date(0u16, 0u8, 0u8, 0u8, 0u8, 0u8, 0u32) => {
                 buf.put_u8(0);
             }
-            Value::Date(y, m, d, 0u8, 0u8, 0u8, 0u32) => {
+            Value::Date(year, mon, day, 0u8, 0u8, 0u8, 0u32) => {
                 buf.put_u8(4);
-                buf.put_u16_le(*y);
-                buf.put_u8(*m);
-                buf.put_u8(*d);
+                buf.put_u16_le(*year);
+                buf.put_u8(*mon);
+                buf.put_u8(*day);
             }
-            Value::Date(y, m, d, h, i, s, 0u32) => {
+            Value::Date(year, mon, day, hour, min, sec, 0u32) => {
                 buf.put_u8(7);
-                buf.put_u16_le(*y);
-                buf.put_u8(*m);
-                buf.put_u8(*d);
-                buf.put_u8(*h);
-                buf.put_u8(*i);
-                buf.put_u8(*s);
+                buf.put_u16_le(*year);
+                buf.put_u8(*mon);
+                buf.put_u8(*day);
+                buf.put_u8(*hour);
+                buf.put_u8(*min);
+                buf.put_u8(*sec);
             }
-            Value::Date(y, m, d, h, i, s, u) => {
+            Value::Date(year, mon, day, hour, min, sec, usec) => {
                 buf.put_u8(11);
-                buf.put_u16_le(*y);
-                buf.put_u8(*m);
-                buf.put_u8(*d);
-                buf.put_u8(*h);
-                buf.put_u8(*i);
-                buf.put_u8(*s);
-                buf.put_u32_le(*u);
+                buf.put_u16_le(*year);
+                buf.put_u8(*mon);
+                buf.put_u8(*day);
+                buf.put_u8(*hour);
+                buf.put_u8(*min);
+                buf.put_u8(*sec);
+                buf.put_u32_le(*usec);
             }
             Value::Time(_, 0u32, 0u8, 0u8, 0u8, 0u32) => {
                 buf.put_u8(0);
@@ -126,29 +123,42 @@ impl MySerialize for Value {
                 buf.put_u8(*m);
                 buf.put_u8(*s);
             }
-            Value::Time(neg, d, h, m, s, u) => {
+            Value::Time(neg, days, hours, mins, secs, usecs) => {
                 buf.put_u8(12);
                 buf.put_u8(if *neg { 1 } else { 0 });
-                buf.put_u32_le(*d);
-                buf.put_u8(*h);
-                buf.put_u8(*m);
-                buf.put_u8(*s);
-                buf.put_u32_le(*u);
+                buf.put_u32_le(*days);
+                buf.put_u8(*hours);
+                buf.put_u8(*mins);
+                buf.put_u8(*secs);
+                buf.put_u32_le(*usecs);
             }
         }
     }
 }
 
-impl<'de> MyDeserialize<'de> for Value {
-    type Ctx = ValueRepr;
+/// Deserializer for a MySql value.
+///
+/// `T` specifies the value representation (textual or binary).
+#[derive(Debug, Clone, PartialEq)]
+pub struct ValueDeserializer<T>(pub Value, PhantomData<T>);
 
-    fn deserialize(repr: Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
-        match repr {
-            ValueRepr::Text => Value::deserialize_text(buf),
-            ValueRepr::Binary(column_type, column_flags) => {
-                Value::deserialize_bin((column_type, column_flags), buf)
-            }
-        }
+impl<'de> MyDeserialize<'de> for ValueDeserializer<TextValue> {
+    const SIZE: Option<usize> = None;
+    type Ctx = ();
+
+    fn deserialize((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+        let value = Value::deserialize_text(buf)?;
+        Ok(Self(value, PhantomData))
+    }
+}
+
+impl<'de> MyDeserialize<'de> for ValueDeserializer<BinValue> {
+    const SIZE: Option<usize> = None;
+    type Ctx = (ColumnType, ColumnFlags);
+
+    fn deserialize((col_type, col_flags): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+        let value = Value::deserialize_bin((col_type, col_flags), buf)?;
+        Ok(Self(value, PhantomData))
     }
 }
 
@@ -381,7 +391,7 @@ impl Value {
         ))
     }
 
-    fn deserialize_bin(
+    pub(crate) fn deserialize_bin(
         (column_type, column_flags): (ColumnType, ColumnFlags),
         buf: &mut ParseBuf<'_>,
     ) -> io::Result<Self> {
@@ -519,10 +529,12 @@ mod test {
 
     #[cfg(feature = "nightly")]
     mod benches {
+        use std::convert::TryFrom;
+
         use crate::{
             constants::ColumnType,
             io::WriteMysqlExt,
-            packets::{column_from_payload, Column, ComStmtExecuteRequestBuilder, NullBitmap},
+            packets::{Column, ComStmtExecuteRequestBuilder, NullBitmap},
             value::{ClientSide, Value},
         };
 
@@ -568,7 +580,7 @@ mod test {
         #[cfg(feature = "nightly")]
         #[bench]
         fn bench_parse_bin_row(bencher: &mut test::Bencher) {
-            fn col(name: &str, ty: ColumnType) -> Column {
+            fn col(name: &str, ty: ColumnType) -> Column<'static> {
                 let mut payload = b"\x00def".to_vec();
                 for _ in 0..5 {
                     payload.write_lenenc_str(name.as_bytes()).unwrap();
@@ -576,7 +588,7 @@ mod test {
                 payload.extend_from_slice(&b"_\x2d\x00\xff\xff\xff\xff"[..]);
                 payload.push(ty as u8);
                 payload.extend_from_slice(&b"\x00\x00\x00"[..]);
-                column_from_payload(payload).unwrap()
+                Column::read(&payload[..]).unwrap()
             }
 
             let values = vec![
@@ -618,7 +630,7 @@ mod test {
             let meta_len = values.len() * 2;
             let columns = body[meta_offset..(meta_offset + meta_len)]
                 .chunks(2)
-                .map(|meta| col("foo", ColumnType::from(meta[0])))
+                .map(|meta| col("foo", ColumnType::try_from(meta[0]).unwrap()))
                 .collect::<Vec<_>>();
 
             let mut data = vec![0x00];
