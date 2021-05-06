@@ -55,6 +55,13 @@ subprocess = "0.2.4"
 debug = true
 
 [features]
-default = ["flate2/zlib", "bigdecimal", "chrono", "rust_decimal", "time", "uuid"]
+default = [
+    "flate2/zlib",
+    "bigdecimal",
+    "chrono",
+    "rust_decimal",
+    "time",
+    "uuid",
+]
 test = []
 nightly = ["test"]
