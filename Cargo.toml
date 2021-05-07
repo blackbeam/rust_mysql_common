@@ -25,6 +25,7 @@ bytes = "1.0"
 chrono = { version = "0.4.19", features = ["serde"], optional = true }
 crc32fast = "1.2"
 flate2 = { version = "1.0", default-features = false }
+frunk = { version = "0.3.2", optional = true }
 lazy_static = "1"
 lexical = "5.2"
 num-bigint = { version = "0.4" }
@@ -62,6 +63,7 @@ default = [
     "rust_decimal",
     "time",
     "uuid",
+    "frunk",
 ]
 test = []
 nightly = ["test"]

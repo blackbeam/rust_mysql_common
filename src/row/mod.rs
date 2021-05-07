@@ -57,6 +57,13 @@ pub fn new_row(values: Vec<Value>, columns: Arc<[Column]>) -> Row {
     }
 }
 
+/// Creates `Row` from values (cells may be missing).
+#[doc(hidden)]
+pub fn new_row_raw(values: Vec<Option<Value>>, columns: Arc<[Column]>) -> Row {
+    assert!(values.len() == columns.len());
+    Row { values, columns }
+}
+
 impl Row {
     /// Returns length of a row.
     pub fn len(&self) -> usize {
@@ -156,6 +163,12 @@ impl Row {
             .into_iter()
             .map(|x| x.expect("Can't unwrap row if some of columns was taken"))
             .collect()
+    }
+
+    /// Unwraps values as is (taken cells will be `None`).
+    #[doc(hidden)]
+    pub fn unwrap_raw(self) -> Vec<Option<Value>> {
+        self.values
     }
 
     #[doc(hidden)]

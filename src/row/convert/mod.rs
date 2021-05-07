@@ -13,6 +13,8 @@ use crate::{
 
 use std::{any::type_name, error::Error, fmt};
 
+pub mod frunk;
+
 /// `FromRow` conversion error.
 #[derive(Debug, Clone, PartialEq)]
 pub struct FromRowError(pub Row);
