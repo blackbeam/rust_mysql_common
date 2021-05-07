@@ -218,6 +218,12 @@ impl<'a> ColumnIndex for &'a str {
 #[derive(Debug, Clone, PartialEq)]
 pub struct RowDeserializer<S, P>(Row, PhantomData<(S, P)>);
 
+impl<S, P> RowDeserializer<S, P> {
+    pub fn into_inner(self) -> Row {
+        self.0
+    }
+}
+
 impl<S, P> From<RowDeserializer<S, P>> for Row {
     fn from(x: RowDeserializer<S, P>) -> Self {
         x.0

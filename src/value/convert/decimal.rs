@@ -8,6 +8,8 @@
 
 //! This module implements conversion from/to `Value` for `Decimal` type.
 
+#![cfg(feature = "rust_decimal")]
+
 use rust_decimal::Decimal;
 
 use std::str::{from_utf8, FromStr};

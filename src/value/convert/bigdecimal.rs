@@ -8,6 +8,8 @@
 
 //! This module implements conversion from/to `Value` for `BigDecimal` type.
 
+#![cfg(feature = "bigdecimal")]
+
 use std::convert::TryInto;
 
 use bigdecimal::BigDecimal;

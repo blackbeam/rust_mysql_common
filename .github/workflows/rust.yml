@@ -2,24 +2,57 @@ name: Rust
 
 on:
   push:
-    branches: [ master ]
+    branches: [master]
   pull_request:
-    branches: [ master ]
+    branches: [master]
 
 env:
+  RUSTFLAGS: -D warnings
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v2
-    - name: Rustfmt
-      run: cargo fmt -- --check
-    - name: Build
-      run: cargo build
-    - name: Run tests
-      run: cargo test --features test
+      - uses: actions/checkout@v2
+      - name: Rustfmt
+        run: cargo fmt -- --check
+      - name: Features subsets
+        run: |
+          echo "flate2/zlib test bigdecimal" && cargo check --tests --no-default-features --features "flate2/zlib test bigdecimal"
+          echo "flate2/zlib test chrono" && cargo check --tests --no-default-features --features "flate2/zlib test chrono"
+          echo "flate2/zlib test rust_decimal" && cargo check --tests --no-default-features --features "flate2/zlib test rust_decimal"
+          echo "flate2/zlib test time" && cargo check --tests --no-default-features --features "flate2/zlib test time"
+          echo "flate2/zlib test uuid" && cargo check --tests --no-default-features --features "flate2/zlib test uuid"
+          echo "flate2/zlib test bigdecimal chrono" && cargo check --tests --no-default-features --features "flate2/zlib test bigdecimal chrono"
+          echo "flate2/zlib test bigdecimal rust_decimal" && cargo check --tests --no-default-features --features "flate2/zlib test bigdecimal rust_decimal"
+          echo "flate2/zlib test chrono rust_decimal" && cargo check --tests --no-default-features --features "flate2/zlib test chrono rust_decimal"
+          echo "flate2/zlib test bigdecimal time" && cargo check --tests --no-default-features --features "flate2/zlib test bigdecimal time"
+          echo "flate2/zlib test chrono time" && cargo check --tests --no-default-features --features "flate2/zlib test chrono time"
+          echo "flate2/zlib test rust_decimal time" && cargo check --tests --no-default-features --features "flate2/zlib test rust_decimal time"
+          echo "flate2/zlib test bigdecimal uuid" && cargo check --tests --no-default-features --features "flate2/zlib test bigdecimal uuid"
+          echo "flate2/zlib test chrono uuid" && cargo check --tests --no-default-features --features "flate2/zlib test chrono uuid"
+          echo "flate2/zlib test rust_decimal uuid" && cargo check --tests --no-default-features --features "flate2/zlib test rust_decimal uuid"
+          echo "flate2/zlib test time uuid" && cargo check --tests --no-default-features --features "flate2/zlib test time uuid"
+          echo "flate2/zlib test bigdecimal chrono rust_decimal" && cargo check --tests --no-default-features --features "flate2/zlib test bigdecimal chrono rust_decimal"
+          echo "flate2/zlib test bigdecimal chrono time" && cargo check --tests --no-default-features --features "flate2/zlib test bigdecimal chrono time"
+          echo "flate2/zlib test bigdecimal rust_decimal time" && cargo check --tests --no-default-features --features "flate2/zlib test bigdecimal rust_decimal time"
+          echo "flate2/zlib test chrono rust_decimal time" && cargo check --tests --no-default-features --features "flate2/zlib test chrono rust_decimal time"
+          echo "flate2/zlib test bigdecimal chrono uuid" && cargo check --tests --no-default-features --features "flate2/zlib test bigdecimal chrono uuid"
+          echo "flate2/zlib test bigdecimal rust_decimal uuid" && cargo check --tests --no-default-features --features "flate2/zlib test bigdecimal rust_decimal uuid"
+          echo "flate2/zlib test chrono rust_decimal uuid" && cargo check --tests --no-default-features --features "flate2/zlib test chrono rust_decimal uuid"
+          echo "flate2/zlib test bigdecimal time uuid" && cargo check --tests --no-default-features --features "flate2/zlib test bigdecimal time uuid"
+          echo "flate2/zlib test chrono time uuid" && cargo check --tests --no-default-features --features "flate2/zlib test chrono time uuid"
+          echo "flate2/zlib test rust_decimal time uuid" && cargo check --tests --no-default-features --features "flate2/zlib test rust_decimal time uuid"
+          echo "flate2/zlib test bigdecimal chrono rust_decimal time" && cargo check --tests --no-default-features --features "flate2/zlib test bigdecimal chrono rust_decimal time"
+          echo "flate2/zlib test bigdecimal chrono rust_decimal uuid" && cargo check --tests --no-default-features --features "flate2/zlib test bigdecimal chrono rust_decimal uuid"
+          echo "flate2/zlib test bigdecimal chrono time uuid" && cargo check --tests --no-default-features --features "flate2/zlib test bigdecimal chrono time uuid"
+          echo "flate2/zlib test bigdecimal rust_decimal time uuid" && cargo check --tests --no-default-features --features "flate2/zlib test bigdecimal rust_decimal time uuid"
+          echo "flate2/zlib test chrono rust_decimal time uuid" && cargo check --tests --no-default-features --features "flate2/zlib test chrono rust_decimal time uuid"
+          echo "flate2/zlib test bigdecimal chrono rust_decimal time uuid" && cargo check --tests --no-default-features --features "flate2/zlib test bigdecimal chrono rust_decimal time uuid"
+      - name: Build
+        run: cargo build
+      - name: Run tests
+        run: cargo test --features test
