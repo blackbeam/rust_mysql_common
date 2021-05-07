@@ -594,6 +594,12 @@ impl<'a> OkPacket<'a> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OkPacketDeserializer<'de, T>(OkPacket<'de>, PhantomData<T>);
 
+impl<'de, T> OkPacketDeserializer<'de, T> {
+    pub fn into_inner(self) -> OkPacket<'de> {
+        self.0
+    }
+}
+
 impl<'de, T> From<OkPacketDeserializer<'de, T>> for OkPacket<'de> {
     fn from(x: OkPacketDeserializer<'de, T>) -> Self {
         x.0
@@ -984,6 +990,12 @@ impl std::ops::Deref for AuthPluginData {
     }
 }
 
+impl MySerialize for AuthPluginData {
+    fn serialize(&self, buf: &mut Vec<u8>) {
+        buf.put_slice(&*self);
+    }
+}
+
 /// Authentication plugin
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub enum AuthPlugin<'a> {
@@ -1037,6 +1049,14 @@ impl<'a> AuthPlugin<'a> {
             AuthPlugin::CachingSha2Password => AuthPlugin::CachingSha2Password,
             AuthPlugin::MysqlNativePassword => AuthPlugin::MysqlNativePassword,
             AuthPlugin::Other(name) => AuthPlugin::Other(Cow::Owned(name.into_owned())),
+        }
+    }
+
+    pub fn borrow<'b>(&'b self) -> AuthPlugin<'b> {
+        match self {
+            AuthPlugin::MysqlNativePassword => AuthPlugin::MysqlNativePassword,
+            AuthPlugin::CachingSha2Password => AuthPlugin::CachingSha2Password,
+            AuthPlugin::Other(name) => AuthPlugin::Other(Cow::Borrowed(name.as_ref())),
         }
     }
 
@@ -2512,7 +2532,7 @@ impl<'de> MyDeserialize<'de> for Interval {
 /// Length of a sid in `COM_BINLOG_DUMP_GTID` command packet.
 pub const SID_LEN: usize = 16;
 
-/// SID block is a part of the `COM_BINLOG_DUMP_GTID` command.
+/// SID is a part of the `COM_BINLOG_DUMP_GTID` command.
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct Sid<'a> {
     sid: [u8; SID_LEN],
@@ -2550,6 +2570,14 @@ impl<'a> Sid<'a> {
     pub fn with_intervals(mut self, intervals: Vec<Interval>) -> Self {
         self.intervals = Seq::new(intervals);
         self
+    }
+
+    fn len(&self) -> u64 {
+        use saturating::Saturating as S;
+        let mut len = S(SID_LEN as u64); // SID
+        len += S(8); // n_intervals
+        len += S((self.intervals.len() * 16) as u64);
+        len.0
     }
 }
 
@@ -2598,7 +2626,7 @@ pub struct ComBinlogDumpGtid<'a> {
     /// Position in the binlog-file to start the stream with (`0` by default).
     pos: RawInt<LeU64>,
     /// SID block.
-    sid_block: Seq<'a, Sid<'a>, LeU32>,
+    sid_block: Seq<'a, Sid<'a>, LeU64>,
 }
 
 impl<'a> ComBinlogDumpGtid<'a> {
@@ -2696,6 +2724,15 @@ impl<'a> ComBinlogDumpGtid<'a> {
         }
         self
     }
+
+    fn sid_block_len(&self) -> u32 {
+        use saturating::Saturating as S;
+        let mut len = S(8); // n_sids
+        for sid in self.sid_block.iter() {
+            len += S(sid.len() as u32);
+        }
+        len.0
+    }
 }
 
 impl MySerialize for ComBinlogDumpGtid<'_> {
@@ -2705,9 +2742,8 @@ impl MySerialize for ComBinlogDumpGtid<'_> {
         self.server_id.serialize(&mut *buf);
         self.filename.serialize(&mut *buf);
         self.pos.serialize(&mut *buf);
-        if !self.sid_block.is_empty() {
-            self.sid_block.serialize(&mut *buf);
-        }
+        buf.put_u32_le(self.sid_block_len());
+        self.sid_block.serialize(&mut *buf);
     }
 }
 
@@ -2724,11 +2760,10 @@ impl<'de> MyDeserialize<'de> for ComBinlogDumpGtid<'de> {
         let filename = buf.parse(())?;
         let pos = buf.parse(())?;
 
-        let sid_block = if flags.0.contains(BinlogDumpFlags::BINLOG_THROUGH_GTID) {
-            buf.parse(())?
-        } else {
-            Default::default()
-        };
+        // `flags` should contain `BINLOG_THROUGH_GTID` flag if sid_block isn't empty
+        let sid_data_len: RawInt<LeU32> = buf.parse(())?;
+        let mut buf: ParseBuf = buf.parse(sid_data_len.0 as usize)?;
+        let sid_block = buf.parse(())?;
 
         Ok(Self {
             header,

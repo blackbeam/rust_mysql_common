@@ -767,7 +767,7 @@ fn bench_from_row(bencher: &mut test::Bencher) {
 
     use crate::{constants::ColumnType, io::WriteMysqlExt, packets::Column, value::Value};
 
-    fn col(name: &str, ty: ColumnType) -> Column<'static> {
+    fn col(name: &str, ty: ColumnType) -> Column {
         let mut payload = b"\x00def".to_vec();
         for _ in 0..5 {
             payload.write_lenenc_str(name.as_bytes()).unwrap();
