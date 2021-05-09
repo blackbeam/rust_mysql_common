@@ -89,6 +89,7 @@ macro_rules! define_const_bytes {
     };
 }
 
+pub mod binlog_request;
 pub mod session_state_change;
 
 define_const_bytes!(
