@@ -35,19 +35,28 @@
 //! | `Vec<u8>`                       | MySql bytes                                               |
 //! | `String`                        | MySql bytes parsed as utf8                                |
 //! | `Duration` (`std` and `time`)   | MySql time or bytes parsed as MySql time string           |
-//! | `time::PrimitiveDateTime`       | MySql date or bytes parsed as MySql date string           |
-//! | `time::Date`                    | MySql date or bytes parsed as MySql date string           |
-//! | `time::Time`                    | MySql date or bytes parsed as MySql date string           |
-//! | `chrono::NaiveTime`             | MySql date or bytes parsed as MySql date string           |
-//! | `chrono::NaiveDate`             | MySql date or bytes parsed as MySql date string           |
-//! | `chrono::NaiveDateTime`         | MySql date or bytes parsed as MySql date string           |
-//! | `uuid::Uuid`                    | MySql bytes parsed using `Uuid::from_slice`               |
-//! | `serde_json::Value`             | MySql bytes parsed using `serde_json::from_str`           |
+//! | [`time::PrimitiveDateTime`]     | MySql date or bytes parsed as MySql date string           |
+//! | [`time::Date`]                  | MySql date or bytes parsed as MySql date string           |
+//! | [`time::Time`]                  | MySql date or bytes parsed as MySql date string           |
+//! | [`chrono::NaiveTime`]           | MySql date or bytes parsed as MySql date string           |
+//! | [`chrono::NaiveDate`]           | MySql date or bytes parsed as MySql date string           |
+//! | [`chrono::NaiveDateTime`]       | MySql date or bytes parsed as MySql date string           |
+//! | [`uuid::Uuid`]                  | MySql bytes parsed using `Uuid::from_slice`               |
+//! | [`serde_json::Value`]           | MySql bytes parsed using `serde_json::from_str`           |
 //! | `mysql_common::Deserialized<T : DeserializeOwned>` | MySql bytes parsed using `serde_json::from_str` |
 //! | `Option<T: FromValue>`          | Must be used for nullable columns to avoid errors         |
-//! | `decimal::Decimal`              | MySql int, uint or bytes parsed using `Decimal::from_str`.<br>⚠️ Note that this type doesn't support full range of MySql `DECIMAL` type. |
-//! | `bigdecimal::BigDecimal`        | MySql int, uint, floats or bytes parsed using `BigDecimal::parse_bytes`.<br>⚠️ Note that range of this type is greater than supported by MySql `DECIMAL` type but it'll be serialized anyway. |
+//! | [`decimal::Decimal`]            | MySql int, uint or bytes parsed using `Decimal::from_str`.<br>⚠️ Note that this type doesn't support full range of MySql `DECIMAL` type. |
+//! | [`bigdecimal::BigDecimal`]      | MySql int, uint, floats or bytes parsed using `BigDecimal::parse_bytes`.<br>⚠️ Note that range of this type is greater than supported by MySql `DECIMAL` type but it'll be serialized anyway. |
 //! | `num_bigint::{BigInt, BigUint}` | MySql int, uint or bytes parsed using `_::parse_bytes`.<br>⚠️ Note that range of this type is greater than supported by MySql integer types but it'll be serialized anyway (as decimal bytes string). |
+//!
+//! Also crate provides from-row convertion for the following list of types:
+//!
+//! | Type                                            | Notes                                             |
+//! | ----------------------------------------------- | ------------------------------------------------- |
+//! | `Row`                                           | Trivial conversion for `Row` itself.              |
+//! | `T: FromValue`                                  | For rows with a single column.                    |
+//! | `(T1: FromValue [, ..., T12: FromValue])`       | Row to a tuple of arity 1-12.                     |
+//! | [`frunk::Hlist!`] types                         | Usefull to overcome tuple arity limitation        |
 //!
 //! [1]: https://dev.mysql.com/doc/internals/en/binary-protocol-value.html
 #![cfg_attr(feature = "nightly", feature(test, const_fn))]
@@ -69,6 +78,9 @@ pub use bigdecimal;
 
 #[cfg(feature = "chrono")]
 pub use chrono;
+
+#[cfg(feature = "frunk")]
+pub use frunk;
 
 #[cfg(feature = "rust_decimal")]
 pub use rust_decimal;
