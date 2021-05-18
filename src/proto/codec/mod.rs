@@ -464,7 +464,7 @@ impl PacketCodecInner {
         T: BufMut,
     {
         match self {
-            PacketCodecInner::Plain(codec) => codec.decode(src, dst, max_allowed_packet),
+            PacketCodecInner::Plain(codec) => codec.decode(src, dst, max_allowed_packet, None),
             PacketCodecInner::Comp(codec) => codec.decode(src, dst, max_allowed_packet),
         }
     }
@@ -506,12 +506,15 @@ impl PlainPacketCodec {
 
     /// Will try to decode packet from `src` into `dst`.
     ///
+    /// * `comp_seq_id` - is the sequence id of the last compressed packet (if any).
+    ///
     /// If `true` is returned then `dst` contains full packet.
     fn decode<T>(
         &mut self,
         src: &mut BytesMut,
         dst: &mut T,
         max_allowed_packet: usize,
+        comp_seq_id: Option<u8>,
     ) -> Result<bool, PacketCodecError>
     where
         T: AsRef<[u8]>,
@@ -520,7 +523,15 @@ impl PlainPacketCodec {
         match self.chunk_decoder.decode(src, dst, max_allowed_packet)? {
             Some(chunk_info) => {
                 if self.seq_id != chunk_info.seq_id() {
-                    return Err(PacketCodecError::PacketsOutOfSync);
+                    match comp_seq_id {
+                        Some(seq_id) if seq_id == chunk_info.seq_id() => {
+                            // server syncronized pkt_nr (in `net_flush`)
+                            self.seq_id = seq_id;
+                        }
+                        _ => {
+                            return Err(PacketCodecError::PacketsOutOfSync);
+                        }
+                    }
                 }
 
                 self.seq_id = self.seq_id.wrapping_add(1);
@@ -528,7 +539,7 @@ impl PlainPacketCodec {
                 match chunk_info {
                     ChunkInfo::Middle(_) => {
                         if !src.is_empty() {
-                            self.decode(src, dst, max_allowed_packet)
+                            self.decode(src, dst, max_allowed_packet, comp_seq_id)
                         } else {
                             Ok(false)
                         }
@@ -603,9 +614,14 @@ impl CompPacketCodec {
         T: BufMut,
     {
         if !self.in_buf.is_empty()
-            && self
-                .plain_codec
-                .decode(&mut self.in_buf, dst, max_allowed_packet)?
+            && self.plain_codec.decode(
+                &mut self.in_buf,
+                dst,
+                max_allowed_packet,
+                // the server could sync the sequence id of the plain packet
+                // with the id of the last compressed packet
+                Some(self.comp_seq_id.wrapping_sub(1)),
+            )?
         {
             return Ok(true);
         }
