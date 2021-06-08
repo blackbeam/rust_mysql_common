@@ -969,11 +969,14 @@ impl MySerialize for LocalInfilePacket<'_> {
     }
 }
 
+const MYSQL_OLD_PASSWORD_PLUGIN_NAME: &[u8] = b"mysql_old_password";
 const MYSQL_NATIVE_PASSWORD_PLUGIN_NAME: &[u8] = b"mysql_native_password";
 const CACHING_SHA2_PASSWORD_PLUGIN_NAME: &[u8] = b"caching_sha2_password";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AuthPluginData {
+    /// Auth data for the `mysql_old_password` plugin.
+    Old([u8; 8]),
     /// Auth data for the `mysql_native_password` plugin.
     Native([u8; 20]),
     /// Auth data for `sha2_password` and `caching_sha2_password` plugins.
@@ -985,21 +988,31 @@ impl std::ops::Deref for AuthPluginData {
 
     fn deref(&self) -> &Self::Target {
         match self {
-            Self::Native(x) => &x[..],
             Self::Sha2(x) => &x[..],
+            Self::Native(x) => &x[..],
+            Self::Old(x) => &x[..],
         }
     }
 }
 
 impl MySerialize for AuthPluginData {
     fn serialize(&self, buf: &mut Vec<u8>) {
-        buf.put_slice(&*self);
+        match self {
+            Self::Sha2(x) => buf.put_slice(&x[..]),
+            Self::Native(x) => buf.put_slice(&x[..]),
+            Self::Old(x) => {
+                buf.put_slice(&x[..]);
+                buf.push(0);
+            }
+        }
     }
 }
 
 /// Authentication plugin
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub enum AuthPlugin<'a> {
+    /// Old Password Authentication
+    MysqlOldPassword,
     /// Legacy authentication plugin
     MysqlNativePassword,
     /// Default since MySql v8.0.4
@@ -1033,14 +1046,16 @@ impl<'a> AuthPlugin<'a> {
         match name {
             CACHING_SHA2_PASSWORD_PLUGIN_NAME => AuthPlugin::CachingSha2Password,
             MYSQL_NATIVE_PASSWORD_PLUGIN_NAME => AuthPlugin::MysqlNativePassword,
+            MYSQL_OLD_PASSWORD_PLUGIN_NAME => AuthPlugin::MysqlOldPassword,
             name => AuthPlugin::Other(Cow::Borrowed(name)),
         }
     }
 
     pub fn as_bytes(&self) -> &[u8] {
         match self {
-            AuthPlugin::MysqlNativePassword => MYSQL_NATIVE_PASSWORD_PLUGIN_NAME,
             AuthPlugin::CachingSha2Password => CACHING_SHA2_PASSWORD_PLUGIN_NAME,
+            AuthPlugin::MysqlNativePassword => MYSQL_NATIVE_PASSWORD_PLUGIN_NAME,
+            AuthPlugin::MysqlOldPassword => MYSQL_OLD_PASSWORD_PLUGIN_NAME,
             AuthPlugin::Other(name) => &*name,
         }
     }
@@ -1049,14 +1064,16 @@ impl<'a> AuthPlugin<'a> {
         match self {
             AuthPlugin::CachingSha2Password => AuthPlugin::CachingSha2Password,
             AuthPlugin::MysqlNativePassword => AuthPlugin::MysqlNativePassword,
+            AuthPlugin::MysqlOldPassword => AuthPlugin::MysqlOldPassword,
             AuthPlugin::Other(name) => AuthPlugin::Other(Cow::Owned(name.into_owned())),
         }
     }
 
     pub fn borrow<'b>(&'b self) -> AuthPlugin<'b> {
         match self {
-            AuthPlugin::MysqlNativePassword => AuthPlugin::MysqlNativePassword,
             AuthPlugin::CachingSha2Password => AuthPlugin::CachingSha2Password,
+            AuthPlugin::MysqlNativePassword => AuthPlugin::MysqlNativePassword,
+            AuthPlugin::MysqlOldPassword => AuthPlugin::MysqlOldPassword,
             AuthPlugin::Other(name) => AuthPlugin::Other(Cow::Borrowed(name.as_ref())),
         }
     }
@@ -1065,7 +1082,7 @@ impl<'a> AuthPlugin<'a> {
     ///
     /// It'll generate `None` if password is `None` or empty.
     pub fn gen_data(&self, pass: Option<&str>, nonce: &[u8]) -> Option<AuthPluginData> {
-        use super::scramble::{scramble_native, scramble_sha256};
+        use super::scramble::{scramble_323, scramble_native, scramble_sha256};
 
         match pass {
             Some(pass) => match self {
@@ -1074,6 +1091,10 @@ impl<'a> AuthPlugin<'a> {
                 }
                 AuthPlugin::MysqlNativePassword => {
                     scramble_native(nonce, pass.as_bytes()).map(AuthPluginData::Native)
+                }
+                AuthPlugin::MysqlOldPassword => {
+                    scramble_323(nonce.chunks(8).next().unwrap(), pass.as_bytes())
+                        .map(AuthPluginData::Old)
                 }
                 AuthPlugin::Other(_) => None,
             },
@@ -1139,6 +1160,44 @@ define_header!(
     InvalidAuthSwithRequestHeader("Invalid auth switch request header"),
     0xFE
 );
+
+/// Old Authentication Method Switch Request Packet.
+///
+/// Used for It is sent by server to request client to switch to Old Password Authentication
+/// if `CLIENT_PLUGIN_AUTH` capability is not supported (by either the client or the server).
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct OldAuthSwitchRequest {
+    __header: AuthSwitchRequestHeader,
+}
+
+impl OldAuthSwitchRequest {
+    pub fn new() -> Self {
+        Self {
+            __header: AuthSwitchRequestHeader::new(),
+        }
+    }
+
+    pub const fn auth_plugin(&self) -> AuthPlugin<'static> {
+        AuthPlugin::MysqlOldPassword
+    }
+}
+
+impl<'de> MyDeserialize<'de> for OldAuthSwitchRequest {
+    const SIZE: Option<usize> = Some(1);
+    type Ctx = ();
+
+    fn deserialize((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+        Ok(Self {
+            __header: buf.parse(())?,
+        })
+    }
+}
+
+impl MySerialize for OldAuthSwitchRequest {
+    fn serialize(&self, buf: &mut Vec<u8>) {
+        self.__header.serialize(&mut *buf);
+    }
+}
 
 /// Authentication Method Switch Request Packet.
 ///
