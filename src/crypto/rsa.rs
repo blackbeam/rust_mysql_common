@@ -203,8 +203,10 @@ impl PublicKey {
 
 #[cfg(test)]
 mod tests {
+    use std::io::Read;
+
     use super::*;
-    use rand::rngs::adapter::ReadRng;
+    use rand::RngCore;
 
     const SEED: &[u8; 64] = b"\x03\x2e\x45\x32\x6f\xa8\x59\xa7\x2e\xc2\x35\xac\xff\x92\x9b\x15\xd1\
     \x37\x2e\x30\xb2\x07\x25\x5f\x06\x11\xb8\xf7\x85\xd7\x64\x37\x41\x52\xe0\xac\x00\x9e\x50\x9e\
@@ -217,6 +219,39 @@ mod tests {
     \xad\xfa\x26\x3c\xfc\xcf\x3c\x52\xb2\x9f\x2a\xf4\xa1\x86\x99\x59\xbc\x77\xf8\x54\xcf\x15\xbd\
     \x7a\x25\x19\x29\x85\xa8\x42\xdb\xff\x8e\x13\xef\xee\x5b\x7e\x7e\x55\xbb\xe4\xd3\x89\x64\x7c\
     \x68\x6a\x9a\x9a\xb3\xfb\x88\x9b\x2d\x77\x67\xd3\x83\x7e\xea\x4e\x0a\x2f\x04";
+
+    /// Replacement for the deprecated `rand::ReadRng`.
+    struct Seed<'a>(&'a [u8]);
+
+    impl<'a> RngCore for Seed<'a> {
+        fn next_u32(&mut self) -> u32 {
+            let mut buf = [0; 4];
+            self.fill_bytes(&mut buf);
+            u32::from_le_bytes(buf)
+        }
+
+        fn next_u64(&mut self) -> u64 {
+            let mut buf = [0; 8];
+            self.fill_bytes(&mut buf);
+            u64::from_le_bytes(buf)
+        }
+
+        fn fill_bytes(&mut self, dest: &mut [u8]) {
+            self.try_fill_bytes(dest).unwrap_or_else(|err| {
+                panic!(
+                    "reading random bytes from Read implementation failed; error: {}",
+                    err
+                )
+            });
+        }
+
+        fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), rand::Error> {
+            if dest.is_empty() {
+                return Ok(());
+            }
+            self.0.read_exact(dest).map_err(|e| rand::Error::new(e))
+        }
+    }
 
     #[test]
     fn mgf1() {
@@ -292,7 +327,7 @@ mod tests {
             BigUint::from_bytes_be(&exponent),
         );
 
-        let rng = ReadRng::new(&*seed1);
+        let rng = Seed(&*seed1);
         let pad = Pkcs1Padding::new(rng);
 
         let cipher_text = public_key.encrypt_block(msg1, pad);
@@ -344,7 +379,7 @@ mod tests {
             BigUint::from_bytes_be(&exponent),
         );
 
-        let rng = ReadRng::new(&*seed);
+        let rng = Seed(&*seed);
         let pad = Pkcs1OaepPadding::new(rng);
 
         let cipher_text = public_key.encrypt_block(msg, pad);

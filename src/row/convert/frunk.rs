@@ -162,7 +162,7 @@ fn hlist_from_row() {
         .into(),
     );
 
-    let val: frunk::Hlist![
+    let val: frunk::HList![
         u8,
         Vec<u8>,
         u16,
