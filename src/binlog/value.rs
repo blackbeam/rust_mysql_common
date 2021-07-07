@@ -206,7 +206,8 @@ impl<'de> MyDeserialize<'de> for BinlogValue<'de> {
             MYSQL_TYPE_TINY_BLOB
             | MYSQL_TYPE_MEDIUM_BLOB
             | MYSQL_TYPE_LONG_BLOB
-            | MYSQL_TYPE_BLOB => {
+            | MYSQL_TYPE_BLOB
+            | MYSQL_TYPE_GEOMETRY => {
                 let nbytes = match col_meta[0] {
                     1 => *buf.parse::<RawInt<u8>>(())? as usize,
                     2 => *buf.parse::<RawInt<LeU16>>(())? as usize,
