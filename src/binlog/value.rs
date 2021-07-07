@@ -199,7 +199,7 @@ impl<'de> MyDeserialize<'de> for BinlogValue<'de> {
                 _ => Err(io::Error::new(io::ErrorKind::InvalidData, "Unknown ENUM")),
             },
             MYSQL_TYPE_SET => {
-                let nbytes = col_meta[1] as usize * 8;
+                let nbytes = col_meta[1] as usize;
                 let bytes: &[u8] = buf.parse(nbytes)?;
                 Ok(BinlogValue::Value(Bytes(bytes.into())))
             }
