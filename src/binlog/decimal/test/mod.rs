@@ -14,6 +14,8 @@ use self::libstrings_bindings::*;
 
 // Use `build.rs` to rebuild this.
 #[allow(non_camel_case_types)]
+// this is due to rust-lang/rust-bindgen#1651
+#[allow(deref_nullptr)]
 mod libstrings_bindings;
 
 impl fmt::Debug for decimal_t {
