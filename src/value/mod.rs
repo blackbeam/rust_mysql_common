@@ -13,7 +13,11 @@ use std::{convert::TryFrom, fmt, io, marker::PhantomData, str::from_utf8};
 use crate::{
     constants::{ColumnFlags, ColumnType},
     io::{BufMutExt, ParseBuf},
-    misc::{lenenc_str_len, unexpected_buf_eof},
+    misc::{
+        lenenc_str_len,
+        raw::bytes::{LenEnc, RawBytes},
+        unexpected_buf_eof,
+    },
     proto::{MyDeserialize, MySerialize},
     value::Value::*,
 };
@@ -298,12 +302,13 @@ impl Value {
         }
 
         match buf.0[0] {
-            0xfb => Ok(Value::NULL),
+            0xfb => {
+                buf.skip(1);
+                Ok(Value::NULL)
+            }
             _ => {
-                let bytes = buf
-                    .checked_eat_lenenc_str()
-                    .ok_or_else(unexpected_buf_eof)?;
-                Ok(Value::Bytes(bytes.to_vec()))
+                let bytes: RawBytes<LenEnc> = buf.parse(())?;
+                Ok(Value::Bytes(bytes.0.into_owned()))
             }
         }
     }
@@ -515,7 +520,9 @@ impl fmt::Debug for Value {
 
 #[cfg(test)]
 mod test {
-    use crate::value::Value;
+    use std::io;
+
+    use crate::{io::ParseBuf, value::Value};
 
     #[test]
     fn should_escape_string() {
@@ -648,5 +655,22 @@ mod test {
             bencher.bytes = data.len() as u64;
             bencher.iter(|| Value::read_bin_many::<ClientSide>(&*data, &*columns).unwrap());
         }
+    }
+
+    #[test]
+    fn mysql_simple_issue_284() -> io::Result<()> {
+        use Value::*;
+
+        let mut buf = ParseBuf(&[1, 49, 1, 50, 1, 51, 251, 1, 52, 1, 53, 251, 1, 55][..]);
+        assert_eq!(Value::deserialize_text(&mut buf)?, Bytes(b"1".to_vec()));
+        assert_eq!(Value::deserialize_text(&mut buf)?, Bytes(b"2".to_vec()));
+        assert_eq!(Value::deserialize_text(&mut buf)?, Bytes(b"3".to_vec()));
+        assert_eq!(Value::deserialize_text(&mut buf)?, NULL);
+        assert_eq!(Value::deserialize_text(&mut buf)?, Bytes(b"4".to_vec()));
+        assert_eq!(Value::deserialize_text(&mut buf)?, Bytes(b"5".to_vec()));
+        assert_eq!(Value::deserialize_text(&mut buf)?, NULL);
+        assert_eq!(Value::deserialize_text(&mut buf)?, Bytes(b"7".to_vec()));
+
+        Ok(())
     }
 }
