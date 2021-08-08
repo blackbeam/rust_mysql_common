@@ -24,7 +24,7 @@ byteorder = "1"
 bytes = "1.0"
 chrono = { version = "0.4.19", features = ["serde"], optional = true }
 crc32fast = "1.2"
-flate2 = { version = "1.0", default-features = false }
+flate2 = { version = "1.0", default-features = false, features = ["zlib"] }
 frunk = { version = "0.4", optional = true }
 lazy_static = "1"
 lexical = "5.2"
@@ -57,7 +57,6 @@ debug = true
 
 [features]
 default = [
-    "flate2/zlib",
     "bigdecimal",
     "chrono",
     "rust_decimal",
