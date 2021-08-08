@@ -24,7 +24,7 @@ byteorder = "1"
 bytes = "1.0"
 chrono = { version = "0.4.19", features = ["serde"], optional = true }
 crc32fast = "1.2"
-flate2 = { version = "1.0", default-features = false, features = ["zlib"] }
+flate2 = { version = "1.0", default-features = false }
 frunk = { version = "0.4", optional = true }
 lazy_static = "1"
 lexical = "5.2"
@@ -57,6 +57,7 @@ debug = true
 
 [features]
 default = [
+    "zlib",
     "bigdecimal",
     "chrono",
     "rust_decimal",
@@ -64,5 +65,13 @@ default = [
     "uuid",
     "frunk",
 ]
+
+# Flate2 Backends.
+# @see <https://github.com/rust-lang/flate2-rs#backends>
+zlib = ["flate2/zlib"]
+zlib-ng-compat = ["flate2/zlib-ng-compat"]
+zlib-cloudflare = ["flate2/cloudflare_zlib"]
+zlib-miniz = ["flate2/rust_backend"]
+
 test = []
 nightly = ["test"]
