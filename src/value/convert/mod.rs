@@ -23,6 +23,7 @@ macro_rules! impl_from_value {
 }
 
 pub mod bigdecimal;
+pub mod bigdecimal03;
 pub mod bigint;
 pub mod chrono;
 pub mod decimal;

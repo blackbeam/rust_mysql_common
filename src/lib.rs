@@ -76,6 +76,9 @@ pub mod bitflags_ext;
 #[cfg(feature = "bigdecimal")]
 pub use bigdecimal;
 
+#[cfg(feature = "bigdecimal03")]
+pub use bigdecimal03;
+
 #[cfg(feature = "chrono")]
 pub use chrono;
 

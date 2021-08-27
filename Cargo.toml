@@ -18,6 +18,7 @@ travis-ci = { repository = "blackbeam/rust_mysql_common" }
 [dependencies]
 base64 = "0.13"
 bigdecimal = { version = "0.2", features = ["serde"], optional = true }
+bigdecimal03 = { package = "bigdecimal", version = "0.3", optional = true }
 bitflags = "1"
 bitvec = "0.22.3"
 byteorder = "1"
