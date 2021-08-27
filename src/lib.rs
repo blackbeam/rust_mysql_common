@@ -26,30 +26,36 @@
 //! (see `Value` struct) and not to MySql column types. Please see [MySql documentation][1] for
 //! column and protocol type correspondence:
 //!
-//! | Type                            | Notes                                                     |
-//! | ------------------------------- | -------------------------------------------------------   |
-//! | `{i,u}8..{i,u}128`, `{i,u}size` | MySql int/uint will be converted, bytes will be parsed.<br>⚠️ Note that range of `{i,u}128` is greater than supported by MySql integer types but it'll be serialized anyway (as decimal bytes string). |
-//! | `f32`                           | MySql float will be converted to `f32`, bytes will be parsed as `f32`.<br>⚠️ MySql double won't be converted to `f32` to avoid precision loss (see #17) |
-//! | `f64`                           | MySql float and double will be converted to `f64`, bytes will be parsed as `f64`. |
-//! | `bool`                          | MySql int {`0`, `1`} or bytes {`"0x30"`, `"0x31"`}        |
-//! | `Vec<u8>`                       | MySql bytes                                               |
-//! | `String`                        | MySql bytes parsed as utf8                                |
-//! | `Duration` (`std` and `time`)   | MySql time or bytes parsed as MySql time string           |
-//! | [`time::PrimitiveDateTime`]     | MySql date or bytes parsed as MySql date string           |
-//! | [`time::Date`]                  | MySql date or bytes parsed as MySql date string           |
-//! | [`time::Time`]                  | MySql date or bytes parsed as MySql date string           |
-//! | [`chrono::NaiveTime`]           | MySql date or bytes parsed as MySql date string           |
-//! | [`chrono::NaiveDate`]           | MySql date or bytes parsed as MySql date string           |
-//! | [`chrono::NaiveDateTime`]       | MySql date or bytes parsed as MySql date string           |
-//! | [`uuid::Uuid`]                  | MySql bytes parsed using `Uuid::from_slice`               |
-//! | [`serde_json::Value`]           | MySql bytes parsed using `serde_json::from_str`           |
+//! | Type                                 | Notes                                                     |
+//! | ------------------------------------ | -------------------------------------------------------   |
+//! | `{i,u}8..{i,u}128`, `{i,u}size`      | MySql int/uint will be converted, bytes will be parsed.<br>⚠️ Note that range of `{i,u}128` is greater than supported by MySql integer types but it'll be serialized anyway (as decimal bytes string). |
+//! | `f32`                                | MySql float will be converted to `f32`, bytes will be parsed as `f32`.<br>⚠️ MySql double won't be converted to `f32` to avoid precision loss (see #17) |
+//! | `f64`                                | MySql float and double will be converted to `f64`, bytes will be parsed as `f64`. |
+//! | `bool`                               | MySql int {`0`, `1`} or bytes {`"0x30"`, `"0x31"`}        |
+//! | `Vec<u8>`                            | MySql bytes                                               |
+//! | `String`                             | MySql bytes parsed as utf8                                |
+//! | `Duration` (`std` and `time`)        | MySql time or bytes parsed as MySql time string           |
+//! | [`time::PrimitiveDateTime`] (v0.2.x) | MySql date time or bytes parsed as MySql date time string (⚠️ lossy! microseconds are ignored)           |
+//! | [`time::Date`] (v0.2.x)              | MySql date or bytes parsed as MySql date string (⚠️ lossy! microseconds are ignored)           |
+//! | [`time::Time`] (v0.2.x)              | MySql time or bytes parsed as MySql time string (⚠️ lossy! microseconds are ignored)           |
+//! | [`time::Duration`] (v0.2.x)          | MySql time or bytes parsed as MySql time string           |
+//! | [`time::PrimitiveDateTime`] (v0.3.x) | MySql date time or bytes parsed as MySql date time string (⚠️ lossy! microseconds are ignored)           |
+//! | [`time::Date`] (v0.3.x)              | MySql date or bytes parsed as MySql date string (⚠️ lossy! microseconds are ignored)           |
+//! | [`time::Time`] (v0.3.x)              | MySql time or bytes parsed as MySql time string (⚠️ lossy! microseconds are ignored)           |
+//! | [`time::Duration`] (v0.3.x)          | MySql time or bytes parsed as MySql time string           |
+//! | [`chrono::NaiveTime`]                | MySql date or bytes parsed as MySql date string           |
+//! | [`chrono::NaiveDate`]                | MySql date or bytes parsed as MySql date string           |
+//! | [`chrono::NaiveDateTime`]            | MySql date or bytes parsed as MySql date string           |
+//! | [`uuid::Uuid`]                       | MySql bytes parsed using `Uuid::from_slice`               |
+//! | [`serde_json::Value`]                | MySql bytes parsed using `serde_json::from_str`           |
 //! | `mysql_common::Deserialized<T : DeserializeOwned>` | MySql bytes parsed using `serde_json::from_str` |
-//! | `Option<T: FromValue>`          | Must be used for nullable columns to avoid errors         |
-//! | [`decimal::Decimal`]            | MySql int, uint or bytes parsed using `Decimal::from_str`.<br>⚠️ Note that this type doesn't support full range of MySql `DECIMAL` type. |
-//! | [`bigdecimal::BigDecimal`]      | MySql int, uint, floats or bytes parsed using `BigDecimal::parse_bytes`.<br>⚠️ Note that range of this type is greater than supported by MySql `DECIMAL` type but it'll be serialized anyway. |
-//! | `num_bigint::{BigInt, BigUint}` | MySql int, uint or bytes parsed using `_::parse_bytes`.<br>⚠️ Note that range of this type is greater than supported by MySql integer types but it'll be serialized anyway (as decimal bytes string). |
+//! | `Option<T: FromValue>`               | Must be used for nullable columns to avoid errors         |
+//! | [`decimal::Decimal`]                 | MySql int, uint or bytes parsed using `Decimal::from_str`.<br>⚠️ Note that this type doesn't support full range of MySql `DECIMAL` type. |
+//! | [`bigdecimal::BigDecimal`] (v0.2.x)  | MySql int, uint, floats or bytes parsed using `BigDecimal::parse_bytes`.<br>⚠️ Note that range of this type is greater than supported by MySql `DECIMAL` type but it'll be serialized anyway. |
+//! | [`bigdecimal::BigDecimal`] (v0.3.x)  | MySql int, uint, floats or bytes parsed using `BigDecimal::parse_bytes`.<br>⚠️ Note that range of this type is greater than supported by MySql `DECIMAL` type but it'll be serialized anyway. |
+//! | `num_bigint::{BigInt, BigUint}`      | MySql int, uint or bytes parsed using `_::parse_bytes`.<br>⚠️ Note that range of this type is greater than supported by MySql integer types but it'll be serialized anyway (as decimal bytes string). |
 //!
-//! Also crate provides from-row convertion for the following list of types:
+//! Also crate provides from-row convertion for the following list of types (see `FromRow` trait):
 //!
 //! | Type                                            | Notes                                             |
 //! | ----------------------------------------------- | ------------------------------------------------- |
@@ -57,6 +63,19 @@
 //! | `T: FromValue`                                  | For rows with a single column.                    |
 //! | `(T1: FromValue [, ..., T12: FromValue])`       | Row to a tuple of arity 1-12.                     |
 //! | [`frunk::Hlist!`] types                         | Usefull to overcome tuple arity limitation        |
+//!
+//! ### Crate features
+//!
+//! | Feature        | Description                                 | Default |
+//! | -------------- | ------------------------------------------- | ------- |
+//! | `bigdecimal`   | Enables `bigdecimal` v0.2.x types support   | 🟢      |
+//! | `bigdecimal03` | Enables `bigdecimal` v0.3.x types support   | 🔴      |
+//! | `chrono`       | Enables `chrono` types support              | 🟢      |
+//! | `rust_decimal` | Enables `rust_decimal` types support        | 🟢      |
+//! | `time`         | Enables `time` v0.2.x types support         | 🟢      |
+//! | `time03`       | Enables `time` v0.3.x types support         | 🔴      |
+//! | `uuid`         | Enables `Uuid` type support                 | 🟢      |
+//! | `frunk`        | Enables `FromRow` for `frunk::Hlist!` types | 🟢      |
 //!
 //! [1]: https://dev.mysql.com/doc/internals/en/binary-protocol-value.html
 #![cfg_attr(feature = "nightly", feature(test, const_fn))]
@@ -76,6 +95,9 @@ pub mod bitflags_ext;
 #[cfg(feature = "bigdecimal")]
 pub use bigdecimal;
 
+#[cfg(feature = "bigdecimal03")]
+pub use bigdecimal03;
+
 #[cfg(feature = "chrono")]
 pub use chrono;
 
@@ -87,6 +109,9 @@ pub use rust_decimal;
 
 #[cfg(feature = "time")]
 pub use time;
+
+#[cfg(feature = "time03")]
+pub use time03;
 
 #[cfg(feature = "uuid")]
 pub use uuid;
