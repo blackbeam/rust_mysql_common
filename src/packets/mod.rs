@@ -461,7 +461,7 @@ impl OkPacketKind for CommonOkPacket {
         let warnings = sbuf.parse_unchecked(())?;
 
         let (info, session_state_info) =
-            if capabilities.contains(CapabilityFlags::CLIENT_SESSION_TRACK) {
+            if capabilities.contains(CapabilityFlags::CLIENT_SESSION_TRACK) && !buf.is_empty() {
                 let info = buf.parse(())?;
                 let session_state_info =
                     if status_flags.contains(StatusFlags::SERVER_SESSION_STATE_CHANGED) {
@@ -3182,7 +3182,7 @@ mod test {
 
     #[test]
     fn should_parse_ok_packet() {
-        const PLAIN_OK: &[u8] = b"\x00\x00\x00\x02\x00\x00\x00";
+        const PLAIN_OK: &[u8] = b"\x00\x01\x00\x02\x00\x00\x00";
         const SESS_STATE_SYS_VAR_OK: &[u8] =
             b"\x00\x00\x00\x02\x40\x00\x00\x00\x11\x00\x0f\x0a\x61\
               \x75\x74\x6f\x63\x6f\x6d\x6d\x69\x74\x03\x4f\x46\x46";
@@ -3204,7 +3204,23 @@ mod test {
         )
         .unwrap()
         .into();
-        assert_eq!(ok_packet.affected_rows(), 0);
+        assert_eq!(ok_packet.affected_rows(), 1);
+        assert_eq!(ok_packet.last_insert_id(), None);
+        assert_eq!(
+            ok_packet.status_flags(),
+            StatusFlags::SERVER_STATUS_AUTOCOMMIT
+        );
+        assert_eq!(ok_packet.warnings(), 0);
+        assert_eq!(ok_packet.info_ref(), None);
+        assert_eq!(ok_packet.session_state_info_ref(), None);
+
+        let ok_packet: OkPacket = OkPacketDeserializer::<CommonOkPacket>::deserialize(
+            CapabilityFlags::CLIENT_SESSION_TRACK,
+            &mut ParseBuf(PLAIN_OK),
+        )
+        .unwrap()
+        .into();
+        assert_eq!(ok_packet.affected_rows(), 1);
         assert_eq!(ok_packet.last_insert_id(), None);
         assert_eq!(
             ok_packet.status_flags(),
