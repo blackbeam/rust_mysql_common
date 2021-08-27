@@ -28,6 +28,7 @@ pub mod bigint;
 pub mod chrono;
 pub mod decimal;
 pub mod time;
+pub mod time03;
 pub mod uuid;
 
 lazy_static::lazy_static! {

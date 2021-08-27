@@ -91,6 +91,9 @@ pub use rust_decimal;
 #[cfg(feature = "time")]
 pub use time;
 
+#[cfg(feature = "time03")]
+pub use time03;
+
 #[cfg(feature = "uuid")]
 pub use uuid;
 

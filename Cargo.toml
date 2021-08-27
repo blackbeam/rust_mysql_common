@@ -39,6 +39,7 @@ sha2 = "0.9"
 smallvec = { version = "1.6.1", features = ["union", "write"] }
 thiserror = "1.0.24"
 time = { version = "0.2", default-features = false, features = ["std"], optional = true }
+time03 = { package = "time", version = "0.3", default-features = false, features = ["parsing"], optional = true }
 uuid = { version = "0.8", optional = true }
 saturating = "0.1"
 serde = "1"
@@ -48,7 +49,7 @@ serde_json = "1"
 proptest = "1.0"
 
 [build-dependencies]
-bindgen = "0.58.1"
+bindgen = "0.58"
 cc = "1.0.54"
 cmake = "0.1.44"
 subprocess = "0.2.4"
