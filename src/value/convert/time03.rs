@@ -352,7 +352,6 @@ impl_from_value!(time03::Duration, ParseIr<time03::Duration>);
 
 #[cfg(test)]
 mod tests {
-    use crate::value::convert::parse_mysql_datetime_string;
     use time03::error::ParseFromDescription;
 
     use super::*;
@@ -385,9 +384,6 @@ mod tests {
                     "".into()
                 }
             );
-
-            let datetime = parse_mysql_datetime_string(time_string.as_bytes()).unwrap();
-            assert_eq!(datetime, (y, m, d, h, i, s, if have_us == 1 { us } else { 0 }));
 
             match parse_mysql_datetime_string_with_time(time_string.as_bytes()) {
                 Ok(datetime) => {
