@@ -1351,7 +1351,8 @@ impl MySerialize for HandshakePacket<'_> {
         buf.put_u8(
             self.scramble_2
                 .as_ref()
-                .map(|x| (x.len() + 8) as u8)
+                // +1 for the trailing 0x00
+                .map(|x| (x.len() + 8 + 1) as u8)
                 .unwrap_or_default(),
         );
         buf.put_slice(&[0_u8; 10][..]);
