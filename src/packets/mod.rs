@@ -1081,6 +1081,8 @@ impl<'a> AuthPlugin<'a> {
     /// Generates auth plugin data for this plugin.
     ///
     /// It'll generate `None` if password is `None` or empty.
+    ///
+    /// Note, that you should trim terminating null character from the `nonce`.
     pub fn gen_data(&self, pass: Option<&str>, nonce: &[u8]) -> Option<AuthPluginData> {
         use super::scramble::{scramble_323, scramble_native, scramble_sha256};
 
@@ -1306,9 +1308,8 @@ impl<'de> MyDeserialize<'de> for HandshakePacket<'de> {
         let __reserved = sbuf.parse_unchecked(())?;
         let mut scramble_2 = None;
         if capabilities_1.0 & CapabilityFlags::CLIENT_SECURE_CONNECTION.bits() > 0 {
-            let len = max(12, auth_plugin_data_len.0 as i8 - 9) as usize;
+            let len = max(13, auth_plugin_data_len.0 as i8 - 8) as usize;
             scramble_2 = buf.parse(len).map(Some)?;
-            buf.parse::<Skip<1>>(())?;
         }
         let mut auth_plugin_name = None;
         if capabilities_2.0 & CapabilityFlags::CLIENT_PLUGIN_AUTH.bits() > 0 {
@@ -1357,7 +1358,6 @@ impl MySerialize for HandshakePacket<'_> {
         buf.put_slice(&[0_u8; 10][..]);
         if let Some(scramble_2) = &self.scramble_2 {
             scramble_2.serialize(&mut *buf);
-            buf.put_u8(0x00);
         }
         if let Some(client_plugin_auth) = &self.auth_plugin_name {
             client_plugin_auth.serialize(buf);
@@ -1486,6 +1486,8 @@ impl<'a> HandshakePacket<'a> {
     }
 
     /// Value of the scramble_2 field of an initial handshake packet as a byte slice.
+    ///
+    /// Note that this may include a terminating null character.
     pub fn scramble_2_ref(&self) -> Option<&[u8]> {
         self.scramble_2.as_ref().map(|x| x.as_bytes())
     }
