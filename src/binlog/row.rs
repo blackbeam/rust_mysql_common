@@ -161,18 +161,16 @@ impl<'de> MyDeserialize<'de> for BinlogRow {
         null_bitmap.truncate(num_bits);
 
         let mut image_idx = 0;
-        let signedness = table_info
-            .iter_optional_meta()
-            .find_map(|m| {
-                m.map(|f| match f {
-                    OptionalMetadataField::Signedness(bit_slice) => Some(bit_slice.to_bitvec()),
-                    _ => None,
-                })
-                .unwrap_or(None)
+
+        let signedness = table_info.iter_optional_meta().find_map(|m| {
+            m.map(|f| match f {
+                OptionalMetadataField::Signedness(bit_slice) => Some(bit_slice),
+                _ => None,
             })
-            .unwrap_or_else(|| {
-                BitVec::<Lsb0, u8>::from_vec(vec![0_u8; (num_columns as usize + 7) / 8])
-            });
+            .unwrap_or(None)
+        });
+
+        let mut numeric_index = 0;
         for i in 0..(num_columns as usize) {
             // check if column is in columns list
             if cols.get(i).as_deref().copied().unwrap_or(false) {
@@ -214,9 +212,19 @@ impl<'de> MyDeserialize<'de> for BinlogRow {
                         .and_then(|bits| bits.next().as_deref().copied())
                         .unwrap_or(false);
 
-                let unsigned = signedness.get(i).as_deref().copied().unwrap_or_default();
+                let is_unsigned = if column_type.is_numeric_type() {
+                    let is_unsigned = signedness
+                        .as_ref()
+                        .and_then(|bits| bits.get(numeric_index).as_deref().copied())
+                        .unwrap_or_default();
+                    numeric_index += 1;
+                    is_unsigned
+                } else {
+                    false
+                };
+
                 let mut column_flags = ColumnFlags::empty();
-                if unsigned {
+                if is_unsigned {
                     column_flags |= ColumnFlags::UNSIGNED_FLAG;
                 }
                 let column = Column::new(column_type)
@@ -237,7 +245,7 @@ impl<'de> MyDeserialize<'de> for BinlogRow {
                 {
                     values.push(Some(BinlogValue::Value(Value::NULL)));
                 } else {
-                    let ctx = (column_type, column_meta, signedness[i], is_partial);
+                    let ctx = (column_type, column_meta, is_unsigned, is_partial);
                     values.push(Some(buf.parse::<BinlogValue>(ctx)?.into_owned()));
                 }
 
