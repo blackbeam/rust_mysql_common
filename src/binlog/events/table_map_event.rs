@@ -153,7 +153,7 @@ impl<'a> TableMapEvent<'a> {
     pub fn iter_optional_meta(&'a self) -> OptionalMetadataIter<'a> {
         OptionalMetadataIter {
             columns: &self.columns_type,
-            data: self.columns_metadata.as_bytes(),
+            data: self.optional_metadata.as_bytes(),
         }
     }
 
@@ -937,7 +937,7 @@ pub enum OptionalMetadataField<'a> {
     /// See [`OptionalMetadataFieldType::SIGNEDNESS`].
     Signedness(
         /// Flags indicating unsignedness for every numeric column.
-        &'a BitSlice<Lsb0, u8>,
+        &'a BitSlice<Msb0, u8>,
     ),
     /// See [`OptionalMetadataFieldType::DEFAULT_CHARSET`].
     DefaultCharset(DefaultCharset<'a>),
@@ -962,6 +962,7 @@ pub enum OptionalMetadataField<'a> {
 }
 
 /// Iterator over fields of an optional metadata.
+#[derive(Debug)]
 pub struct OptionalMetadataIter<'a> {
     columns: &'a RawSeq<'a, u8, ColumnType>,
     data: &'a [u8],
@@ -982,7 +983,7 @@ impl<'a> OptionalMetadataIter<'a> {
                 ));
             }
         };
-        self.data = &self.data[..l];
+        self.data = &self.data[l..];
         Ok((RawConst::new(t), v))
     }
 
@@ -995,6 +996,10 @@ impl<'a> OptionalMetadataIter<'a> {
         }
 
         self.read_tlv().map(Some).transpose()
+    }
+
+    fn num_columns(&self) -> usize {
+        self.columns.0.len()
     }
 
     fn count_columns(&self, f: fn(&ColumnType) -> bool) -> usize {
@@ -1031,7 +1036,7 @@ impl<'a> Iterator for OptionalMetadataIter<'a> {
                             }
 
                             let flags = BitSlice::from_slice(flags).expect("the slice is too big");
-                            Ok(OptionalMetadataField::Signedness(&flags[..num_flags_bytes]))
+                            Ok(OptionalMetadataField::Signedness(&flags[..num_numeric]))
                         }
                         DEFAULT_CHARSET => Ok(OptionalMetadataField::DefaultCharset(v.parse(())?)),
                         COLUMN_CHARSET => Ok(OptionalMetadataField::ColumnCharset(v.parse(())?)),
