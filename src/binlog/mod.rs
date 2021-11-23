@@ -692,6 +692,16 @@ mod tests {
                     other => other.transpose().unwrap()?,
                 };
 
+                if file_path.file_name().unwrap() == "binlog-invisible-columns.000001" {
+                    if let Some(EventData::TableMapEvent(ev)) = ev.read_data().unwrap() {
+                        dbg!(&ev);
+                        let optional_meta = dbg!(ev.iter_optional_meta());
+                        for meta in optional_meta {
+                            dbg!(meta.unwrap());
+                        }
+                    }
+                }
+
                 assert_eq!(output, &file_data[ev_pos..ev_end]);
 
                 output = Vec::new();

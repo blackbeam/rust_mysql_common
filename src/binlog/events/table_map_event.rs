@@ -959,6 +959,11 @@ pub enum OptionalMetadataField<'a> {
     EnumAndSetDefaultCharset(DefaultCharset<'a>),
     /// See [`OptionalMetadataFieldType::ENUM_AND_SET_COLUMN_CHARSET`].
     EnumAndSetColumnCharset(ColumnCharsets<'a>),
+    /// See [`OptionalMetadataFieldType::COLUMN_VISIBILITY`].
+    ColumnVisibility(
+        /// Flags indicating visibility for every numeric column.
+        &'a BitSlice<Msb0, u8>,
+    ),
 }
 
 /// Iterator over fields of an optional metadata.
@@ -1055,6 +1060,22 @@ impl<'a> Iterator for OptionalMetadataIter<'a> {
                         ),
                         ENUM_AND_SET_COLUMN_CHARSET => {
                             Ok(OptionalMetadataField::EnumAndSetColumnCharset(v.parse(())?))
+                        }
+                        COLUMN_VISIBILITY => {
+                            let num_columns = self.num_columns();
+                            let num_flags_bytes = (num_columns + 7) / 8;
+                            let flags: &[u8] = v.parse(num_flags_bytes)?;
+
+                            if !v.is_empty() {
+                                return Err(io::Error::new(
+                                    io::ErrorKind::Other,
+                                    "bytes remaining on stream",
+                                ));
+                            }
+
+                            let flags = BitSlice::from_slice(flags).expect("the slice is too big");
+                            let flags = &flags[..num_columns];
+                            Ok(OptionalMetadataField::ColumnVisibility(flags))
                         }
                     },
                     Err(_) => Err(io::Error::new(
