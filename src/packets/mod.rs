@@ -1081,6 +1081,8 @@ impl<'a> AuthPlugin<'a> {
     /// Generates auth plugin data for this plugin.
     ///
     /// It'll generate `None` if password is `None` or empty.
+    ///
+    /// Note, that you should trim terminating null character from the `nonce`.
     pub fn gen_data(&self, pass: Option<&str>, nonce: &[u8]) -> Option<AuthPluginData> {
         use super::scramble::{scramble_323, scramble_native, scramble_sha256};
 
@@ -1306,9 +1308,8 @@ impl<'de> MyDeserialize<'de> for HandshakePacket<'de> {
         let __reserved = sbuf.parse_unchecked(())?;
         let mut scramble_2 = None;
         if capabilities_1.0 & CapabilityFlags::CLIENT_SECURE_CONNECTION.bits() > 0 {
-            let len = max(12, auth_plugin_data_len.0 as i8 - 9) as usize;
+            let len = max(13, auth_plugin_data_len.0 as i8 - 8) as usize;
             scramble_2 = buf.parse(len).map(Some)?;
-            buf.parse::<Skip<1>>(())?;
         }
         let mut auth_plugin_name = None;
         if capabilities_2.0 & CapabilityFlags::CLIENT_PLUGIN_AUTH.bits() > 0 {
@@ -1348,17 +1349,31 @@ impl MySerialize for HandshakePacket<'_> {
         self.default_collation.serialize(&mut *buf);
         self.status_flags.serialize(&mut *buf);
         self.capabilities_2.serialize(&mut *buf);
-        buf.put_u8(
-            self.scramble_2
-                .as_ref()
-                .map(|x| (x.len() + 8) as u8)
-                .unwrap_or_default(),
-        );
+
+        if self
+            .capabilities_2
+            .contains(CapabilityFlags::CLIENT_PLUGIN_AUTH)
+        {
+            buf.put_u8(
+                self.scramble_2
+                    .as_ref()
+                    .map(|x| (x.len() + 8) as u8)
+                    .unwrap_or_default(),
+            );
+        } else {
+            buf.put_u8(0);
+        }
+
         buf.put_slice(&[0_u8; 10][..]);
+
+        // Assume that the packet is well formed:
+        // * the CLIENT_SECURE_CONNECTION is set.
         if let Some(scramble_2) = &self.scramble_2 {
             scramble_2.serialize(&mut *buf);
-            buf.put_u8(0x00);
         }
+
+        // Assume that the packet is well formed:
+        // * the CLIENT_PLUGIN_AUTH is set.
         if let Some(client_plugin_auth) = &self.auth_plugin_name {
             client_plugin_auth.serialize(buf);
         }
@@ -1486,6 +1501,8 @@ impl<'a> HandshakePacket<'a> {
     }
 
     /// Value of the scramble_2 field of an initial handshake packet as a byte slice.
+    ///
+    /// Note that this may include a terminating null character.
     pub fn scramble_2_ref(&self) -> Option<&[u8]> {
         self.scramble_2.as_ref().map(|x| x.as_bytes())
     }
@@ -3066,8 +3083,12 @@ mod test {
         );
         assert_eq!(hsp.default_collation(), 0x08);
         assert_eq!(hsp.status_flags(), StatusFlags::from_bits_truncate(0x0002));
-        assert_eq!(hsp.scramble_2_ref(), Some(&b"*4d|cZwk4^]:"[..]));
+        assert_eq!(hsp.scramble_2_ref(), Some(&b"*4d|cZwk4^]:\x00"[..]));
         assert_eq!(hsp.auth_plugin_name_ref(), None);
+
+        let mut output = Vec::new();
+        hsp.serialize(&mut output);
+        assert_eq!(&output, HSP);
 
         let hsp = HandshakePacket::deserialize((), &mut ParseBuf(HSP_2)).unwrap();
         assert_eq!(hsp.protocol_version(), 0x0a);
@@ -3082,11 +3103,15 @@ mod test {
         );
         assert_eq!(hsp.default_collation(), 0x08);
         assert_eq!(hsp.status_flags(), StatusFlags::from_bits_truncate(0x0002));
-        assert_eq!(hsp.scramble_2_ref(), Some(&b"+yD&/ZZ305ZG"[..]));
+        assert_eq!(hsp.scramble_2_ref(), Some(&b"+yD&/ZZ305ZG\0"[..]));
         assert_eq!(
             hsp.auth_plugin_name_ref(),
             Some(&b"mysql_native_password"[..])
         );
+
+        let mut output = Vec::new();
+        hsp.serialize(&mut output);
+        assert_eq!(&output, HSP_2);
 
         let hsp = HandshakePacket::deserialize((), &mut ParseBuf(HSP_3)).unwrap();
         assert_eq!(hsp.protocol_version(), 0x0a);
@@ -3101,11 +3126,15 @@ mod test {
         );
         assert_eq!(hsp.default_collation(), 0x08);
         assert_eq!(hsp.status_flags(), StatusFlags::from_bits_truncate(0x0002));
-        assert_eq!(hsp.scramble_2_ref(), Some(&b"+yD&/ZZ305ZG"[..]));
+        assert_eq!(hsp.scramble_2_ref(), Some(&b"+yD&/ZZ305ZG\0"[..]));
         assert_eq!(
             hsp.auth_plugin_name_ref(),
             Some(&b"mysql_native_password"[..])
         );
+
+        let mut output = Vec::new();
+        hsp.serialize(&mut output);
+        assert_eq!(&output, HSP_3);
     }
 
     #[test]
