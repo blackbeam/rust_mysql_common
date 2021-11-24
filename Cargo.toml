@@ -32,7 +32,7 @@ crc32fast = "1.2"
 flate2 = { version = "1.0", default-features = false }
 frunk = { version = "0.4", optional = true }
 lazy_static = "1"
-lexical = "5.2"
+lexical = "6.0.1"
 num-bigint = { version = "0.4" }
 num-traits = { version = "0.2", features = ["i128"] }
 rand = "0.8.3"
@@ -64,10 +64,9 @@ debug = true
 [features]
 default = [
     "flate2/zlib",
-    "bigdecimal",
-    "chrono",
+    "bigdecimal03",
     "rust_decimal",
-    "time",
+    "time03",
     "uuid",
     "frunk",
 ]

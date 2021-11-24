@@ -1794,8 +1794,9 @@ impl<'de> MyDeserialize<'de> for SslRequest {
 
     fn deserialize((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
         let mut buf: ParseBuf = buf.parse(Self::SIZE.unwrap())?;
+        let raw_capabilities = buf.parse_unchecked::<RawConst<LeU32, CapabilityFlags>>(())?;
         Ok(Self {
-            capabilities: buf.parse_unchecked(())?,
+            capabilities: Const::new(CapabilityFlags::from_bits_truncate(raw_capabilities.0)),
             max_packet_size: buf.parse_unchecked(())?,
             character_set: buf.parse_unchecked(())?,
             __skip: buf.parse_unchecked(())?,

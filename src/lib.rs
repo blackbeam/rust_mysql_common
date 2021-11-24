@@ -10,11 +10,11 @@
 //!
 //! This crate:
 //! * defines basic MySql constants;
-//! * implements necessary functionality for MySql `cached_sha2_password` and
-//!   `mysql_native_password` authentication plugins;
+//! * implements necessary functionality for MySql `cached_sha2_password`,
+//!   `mysql_native_password` and legacy authentication plugins;
 //! * implements helper traits for MySql protocol IO;
 //! * implements support of named parameters for prepared statements;
-//! * implements parsers for a subset of MySql protocol packets;
+//! * implements parsers for a subset of MySql protocol packets (including binlog packets);
 //! * defines rust representation of MySql protocol value and row;
 //! * implements conversion between MySql values and rust types, between MySql rows and tuples
 //!   of rust types.
@@ -68,12 +68,12 @@
 //!
 //! | Feature        | Description                                 | Default |
 //! | -------------- | ------------------------------------------- | ------- |
-//! | `bigdecimal`   | Enables `bigdecimal` v0.2.x types support   | 🟢      |
-//! | `bigdecimal03` | Enables `bigdecimal` v0.3.x types support   | 🔴      |
-//! | `chrono`       | Enables `chrono` types support              | 🟢      |
+//! | `bigdecimal`   | Enables `bigdecimal` v0.2.x types support   | 🔴      |
+//! | `bigdecimal03` | Enables `bigdecimal` v0.3.x types support   | 🟢      |
+//! | `chrono`       | Enables `chrono` types support              | 🔴      |
 //! | `rust_decimal` | Enables `rust_decimal` types support        | 🟢      |
-//! | `time`         | Enables `time` v0.2.x types support         | 🟢      |
-//! | `time03`       | Enables `time` v0.3.x types support         | 🔴      |
+//! | `time`         | Enables `time` v0.2.x types support         | 🔴      |
+//! | `time03`       | Enables `time` v0.3.x types support         | 🟢      |
 //! | `uuid`         | Enables `Uuid` type support                 | 🟢      |
 //! | `frunk`        | Enables `FromRow` for `frunk::Hlist!` types | 🟢      |
 //!
