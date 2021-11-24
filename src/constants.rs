@@ -329,6 +329,19 @@ my_bitflags! {
         /// Can send the optional part containing the query parameter set(s).
         const CLIENT_QUERY_ATTRIBUTES               = 0x0800_0000;
 
+        /// Support Multi factor authentication.
+        ///
+        /// # Server
+        ///
+        /// Server sends AuthNextFactor packet after every nth factor
+        /// authentication method succeeds, except the last factor authentication.
+        ///
+        /// # Client
+        ///
+        /// Client reads AuthNextFactor packet sent by server
+        /// and initiates next factor authentication method.
+        const MULTI_FACTOR_AUTHENTICATION           = 0x1000_0000;
+
         /// Client or server supports progress reports within error packet.
         const CLIENT_PROGRESS_OBSOLETE              = 0x2000_0000;
 
