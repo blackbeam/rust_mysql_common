@@ -570,6 +570,8 @@ pub enum OptionalMetadataFieldType {
     ///
     /// The order is the same as the order of `column_type` field.
     ENUM_AND_SET_COLUMN_CHARSET,
+    /// A flag that indicates column visibility attribute.
+    COLUMN_VISIBILITY,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
@@ -598,6 +600,7 @@ impl TryFrom<u8> for OptionalMetadataFieldType {
             9 => Ok(Self::PRIMARY_KEY_WITH_PREFIX),
             10 => Ok(Self::ENUM_AND_SET_DEFAULT_CHARSET),
             11 => Ok(Self::ENUM_AND_SET_COLUMN_CHARSET),
+            12 => Ok(Self::COLUMN_VISIBILITY),
             x => Err(UnknownOptionalMetadataFieldType(x)),
         }
     }
