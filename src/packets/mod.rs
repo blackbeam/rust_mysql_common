@@ -1511,6 +1511,10 @@ impl<'a> HandshakePacket<'a> {
     pub fn nonce(&self) -> Vec<u8> {
         let mut out = Vec::from(self.scramble_1_ref());
         out.extend_from_slice(self.scramble_2_ref().unwrap_or(&[][..]));
+
+        // Trim zero terminator. Fill with zeroes if nonce
+        // is somehow smaller than 20 bytes.
+        out.resize(20, 0);
         out
     }
 
