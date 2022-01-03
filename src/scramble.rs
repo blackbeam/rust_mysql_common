@@ -115,16 +115,14 @@ pub fn scramble_323(nonce: &[u8], password: &[u8]) -> Option<[u8; 8]> {
 /// SHA1(password) XOR SHA1(nonce, SHA1(SHA1(password)))
 pub fn scramble_native(nonce: &[u8], password: &[u8]) -> Option<[u8; 20]> {
     fn sha1_1(bytes: impl AsRef<[u8]>) -> [u8; 20] {
-        let mut hasher = Sha1::default();
-        hasher.update(bytes.as_ref());
-        hasher.digest().bytes()
+        Sha1::digest(bytes).into()
     }
 
     fn sha1_2(bytes1: impl AsRef<[u8]>, bytes2: impl AsRef<[u8]>) -> [u8; 20] {
-        let mut hasher = Sha1::default();
+        let mut hasher = Sha1::new();
         hasher.update(bytes1.as_ref());
         hasher.update(bytes2.as_ref());
-        hasher.digest().bytes()
+        hasher.finalize().into()
     }
 
     if password.is_empty() {
