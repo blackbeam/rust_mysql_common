@@ -10,7 +10,7 @@ use super::der;
 use byteorder::{BigEndian, ByteOrder};
 use num_bigint::BigUint;
 use rand::Rng;
-use sha1::Sha1;
+use sha1::{Digest, Sha1};
 
 /// Padding operation trait.
 pub trait Padding {
@@ -95,7 +95,7 @@ impl<T> Pkcs1OaepPadding<T> {
             .map(|c| {
                 let cs = &mut [0u8; 4];
                 BigEndian::write_u32(cs, c as u32);
-                Vec::from(&Sha1::from(&*[seed, cs].concat()).digest().bytes()[..])
+                Sha1::digest(&[seed, cs].concat()).to_vec()
             })
             .collect::<Vec<Vec<u8>>>()
             .concat();
@@ -118,7 +118,7 @@ impl<T: Rng> Padding for Pkcs1OaepPadding<T> {
         let mut ps = vec![0; k - input.len() - 2 * Self::HASH_LEN - 2];
         ps.push(0x01);
         // 4. Let pHash = Hash(P), an octet string of length hLen.
-        let p_hash = Vec::from(&Sha1::default().digest().bytes()[..]);
+        let p_hash = Sha1::digest(&[]).to_vec();
         // 5. Concatenate pHash, PS, the message M, and other padding to form a
         //    data block DB as: DB = pHash || PS || 01 || M
         let db = [&*p_hash, &*ps, input].concat();
