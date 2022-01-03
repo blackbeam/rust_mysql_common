@@ -39,7 +39,7 @@ rand = "0.8.3"
 regex = "1"
 rust_decimal = { version = "1.0", optional = true }
 sha1 = "0.6"
-sha2 = "0.9"
+sha2 = "0.10.0"
 smallvec = { version = "1.6.1", features = ["union", "write"] }
 thiserror = "1.0.24"
 time = { version = "0.2", default-features = false, features = ["std"], optional = true }
