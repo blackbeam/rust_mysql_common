@@ -42,7 +42,7 @@ impl<'a> WriteRowsEvent<'a> {
     /// Returns columns in the after-image (only for WRITE and UPDATE).
     ///
     /// Each bit indicates whether corresponding column is used in the image.
-    pub fn columns_after_image(&'a self) -> &'a BitSlice<Lsb0, u8> {
+    pub fn columns_after_image(&'a self) -> &'a BitSlice<u8> {
         self.0.columns_after_image().expect("must be here")
     }
 

@@ -98,9 +98,8 @@ impl<'a> TableMapEvent<'a> {
     ///
     /// For each column this null bitmap contains a bit indicating whether
     /// data in the column can be NULL or not.
-    pub fn null_bitmask(&'a self) -> &'a BitSlice<Lsb0, u8> {
-        let slice =
-            BitSlice::from_slice(self.null_bitmask.as_bytes()).expect("the slice is too big");
+    pub fn null_bitmask(&'a self) -> &'a BitSlice<u8> {
+        let slice = BitSlice::from_slice(self.null_bitmask.as_bytes());
         &slice[..self.columns_count() as usize]
     }
 
@@ -937,7 +936,7 @@ pub enum OptionalMetadataField<'a> {
     /// See [`OptionalMetadataFieldType::SIGNEDNESS`].
     Signedness(
         /// Flags indicating unsignedness for every numeric column.
-        &'a BitSlice<Msb0, u8>,
+        &'a BitSlice<u8, Msb0>,
     ),
     /// See [`OptionalMetadataFieldType::DEFAULT_CHARSET`].
     DefaultCharset(DefaultCharset<'a>),
@@ -962,7 +961,7 @@ pub enum OptionalMetadataField<'a> {
     /// See [`OptionalMetadataFieldType::COLUMN_VISIBILITY`].
     ColumnVisibility(
         /// Flags indicating visibility for every numeric column.
-        &'a BitSlice<Msb0, u8>,
+        &'a BitSlice<u8, Msb0>,
     ),
 }
 
@@ -1040,7 +1039,7 @@ impl<'a> Iterator for OptionalMetadataIter<'a> {
                                 ));
                             }
 
-                            let flags = BitSlice::from_slice(flags).expect("the slice is too big");
+                            let flags = BitSlice::from_slice(flags);
                             Ok(OptionalMetadataField::Signedness(&flags[..num_numeric]))
                         }
                         DEFAULT_CHARSET => Ok(OptionalMetadataField::DefaultCharset(v.parse(())?)),
@@ -1073,7 +1072,7 @@ impl<'a> Iterator for OptionalMetadataIter<'a> {
                                 ));
                             }
 
-                            let flags = BitSlice::from_slice(flags).expect("the slice is too big");
+                            let flags = BitSlice::from_slice(flags);
                             let flags = &flags[..num_columns];
                             Ok(OptionalMetadataField::ColumnVisibility(flags))
                         }

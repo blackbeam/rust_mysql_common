@@ -729,7 +729,7 @@ impl<'a> RowsEventData<'a> {
     /// Returns columns in the before-image (only for DELETE and UPDATE).
     ///
     /// Each bit indicates whether corresponding column is used in the image.
-    pub fn columns_before_image(&'a self) -> Option<&'a BitSlice<Lsb0, u8>> {
+    pub fn columns_before_image(&'a self) -> Option<&'a BitSlice<u8>> {
         match self {
             RowsEventData::WriteRowsEventV1(_) => None,
             RowsEventData::UpdateRowsEventV1(ev) => Some(ev.columns_before_image()),
@@ -744,7 +744,7 @@ impl<'a> RowsEventData<'a> {
     /// Returns columns in the after-image (only for WRITE and UPDATE).
     ///
     /// Each bit indicates whether corresponding column is used in the image.
-    pub fn columns_after_image(&'a self) -> Option<&'a BitSlice<Lsb0, u8>> {
+    pub fn columns_after_image(&'a self) -> Option<&'a BitSlice<u8>> {
         match self {
             RowsEventData::WriteRowsEventV1(ev) => Some(ev.columns_after_image()),
             RowsEventData::UpdateRowsEventV1(ev) => Some(ev.columns_after_image()),

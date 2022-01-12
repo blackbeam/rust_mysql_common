@@ -8,7 +8,7 @@
 
 use std::{convert::TryFrom, fmt, io, sync::Arc};
 
-use bitvec::{order::Lsb0, prelude::BitVec, slice::BitSlice};
+use bitvec::{prelude::BitVec, slice::BitSlice};
 
 use crate::{
     constants::{ColumnFlags, ColumnType},
@@ -128,7 +128,7 @@ impl<'de> MyDeserialize<'de> for BinlogRow {
     /// * have shared image - `true` means, that this is a partial event
     ///   and this is an after image row. Therefore we need to parse a shared image
     /// * corresponding table map event
-    type Ctx = (u64, &'de BitSlice<Lsb0, u8>, bool, &'de TableMapEvent<'de>);
+    type Ctx = (u64, &'de BitSlice<u8>, bool, &'de TableMapEvent<'de>);
 
     fn deserialize(
         (num_columns, cols, have_shared_image, table_info): Self::Ctx,
@@ -144,8 +144,7 @@ impl<'de> MyDeserialize<'de> for BinlogRow {
                 let json_columns_count = table_info.json_column_count();
                 let partial_columns_len = (json_columns_count + 7) / 8;
                 let partial_columns: &[u8] = buf.parse(partial_columns_len)?;
-                let partial_columns = BitSlice::<Lsb0, u8>::from_slice(partial_columns)
-                    .expect("suspiciously large slice");
+                let partial_columns = BitSlice::<u8>::from_slice(partial_columns);
                 Some(partial_columns.into_iter().take(json_columns_count))
             } else {
                 None
@@ -157,7 +156,7 @@ impl<'de> MyDeserialize<'de> for BinlogRow {
         let num_bits = cols.count_ones();
         let bitmap_len = (num_bits + 7) / 8;
         let bitmap_buf: &[u8] = buf.parse(bitmap_len)?;
-        let mut null_bitmap = BitVec::<Lsb0, u8>::from_slice(bitmap_buf).expect("should not fail");
+        let mut null_bitmap = BitVec::<u8>::from_slice(bitmap_buf);
         null_bitmap.truncate(num_bits);
 
         let mut image_idx = 0;
