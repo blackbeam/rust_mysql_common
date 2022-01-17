@@ -136,7 +136,7 @@ impl<'de> MyDeserialize<'de> for BinlogValue<'de> {
                 )))
             }
             MYSQL_TYPE_BIT => {
-                let nbits = col_meta[0] as usize * 8 + (col_meta[1] as usize);
+                let nbits = col_meta[1] as usize * 8 + (col_meta[0] as usize);
                 let nbytes = (nbits + 7) / 8;
                 let bytes: &[u8] = buf.parse(nbytes)?;
                 Ok(BinlogValue::Value(Bytes(bytes.into())))
