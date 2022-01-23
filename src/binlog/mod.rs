@@ -242,7 +242,7 @@ mod tests {
         BinlogFile, BinlogFileHeader, BinlogVersion,
     };
 
-    use crate::proto::MySerialize;
+    use crate::{binlog::value::BinlogValue, proto::MySerialize, value::Value};
 
     const BINLOG_FILE: &[u8] = &[
         0xfe, 0x62, 0x69, 0x6e, 0xfc, 0x35, 0xbb, 0x4a, 0x0f, 0x01, 0x00, 0x00, 0x00, 0x5e, 0x00,
@@ -698,6 +698,24 @@ mod tests {
                         let optional_meta = dbg!(ev.iter_optional_meta());
                         for meta in optional_meta {
                             dbg!(meta.unwrap());
+                        }
+                    }
+                }
+
+                if file_path.file_name().unwrap() == "mysql_type_bit.000001" {
+                    if let Some(EventData::RowsEvent(ev)) = ev.read_data().unwrap() {
+                        let table_map_event = binlog_file.reader().get_tme(ev.table_id()).unwrap();
+                        for row in ev.rows(table_map_event) {
+                            let (before, after) = row.unwrap();
+                            assert_eq!(before, None);
+                            assert_eq!(
+                                after.unwrap().unwrap(),
+                                vec![
+                                    BinlogValue::Value(Value::Bytes(vec![0b100])),
+                                    BinlogValue::Value(Value::Bytes(b"foo".to_vec())),
+                                    BinlogValue::Value(Value::Bytes(vec![0b100000])),
+                                ],
+                            );
                         }
                     }
                 }
