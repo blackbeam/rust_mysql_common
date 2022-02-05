@@ -6,7 +6,11 @@
 // option. All files in the project carrying such notice may not be copied,
 // modified, or distributed except according to those terms.
 
-use std::{convert::TryFrom, fmt, io, sync::Arc};
+use std::{
+    convert::{TryFrom, TryInto},
+    fmt, io,
+    sync::Arc,
+};
 
 use bitvec::{prelude::BitVec, slice::BitSlice};
 
@@ -16,12 +20,13 @@ use crate::{
     misc::raw::int::*,
     packets::Column,
     proto::MyDeserialize,
+    row::{new_row_raw, Row},
     value::Value,
 };
 
 use super::{
     events::{OptionalMetadataField, TableMapEvent},
-    value::BinlogValue,
+    value::{BinlogValue, BinlogValueToValueError},
 };
 
 /// Bonlog rows event row value options.
@@ -270,5 +275,38 @@ impl fmt::Debug for BinlogRow {
             }
         }
         debug.finish()
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error(
+    "Can't convert BinlogRow to Row at column offset {}: {}",
+    column_offset,
+    error
+)]
+pub struct BinlogRowToRowError {
+    /// Column offset.
+    pub column_offset: usize,
+    /// Value convertion error.
+    pub error: BinlogValueToValueError,
+}
+
+impl TryFrom<BinlogRow> for Row {
+    type Error = BinlogRowToRowError;
+
+    fn try_from(binlog_row: BinlogRow) -> Result<Self, Self::Error> {
+        let mut values = Vec::with_capacity(binlog_row.values.len());
+        for (column_offset, value) in binlog_row.values.into_iter().enumerate() {
+            match value {
+                Some(x) => {
+                    values.push(Some(x.try_into().map_err(|error| BinlogRowToRowError {
+                        column_offset,
+                        error,
+                    })?))
+                }
+                None => values.push(None),
+            }
+        }
+        Ok(new_row_raw(values, binlog_row.columns))
     }
 }
