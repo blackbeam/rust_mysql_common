@@ -310,34 +310,33 @@ impl<'a, T: StorageFormat, U: ComplexType> ComplexValue<'a, T, U> {
     }
 }
 
-impl<'a, T: StorageFormat> TryInto<serde_json::Value> for ComplexValue<'a, T, Array> {
+impl<'a, T: StorageFormat> TryFrom<ComplexValue<'a, T, Array>> for serde_json::Value {
     type Error = JsonbToJsonError;
 
-    fn try_into(self) -> Result<serde_json::Value, Self::Error> {
-        Ok(serde_json::Value::Array(
-            self.iter()
-                .map(|x| {
-                    x.map_err(Self::Error::InvalidJsonb)
-                        .and_then(TryInto::try_into)
-                })
-                .collect::<Result<Vec<_>, Self::Error>>()?,
-        ))
+    fn try_from(value: ComplexValue<'a, T, Array>) -> Result<Self, Self::Error> {
+        let values = value
+            .iter()
+            .map(|x| {
+                x.map_err(Self::Error::InvalidJsonb)
+                    .and_then(TryFrom::try_from)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(serde_json::Value::Array(values))
     }
 }
 
-impl<'a, T: StorageFormat> TryInto<serde_json::Value> for ComplexValue<'a, T, Object> {
+impl<'a, T: StorageFormat> TryFrom<ComplexValue<'a, T, Object>> for serde_json::Value {
     type Error = JsonbToJsonError;
 
-    fn try_into(self) -> Result<serde_json::Value, Self::Error> {
-        Ok(serde_json::Value::Object(
-            self.iter()
-                .map(|x| {
-                    x.map_err(Self::Error::InvalidJsonb).and_then(|(k, v)| {
-                        Ok((from_utf8(k.value_raw())?.to_owned(), v.try_into()?))
-                    })
-                })
-                .collect::<Result<serde_json::Map<_, _>, Self::Error>>()?,
-        ))
+    fn try_from(value: ComplexValue<'a, T, Object>) -> Result<Self, Self::Error> {
+        let k_vs = value
+            .iter()
+            .map(|x| {
+                x.map_err(Self::Error::InvalidJsonb)
+                    .and_then(|(k, v)| Ok((from_utf8(k.value_raw())?.to_owned(), v.try_into()?)))
+            })
+            .collect::<Result<serde_json::Map<_, _>, _>>()?;
+        Ok(serde_json::Value::Object(k_vs))
     }
 }
 
@@ -558,11 +557,11 @@ impl<'a> Value<'a> {
     }
 }
 
-impl<'a> TryInto<serde_json::Value> for Value<'a> {
+impl<'a> TryFrom<Value<'a>> for serde_json::Value {
     type Error = JsonbToJsonError;
 
-    fn try_into(self) -> Result<serde_json::Value, Self::Error> {
-        match self {
+    fn try_from(value: Value<'a>) -> Result<Self, Self::Error> {
+        match value {
             Value::Null => Ok(serde_json::Value::Null),
             Value::Bool(x) => Ok(serde_json::Value::Bool(x)),
             Value::I16(x) => Ok(x.into()),

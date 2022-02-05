@@ -17,6 +17,8 @@ use crate::{
     value::Value::{self, *},
 };
 
+use super::jsonb::JsonbToJsonError;
+
 /// Value of a binlog event.
 #[derive(Debug, Clone, PartialEq)]
 pub enum BinlogValue<'a> {
@@ -241,6 +243,29 @@ impl<'de> MyDeserialize<'de> for BinlogValue<'de> {
                 io::ErrorKind::InvalidData,
                 "Don't know how to handle column",
             )),
+        }
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum BinlogValueToValueError {
+    #[error("Can't convert Jsonb to Json: {}", _0)]
+    ToJson(#[from] JsonbToJsonError),
+    #[error("Impossible to convert JsonDiff to Value")]
+    JsonDiff,
+}
+
+impl<'a> TryFrom<BinlogValue<'a>> for Value {
+    type Error = BinlogValueToValueError;
+
+    fn try_from(value: BinlogValue<'a>) -> Result<Self, Self::Error> {
+        match value {
+            BinlogValue::Value(x) => Ok(x),
+            BinlogValue::Jsonb(x) => {
+                let json = serde_json::Value::try_from(x)?;
+                Ok(Value::Bytes(Vec::from(json.to_string())))
+            }
+            BinlogValue::JsonDiff(_) => Err(BinlogValueToValueError::JsonDiff),
         }
     }
 }
