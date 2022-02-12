@@ -2,7 +2,7 @@ name: Rust
 
 on:
   push:
-    branches: [master]
+    branches: [master, v0.28.x]
   pull_request:
     branches: [master]
 
