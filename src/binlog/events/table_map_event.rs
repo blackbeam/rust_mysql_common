@@ -127,7 +127,13 @@ impl<'a> TableMapEvent<'a> {
     ///
     /// `None` means that the column index is out of range.
     pub fn get_column_type(&self, col_idx: usize) -> Result<Option<ColumnType>, UnknownColumnType> {
-        self.columns_type.get(col_idx).map(|x| x.get()).transpose()
+        self.columns_type
+            .get(col_idx)
+            .map(|x| {
+                x.get()
+                    .map(|column_type| self.get_real_type(col_idx, column_type))
+            })
+            .transpose()
     }
 
     /// Returns metadata for the given column.
@@ -171,6 +177,31 @@ impl<'a> TableMapEvent<'a> {
             null_bitmask: self.null_bitmask.into_owned(),
             optional_metadata: self.optional_metadata.into_owned(),
         }
+    }
+
+    fn get_real_type(&self, col_idx: usize, column_type: ColumnType) -> ColumnType {
+        let mut real_type = column_type as u8;
+
+        if column_type == ColumnType::MYSQL_TYPE_STRING {
+            if let Some(metadata_bytes) = self.get_column_metadata(col_idx) {
+                let f1 = metadata_bytes[0];
+
+                if f1 != 0 {
+                    real_type = f1 | 0x30;
+                }
+
+                match real_type {
+                    247 | 248 | 254 => {
+                        // no op
+                    }
+                    i => unimplemented!("Unexpected inner string data type {:?}", i),
+                };
+            }
+
+            return ColumnType::try_from(real_type).unwrap();
+        }
+
+        return column_type;
     }
 }
 
