@@ -36,7 +36,7 @@ lexical = "6.0.1"
 num-bigint = { version = "0.4" }
 num-traits = { version = "0.2", features = ["i128"] }
 rand = "0.8.3"
-regex = "1"
+regex = "1.5.5"
 rust_decimal = { version = "1.0", optional = true }
 sha-1 = "0.10.0"
 sha2 = "0.10.0"
