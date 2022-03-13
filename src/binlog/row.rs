@@ -178,39 +178,19 @@ impl<'de> MyDeserialize<'de> for BinlogRow {
         for i in 0..(num_columns as usize) {
             // check if column is in columns list
             if cols.get(i).as_deref().copied().unwrap_or(false) {
-                let raw_column_type = table_info.get_column_type(i);
+                let column_type = table_info.get_column_type(i);
 
                 // TableMapEvent must define column type for the current column.
-                let raw_column_type = match raw_column_type {
+                let column_type = match column_type {
                     Ok(Some(ty)) => ty,
                     Ok(None) => {
                         return Err(io::Error::new(io::ErrorKind::InvalidData, "No column type"))
                     }
-                    Err(_) => {
-                        return Err(io::Error::new(
-                            io::ErrorKind::InvalidData,
-                            "Unknown column type",
-                        ))
-                    }
+                    Err(e) => return Err(io::Error::new(io::ErrorKind::InvalidData, e)),
                 };
 
                 let column_meta = table_info.get_column_metadata(i).unwrap_or(&[]);
-                let column_type = match raw_column_type {
-                    ColumnType::MYSQL_TYPE_STRING => {
-                        let real_type = column_meta[0];
-                        if real_type == ColumnType::MYSQL_TYPE_ENUM as u8
-                            || real_type == ColumnType::MYSQL_TYPE_SET as u8
-                        {
-                            ColumnType::try_from(real_type).unwrap_or(raw_column_type)
-                        } else {
-                            raw_column_type
-                        }
-                    }
-                    ColumnType::MYSQL_TYPE_DATE => ColumnType::MYSQL_TYPE_NEWDATE,
-                    other => other,
-                };
-
-                let is_partial = raw_column_type == ColumnType::MYSQL_TYPE_JSON
+                let is_partial = column_type == ColumnType::MYSQL_TYPE_JSON
                     && partial_cols
                         .as_mut()
                         .and_then(|bits| bits.next().as_deref().copied())
