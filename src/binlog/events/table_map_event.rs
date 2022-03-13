@@ -29,6 +29,14 @@ use crate::{
 
 use super::BinlogEventHeader;
 
+#[derive(Debug, Clone, Copy, Eq, PartialEq, thiserror::Error)]
+pub enum BadColumnType {
+    #[error(transparent)]
+    Unknown(#[from] UnknownColumnType),
+    #[error("Unexpected column type: {}", _0)]
+    Unexpected(u8),
+}
+
 /// Table map event.
 ///
 /// In row-based mode, every row operation event is preceded by a Table_map_event which maps
@@ -135,15 +143,20 @@ impl<'a> TableMapEvent<'a> {
 
     /// Returns a type of the given column.
     ///
-    /// It'll read real column type out of the column metadata if column type is `MYSQL_TYPE_STRING`.
+    /// It'll read real column type out of the column
+    /// metadata if column type is `MYSQL_TYPE_STRING`.
+    ///
+    /// Returns an error in case of unknown column type
+    /// or unexpected real type for `MYSQL_TYPE_STRING`.
     ///
     /// `None` means that the column index is out of range.
-    pub fn get_column_type(&self, col_idx: usize) -> Result<Option<ColumnType>, UnknownColumnType> {
+    pub fn get_column_type(&self, col_idx: usize) -> Result<Option<ColumnType>, BadColumnType> {
         self.columns_type
             .get(col_idx)
             .map(|x| {
                 x.get()
-                    .map(|column_type| self.get_real_type(col_idx, column_type))
+                    .map_err(BadColumnType::from)
+                    .and_then(|column_type| self.get_real_type(col_idx, column_type))
             })
             .transpose()
     }
@@ -191,29 +204,41 @@ impl<'a> TableMapEvent<'a> {
         }
     }
 
-    fn get_real_type(&self, col_idx: usize, column_type: ColumnType) -> ColumnType {
-        let mut real_type = column_type as u8;
-
-        if column_type == ColumnType::MYSQL_TYPE_STRING {
-            if let Some(metadata_bytes) = self.get_column_metadata(col_idx) {
-                let f1 = metadata_bytes[0];
-
-                if f1 != 0 {
-                    real_type = f1 | 0x30;
-                }
-
-                match real_type {
-                    247 | 248 | 254 => {
-                        // no op
-                    }
-                    i => unimplemented!("Unexpected inner string data type {:?}", i),
-                };
+    fn get_real_type(
+        &self,
+        col_idx: usize,
+        column_type: ColumnType,
+    ) -> Result<ColumnType, BadColumnType> {
+        match column_type {
+            ColumnType::MYSQL_TYPE_DATE => {
+                // This type has not been used since before row-based replication,
+                // so we can safely assume that it really is MYSQL_TYPE_NEWDATE.
+                return Ok(ColumnType::MYSQL_TYPE_NEWDATE);
             }
+            ColumnType::MYSQL_TYPE_STRING => {
+                let mut real_type = column_type as u8;
+                if let Some(metadata_bytes) = self.get_column_metadata(col_idx) {
+                    let f1 = metadata_bytes[0];
 
-            return ColumnType::try_from(real_type).unwrap();
+                    if f1 != 0 {
+                        real_type = f1 | 0x30;
+                    }
+
+                    match real_type {
+                        247 => return Ok(ColumnType::MYSQL_TYPE_ENUM),
+                        248 => return Ok(ColumnType::MYSQL_TYPE_SET),
+                        254 => return Ok(ColumnType::MYSQL_TYPE_STRING),
+                        x => {
+                            // this event seems to be malformed
+                            return Err(BadColumnType::Unexpected(x));
+                        }
+                    };
+                }
+            }
+            _ => (),
         }
 
-        return column_type;
+        return Ok(column_type);
     }
 }
 
