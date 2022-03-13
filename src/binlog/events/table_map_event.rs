@@ -123,7 +123,19 @@ impl<'a> TableMapEvent<'a> {
         self.table_name.as_str()
     }
 
+    /// Returns raw type of the column as stored in the column_type field of the Table Map Event.
+    ///
+    /// `None` means that the column index is out of range.
+    pub fn get_raw_column_type(
+        &self,
+        col_idx: usize,
+    ) -> Result<Option<ColumnType>, UnknownColumnType> {
+        self.columns_type.get(col_idx).map(|x| x.get()).transpose()
+    }
+
     /// Returns a type of the given column.
+    ///
+    /// It'll read real column type out of the column metadata if column type is `MYSQL_TYPE_STRING`.
     ///
     /// `None` means that the column index is out of range.
     pub fn get_column_type(&self, col_idx: usize) -> Result<Option<ColumnType>, UnknownColumnType> {
