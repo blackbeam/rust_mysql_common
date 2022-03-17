@@ -242,7 +242,11 @@ mod tests {
         BinlogFile, BinlogFileHeader, BinlogVersion,
     };
 
-    use crate::{binlog::value::BinlogValue, proto::MySerialize, value::Value};
+    use crate::{
+        binlog::{events::RowsEventData, value::BinlogValue},
+        proto::MySerialize,
+        value::Value,
+    };
 
     const BINLOG_FILE: &[u8] = &[
         0xfe, 0x62, 0x69, 0x6e, 0xfc, 0x35, 0xbb, 0x4a, 0x0f, 0x01, 0x00, 0x00, 0x00, 0x5e, 0x00,
@@ -694,10 +698,90 @@ mod tests {
 
                 if file_path.file_name().unwrap() == "binlog-invisible-columns.000001" {
                     if let Some(EventData::TableMapEvent(ev)) = ev.read_data().unwrap() {
-                        dbg!(&ev);
-                        let optional_meta = dbg!(ev.iter_optional_meta());
+                        let optional_meta = ev.iter_optional_meta();
                         for meta in optional_meta {
-                            dbg!(meta.unwrap());
+                            meta.unwrap();
+                        }
+                    }
+                }
+
+                if file_path.file_name().unwrap() == "mysql-enum-string-set.000001" {
+                    if let Some(EventData::RowsEvent(data)) = ev.read_data().unwrap() {
+                        let table_map_event =
+                            binlog_file.reader().get_tme(data.table_id()).unwrap();
+                        for row in data.rows(table_map_event) {
+                            let (before, after) = row.unwrap();
+                            match data {
+                                RowsEventData::WriteRowsEvent(_) => {
+                                    assert!(before.is_none());
+                                    let after = after.unwrap().unwrap();
+                                    let mut j = 0;
+                                    for v in after {
+                                        j += 1;
+                                        match j {
+                                            1 => assert_eq!(v, BinlogValue::Value("0123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789".into())),
+                                            2 => assert_eq!(v, BinlogValue::Value("0123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456780123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456780123456789012345678901234567890123456789".into())),
+                                            3 => assert_eq!(v, BinlogValue::Value(1_i8.into())),
+                                            4 => assert_eq!(v, BinlogValue::Value([0b00000101_u8].into())),
+                                            5 => assert_eq!(v, BinlogValue::Value("0123456789".into())),
+
+                                            _ => panic!(),
+                                        }
+                                    }
+                                    assert_eq!(j, 5);
+                                }
+                                RowsEventData::UpdateRowsEvent(_) => {
+                                    let before = before.unwrap().unwrap();
+                                    let mut j = 0;
+                                    for v in before {
+                                        j += 1;
+                                        match j {
+                                            1 => assert_eq!(v, BinlogValue::Value("0123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789".into())),
+                                            2 => assert_eq!(v, BinlogValue::Value("0123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456780123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456780123456789012345678901234567890123456789".into())),
+                                            3 => assert_eq!(v, BinlogValue::Value(1_i8.into())),
+                                            4 => assert_eq!(v, BinlogValue::Value([0b00000101_u8].into())),
+                                            5 => assert_eq!(v, BinlogValue::Value("0123456789".into())),
+
+                                            _ => panic!(),
+                                        }
+                                    }
+                                    assert_eq!(j, 5);
+
+                                    let after = after.unwrap().unwrap();
+                                    let mut j = 0;
+                                    for v in after {
+                                        j += 1;
+                                        match j {
+                                            1 => assert_eq!(v, BinlogValue::Value("field1".into())),
+                                            2 => assert_eq!(v, BinlogValue::Value("field_2".into())),
+                                            3 => assert_eq!(v, BinlogValue::Value(2_i8.into())),
+                                            4 => assert_eq!(v, BinlogValue::Value([0b00001010_u8].into())),
+                                            5 => assert_eq!(v, BinlogValue::Value("0123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456780123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456780123456789012345678901234567890123456789".into())),
+                                            _ => panic!(),
+                                        }
+                                    }
+                                    assert_eq!(j, 5);
+                                }
+                                RowsEventData::DeleteRowsEvent(_) => {
+                                    assert!(after.is_none());
+
+                                    let before = before.unwrap().unwrap();
+                                    let mut j = 0;
+                                    for v in before {
+                                        j += 1;
+                                        match j {
+                                            1 => assert_eq!(v, BinlogValue::Value("field1".into())),
+                                            2 => assert_eq!(v, BinlogValue::Value("field_2".into())),
+                                            3 => assert_eq!(v, BinlogValue::Value(2_i8.into())),
+                                            4 => assert_eq!(v, BinlogValue::Value([0b00001010_u8].into())),
+                                            5 => assert_eq!(v, BinlogValue::Value("0123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456780123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456780123456789012345678901234567890123456789".into())),
+                                            _ => panic!(),
+                                        }
+                                    }
+                                    assert_eq!(j, 5);
+                                }
+                                _ => panic!(),
+                            }
                         }
                     }
                 }

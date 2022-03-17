@@ -69,7 +69,6 @@ impl<'de> MyDeserialize<'de> for BinlogValue<'de> {
                 if (byte0 & 0x30) != 0x30 {
                     // a long CHAR() field: see #37426
                     length = byte1 | (((byte0 & 0x30) ^ 0x30) << 4);
-                    col_type = ColumnType::try_from(byte0 as u8 | 0x30).unwrap_or(col_type);
                 } else {
                     length = byte1;
                 }
