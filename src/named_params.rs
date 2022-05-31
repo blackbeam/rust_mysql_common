@@ -15,7 +15,7 @@ pub struct MixedParamsError;
 enum ParserState {
     TopLevel,
     // (string_delimiter, last_char)
-    InStringLiteral(char, char),
+    InStringLiteral(u8, u8),
     MaybeInNamedParam,
     InNamedParam,
 }
@@ -28,37 +28,37 @@ use self::ParserState::*;
 ///   appear multiple times if named parameter used more than once.
 /// * query string to pass to MySql (named parameters replaced with `?`).
 pub fn parse_named_params(
-    query: &str,
-) -> Result<(Option<Vec<String>>, Cow<'_, str>), MixedParamsError> {
+    query: &[u8],
+) -> Result<(Option<Vec<Vec<u8>>>, Cow<'_, [u8]>), MixedParamsError> {
     let mut state = TopLevel;
     let mut have_positional = false;
     let mut cur_param = 0;
     // Vec<(start_offset, end_offset, name)>
     let mut params = Vec::new();
-    for (i, c) in query.char_indices() {
+    for (i, c) in query.iter().enumerate() {
         let mut rematch = false;
         match state {
             TopLevel => match c {
-                ':' => state = MaybeInNamedParam,
-                '\'' => state = InStringLiteral('\'', '\''),
-                '"' => state = InStringLiteral('"', '"'),
-                '?' => have_positional = true,
+                b':' => state = MaybeInNamedParam,
+                b'\'' => state = InStringLiteral(b'\'', b'\''),
+                b'"' => state = InStringLiteral(b'"', b'"'),
+                b'?' => have_positional = true,
                 _ => (),
             },
             InStringLiteral(separator, prev_char) => match c {
-                x if x == separator && prev_char != '\\' => state = TopLevel,
-                x => state = InStringLiteral(separator, x),
+                x if *x == separator && prev_char != b'\\' => state = TopLevel,
+                x => state = InStringLiteral(separator, *x),
             },
             MaybeInNamedParam => match c {
-                'a'..='z' | '_' => {
-                    params.push((i - 1, 0, String::with_capacity(16)));
-                    params[cur_param].2.push(c);
+                b'a'..=b'z' | b'_' => {
+                    params.push((i - 1, 0, Vec::with_capacity(16)));
+                    params[cur_param].2.push(*c);
                     state = InNamedParam;
                 }
                 _ => rematch = true,
             },
             InNamedParam => match c {
-                'a'..='z' | '0'..='9' | '_' => params[cur_param].2.push(c),
+                b'a'..=b'z' | b'0'..=b'9' | b'_' => params[cur_param].2.push(*c),
                 _ => {
                     params[cur_param].1 = i;
                     cur_param += 1;
@@ -68,9 +68,9 @@ pub fn parse_named_params(
         }
         if rematch {
             match c {
-                ':' => state = MaybeInNamedParam,
-                '\'' => state = InStringLiteral('\'', '\''),
-                '"' => state = InStringLiteral('"', '"'),
+                b':' => state = MaybeInNamedParam,
+                b'\'' => state = InStringLiteral(b'\'', b'\''),
+                b'"' => state = InStringLiteral(b'"', b'"'),
                 _ => state = TopLevel,
             }
         }
@@ -82,16 +82,16 @@ pub fn parse_named_params(
         if have_positional {
             return Err(MixedParamsError);
         }
-        let mut real_query = String::with_capacity(query.len());
+        let mut real_query = Vec::with_capacity(query.len());
         let mut last = 0;
         let mut out_params = Vec::with_capacity(params.len());
         for (start, end, name) in params.into_iter() {
-            real_query.push_str(&query[last..start]);
-            real_query.push('?');
+            real_query.extend(&query[last..start]);
+            real_query.push(b'?');
             last = end;
             out_params.push(name);
         }
-        real_query.push_str(&query[last..]);
+        real_query.extend(&query[last..]);
         Ok((Some(out_params), real_query.into()))
     } else {
         Ok((None, query.into()))
@@ -104,58 +104,68 @@ mod test {
 
     #[test]
     fn should_parse_named_params() {
-        let result = parse_named_params(":a :b").unwrap();
-        assert_eq!(
-            (Some(vec!["a".to_string(), "b".into()]), "? ?".into()),
-            result
-        );
-
-        let result = parse_named_params("SELECT (:a-10)").unwrap();
-        assert_eq!(
-            (Some(vec!["a".to_string()]), "SELECT (?-10)".into()),
-            result
-        );
-
-        let result = parse_named_params(r#"SELECT '"\':a' "'\"':c" :b"#).unwrap();
+        let result = parse_named_params(b":a :b").unwrap();
         assert_eq!(
             (
-                Some(vec!["b".to_string()]),
-                r#"SELECT '"\':a' "'\"':c" ?"#.into(),
+                Some(vec![b"a".to_vec(), b"b".to_vec()]),
+                (&b"? ?"[..]).into()
             ),
             result
         );
 
-        let result = parse_named_params(r":a_Aa:b").unwrap();
+        let result = parse_named_params(b"SELECT (:a-10)").unwrap();
         assert_eq!(
-            (Some(vec!["a_".to_string(), "b".into()]), r"?Aa?".into()),
+            (Some(vec![b"a".to_vec()]), (&b"SELECT (?-10)"[..]).into()),
             result
         );
 
-        let result = parse_named_params(r"::b").unwrap();
-        assert_eq!((Some(vec!["b".to_string()]), r":?".into()), result);
+        let result = parse_named_params(br#"SELECT '"\':a' "'\"':c" :b"#).unwrap();
+        assert_eq!(
+            (
+                Some(vec![b"b".to_vec()]),
+                (&br#"SELECT '"\':a' "'\"':c" ?"#[..]).into(),
+            ),
+            result
+        );
 
-        parse_named_params(r":a ?").unwrap_err();
+        let result = parse_named_params(br":a_Aa:b").unwrap();
+        assert_eq!(
+            (
+                Some(vec![b"a_".to_vec(), b"b".to_vec()]),
+                (&br"?Aa?"[..]).into()
+            ),
+            result
+        );
+
+        let result = parse_named_params(br"::b").unwrap();
+        assert_eq!((Some(vec![b"b".to_vec()]), (&br":?"[..]).into()), result);
+
+        parse_named_params(br":a ?").unwrap_err();
     }
 
     #[test]
     fn should_allow_numbers_in_param_name() {
-        let result = parse_named_params(":a1 :a2").unwrap();
+        let result = parse_named_params(b":a1 :a2").unwrap();
         assert_eq!(
-            (Some(vec!["a1".to_string(), "a2".to_string()]), "? ?".into()),
+            (
+                Some(vec![b"a1".to_vec(), b"a2".to_vec()]),
+                (&b"? ?"[..]).into()
+            ),
             result
         );
 
-        let result = parse_named_params(":1a :2a").unwrap();
-        assert_eq!((None, ":1a :2a".into()), result);
+        let result = parse_named_params(b":1a :2a").unwrap();
+        assert_eq!((None, (&b":1a :2a"[..]).into()), result);
     }
 
     #[test]
     fn special_characters_in_query() {
-        let result = parse_named_params(r"SELECT 1 FROM été WHERE thing = :param;").unwrap();
+        let result =
+            parse_named_params(r"SELECT 1 FROM été WHERE thing = :param;".as_bytes()).unwrap();
         assert_eq!(
             (
-                Some(vec!["param".to_string()]),
-                "SELECT 1 FROM été WHERE thing = ?;".into(),
+                Some(vec![b"param".to_vec()]),
+                "SELECT 1 FROM été WHERE thing = ?;".as_bytes().into(),
             ),
             result
         );

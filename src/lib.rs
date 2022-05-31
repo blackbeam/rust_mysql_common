@@ -133,17 +133,17 @@ pub use serde_json;
 macro_rules! params {
     () => {};
     (@to_pair $map:expr, $name:expr => $value:expr) => (
-        let entry = $map.entry(std::string::String::from($name));
+        let entry = $map.entry(std::vec::Vec::<u8>::from($name));
         if let std::collections::hash_map::Entry::Occupied(_) = entry {
-            panic!("Redefinition of named parameter `{}'", entry.key());
+            panic!("Redefinition of named parameter `{}'", std::string::String::from_utf8_lossy(entry.key()));
         } else {
             entry.or_insert($crate::value::Value::from($value));
         }
     );
     (@to_pair $map:expr, $name:ident) => (
-        let entry = $map.entry(std::string::String::from(stringify!($name)));
+        let entry = $map.entry(stringify!($name).as_bytes().to_vec());
         if let std::collections::hash_map::Entry::Occupied(_) = entry {
-            panic!("Redefinition of named parameter `{}'", entry.key());
+            panic!("Redefinition of named parameter `{}'", std::string::String::from_utf8_lossy(entry.key()));
         } else {
             entry.or_insert($crate::value::Value::from($name));
         }
@@ -167,21 +167,21 @@ macro_rules! params {
     };
     ($i:ident, $($tail:tt)*) => {
         {
-            let mut map: std::collections::HashMap<std::string::String, $crate::value::Value, _> = std::default::Default::default();
+            let mut map: std::collections::HashMap<std::vec::Vec<u8>, $crate::value::Value, _> = std::default::Default::default();
             params!(@expand (&mut map); $i, $($tail)*);
             $crate::params::Params::Named(map)
         }
     };
     ($i:expr => $($tail:tt)*) => {
         {
-            let mut map: std::collections::HashMap<std::string::String, $crate::value::Value, _> = std::default::Default::default();
+            let mut map: std::collections::HashMap<std::vec::Vec<u8>, $crate::value::Value, _> = std::default::Default::default();
             params!(@expand (&mut map); $i => $($tail)*);
             $crate::params::Params::Named(map)
         }
     };
     ($i:ident) => {
         {
-            let mut map: std::collections::HashMap<std::string::String, $crate::value::Value, _> = std::default::Default::default();
+            let mut map: std::collections::HashMap<std::vec::Vec<u8>, $crate::value::Value, _> = std::default::Default::default();
             params!(@expand (&mut map); $i);
             $crate::params::Params::Named(map)
         }
