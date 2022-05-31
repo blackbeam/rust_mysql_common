@@ -643,7 +643,7 @@ mod tests {
 
             while let Some(ev) = binlog_file.next() {
                 let ev = ev?;
-                dbg!(ev.header().event_type());
+                let _ = dbg!(ev.header().event_type());
                 let ev_end = ev_pos + ev.header().event_size() as usize;
                 let binlog_version = binlog_file.reader.fde.binlog_version();
 
