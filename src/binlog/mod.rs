@@ -643,6 +643,7 @@ mod tests {
 
             while let Some(ev) = binlog_file.next() {
                 let ev = ev?;
+                dbg!(ev.header().event_type());
                 let ev_end = ev_pos + ev.header().event_size() as usize;
                 let binlog_version = binlog_file.reader.fde.binlog_version();
 
@@ -651,10 +652,17 @@ mod tests {
 
                 let event = match ev.read_data() {
                     Ok(event) => {
-                        let event = event.unwrap_or_else(|| {
-                            dbg!(&ev);
-                            panic!()
-                        });
+                        let event = match event {
+                            Some(e) => e,
+                            None => {
+                                if file_path.file_name().unwrap() == "mariadb-bin.000001" {
+                                    continue;
+                                } else {
+                                    dbg!(&ev);
+                                    panic!();
+                                }
+                            }
+                        };
                         match event {
                             EventData::TableMapEvent(ref ev) => {
                                 // store table maps for later use
@@ -786,6 +794,14 @@ mod tests {
                     }
                 }
 
+                if file_path.file_name().unwrap() == "mariadb-bin.000001" {
+                    // Extraneous bytes in RotateEvent file name
+                    // https://github.com/blackbeam/mysql_async/issues/189
+                    if let Some(EventData::RotateEvent(ev)) = ev.read_data().unwrap() {
+                        assert_ne!(ev.name_raw(), b"mariadb-bin.000001");
+                    }
+                }
+
                 if file_path.file_name().unwrap() == "mysql_type_bit.000001" {
                     if let Some(EventData::RowsEvent(ev)) = ev.read_data().unwrap() {
                         let table_map_event = binlog_file.reader().get_tme(ev.table_id()).unwrap();
@@ -804,7 +820,9 @@ mod tests {
                     }
                 }
 
-                assert_eq!(output, &file_data[ev_pos..ev_end]);
+                if file_path.file_name().unwrap() != "mariadb-bin.000001" {
+                    assert_eq!(output, &file_data[ev_pos..ev_end]);
+                }
 
                 output = Vec::new();
                 event.serialize(&mut output);
