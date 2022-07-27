@@ -137,13 +137,37 @@ pub(crate) fn parse_mysql_datetime_string_with_time(
 ) -> Result<PrimitiveDateTime, ParseError> {
     from_utf8(&*bytes)
         .map_err(|_| ParseError::InsufficientInformation)
-        .and_then(|s| time::parse(s, "%Y-%m-%d %H:%M:%S").or_else(|_| time::parse(s, "%Y-%m-%d")))
+        .and_then(|s| {
+            if s.len() > 19 {
+                // pad with zeroes to nanosecond precision due to
+                // `time` v2 formatting specifier requirement
+                let tmp = format!("{:0<29}", s);
+                time::parse(tmp, "%Y-%m-%d %H:%M:%S.%N")
+            } else if s.len() == 19 {
+                time::parse(s, "%Y-%m-%d %H:%M:%S")
+            } else if s.len() >= 10 {
+                time::parse(s, "%Y-%m-%d")
+            } else {
+                Err(ParseError::InsufficientInformation)
+            }
+        })
 }
 
 fn parse_mysql_time_string_with_time(bytes: &[u8]) -> Result<Time, ParseError> {
     from_utf8(&*bytes)
         .map_err(|_| ParseError::InsufficientInformation)
-        .and_then(|s| Time::parse(s, "%H:%M:%S"))
+        .and_then(|s| {
+            if s.len() > 8 {
+                // pad with zeroes to nanosecond precision due to
+                // `time` v2 formatting specifier requirement
+                let tmp = format!("{:0<18}", s);
+                time::parse(tmp, "%H:%M:%S.%N")
+            } else if s.len() == 8 {
+                time::parse(s, "%H:%M:%S")
+            } else {
+                Err(ParseError::InsufficientInformation)
+            }
+        })
 }
 
 impl ConvIr<time::Duration> for ParseIr<time::Duration> {
@@ -269,6 +293,112 @@ mod tests {
         }
 
         #[test]
+        fn parse_mysql_datetime_string_doesnt_crash(s in r"\PC*") {
+            parse_mysql_datetime_string(s.as_bytes());
+            let _ = parse_mysql_datetime_string_with_time(s.as_bytes());
+        }
+
+        #[test]
+        fn parse_mysql_time_string_parses_correctly(
+            is_neg: bool,
+            h in 0u32..60,
+            i in 0u32..60,
+            s in 0u32..60,
+            have_us in 0..2,
+            us in 0u32..1000000,
+        ) {
+            let time_string = format!(
+                "{:02}:{:02}:{:02}{}",
+                h, i, s,
+                if have_us == 1 {
+                    format!(".{:06}", us).trim_end_matches('0').to_owned()
+                } else {
+                    "".into()
+                }
+            );
+            let time_string_neg = format!(
+                "{}{}",
+                if is_neg { "-" } else { "" },
+                time_string,
+            );
+
+            let time = parse_mysql_time_string(time_string_neg.as_bytes()).unwrap();
+            assert_eq!(time, (is_neg, h, i, s, if have_us == 1 { us } else { 0 }));
+
+            match parse_mysql_time_string_with_time(time_string.as_bytes()) {
+                Ok(time) => {
+                    // If `time` successfully parsed the string,
+                    // then let's ensure it matches the values used to create that time string.
+
+                    // `time` and other C-like `strptime` based parsers have no way of parsing
+                    // microseconds from the time string. As such, we ignore them entirely.
+                    assert_eq!(
+                        (
+                            time.hour() as u32,
+                            time.minute() as u32,
+                            time.second() as u32,
+                            time.microsecond() as u32,
+                        ),
+                        (h, i, s, if have_us == 1 { us } else { 0 }));
+                },
+                Err(err) => {
+                    // If `time` failed to parse the string,
+                    // then let's check if we passed an invalid value based on the error received,
+                    // and fail the test if the string should have parsed successfully.
+                    // Any commented out checks are simply to avoid having the compiler show
+                    // 'comparison is useless due to type limits' warnings.
+                    match err {
+                        ParseError::InvalidSecond => assert!(/*s < 0 || */s > 59),
+                        ParseError::InvalidMinute => assert!(/*i < 0 || */i > 59),
+                        // For InvalidHour, only check if the randomized hour value is within
+                        // 0-23 instead of MySQL `TIME`'s full range of -838-838,
+                        // since we don't generate values that low or high,
+                        // and should be parsed with time::Duration instead.
+                        ParseError::InvalidHour => assert!(/*h < 0 || */h > 23),
+                        ParseError::ComponentOutOfRange(_) |
+                        ParseError::InsufficientInformation => {
+                            // We may receive an ComponentOutOfRange or InsufficientInformation
+                            // error for a few reasons, such as the format string being incorrect,
+                            // the format of the time string being incorrect,
+                            // or in some cases, when a value is out of range,
+                            // such as when trying to parse a hour value of
+                            // less than zero or greater than 23.
+
+                            // Try creating `Date` and `Time` values from the values directly,
+                            // and catch any `ComponentRangeError` that they might return.
+
+                            // Seeing as we have no way to tell which value
+                            // is rejected if we pass them in all at once,
+                            // we call `try_from_ymd` and `try_from_hms_micro`
+                            // for each value separately.
+
+                            if Time::try_from_hms_micro(h as u8, 0, 0, 0).is_err() {
+                                assert!(/*h < 0 || */h > 23);
+                            } else if Time::try_from_hms_micro(0, i as u8, 0, 0).is_err() {
+                                assert!(/*i < 0 || */i > 59);
+                            } else if Time::try_from_hms_micro(0, 0, s as u8, 0).is_err() {
+                                assert!(/*i < 0 || */i > 59);
+                            }
+
+                            // If each of the values passed separately, then the only reason we
+                            // were given an error is because the date or time itself is invalid,
+                            // i.e. February 30th, November 31st, etc.
+                            // We have no way of validating if the date or time is actually
+                            // invalid or not, so we just assume it's handled correctly
+                            // within `time` if all values could be handled separately.
+                        },
+                        err => {
+                            // Panic for any other error as well, seeing as the others either
+                            // would never happen, or the time string format must be incorrect,
+                            // neither of which should ever happen.
+                            panic!("Failed to parse time due to an unknown reason. {}", err);
+                        }
+                    }
+                }
+            }
+        }
+
+        #[test]
         fn parse_mysql_datetime_string_parses_correctly(
             y in 0u32..10000,
             m in 1u32..13,
@@ -283,7 +413,7 @@ mod tests {
                 "{:04}-{:02}-{:02} {:02}:{:02}:{:02}{}",
                 y, m, d, h, i, s,
                 if have_us == 1 {
-                    format!(".{:06}", us)
+                    format!(".{:06}", us).trim_end_matches('0').to_owned()
                 } else {
                     "".into()
                 }
@@ -307,9 +437,9 @@ mod tests {
                             datetime.hour() as u32,
                             datetime.minute() as u32,
                             datetime.second() as u32,
-                            0,
+                            datetime.microsecond() as u32,
                         ),
-                        (y, m, d, h, i, s, 0));
+                        (y, m, d, h, i, s, if have_us == 1 { us } else { 0 }));
                 },
                 Err(err) => {
                     // If `time` failed to parse the string,
