@@ -10,7 +10,10 @@ use lexical::parse;
 use num_traits::{FromPrimitive, ToPrimitive};
 use regex::bytes::Regex;
 
-use std::{any::type_name, error::Error, fmt, str::from_utf8, time::Duration};
+use std::{
+    any::type_name, borrow::Cow, convert::TryInto, error::Error, fmt, str::from_utf8,
+    time::Duration,
+};
 
 use crate::value::Value;
 
@@ -318,6 +321,26 @@ impl FromValue for Value {
     }
 }
 
+impl<'a> ConvIr<Cow<'a, str>> for Vec<u8> {
+    fn new(v: Value) -> Result<Self, FromValueError> {
+        match v {
+            Value::Bytes(bytes) => match from_utf8(&*bytes) {
+                Ok(_) => Ok(bytes),
+                Err(_) => Err(FromValueError(Value::Bytes(bytes))),
+            },
+            v => Err(FromValueError(v)),
+        }
+    }
+
+    fn commit(self) -> Cow<'a, str> {
+        unsafe { Cow::Owned(String::from_utf8_unchecked(self)) }
+    }
+
+    fn rollback(self) -> Value {
+        Value::Bytes(self)
+    }
+}
+
 impl ConvIr<String> for Vec<u8> {
     fn new(v: Value) -> Result<Vec<u8>, FromValueError> {
         match v {
@@ -518,6 +541,44 @@ impl ConvIr<Vec<u8>> for Vec<u8> {
     }
 }
 
+impl<'a> ConvIr<Cow<'a, [u8]>> for Vec<u8> {
+    fn new(v: Value) -> Result<Vec<u8>, FromValueError> {
+        match v {
+            Value::Bytes(bytes) => Ok(bytes),
+            v => Err(FromValueError(v)),
+        }
+    }
+    fn commit(self) -> Cow<'a, [u8]> {
+        Cow::Owned(self)
+    }
+    fn rollback(self) -> Value {
+        Value::Bytes(self)
+    }
+}
+
+impl<const N: usize> ConvIr<[u8; N]> for [u8; N] {
+    fn new(v: Value) -> Result<Self, FromValueError> {
+        match v {
+            Value::Bytes(bytes) => bytes
+                .try_into()
+                .map_err(|x| FromValueError(Value::Bytes(x))),
+            v => Err(FromValueError(v)),
+        }
+    }
+
+    fn commit(self) -> [u8; N] {
+        self
+    }
+
+    fn rollback(self) -> Value {
+        Value::Bytes(self.into())
+    }
+}
+
+impl<const N: usize> FromValue for [u8; N] {
+    type Intermediate = [u8; N];
+}
+
 fn parse_micros(micros_bytes: &[u8]) -> u32 {
     let mut micros = parse(micros_bytes).unwrap();
 
@@ -650,6 +711,8 @@ impl From<Duration> for Value {
 
 impl_from_value!(String, Vec<u8>);
 impl_from_value!(Vec<u8>, Vec<u8>);
+impl_from_value!(Cow<'_, str>, Vec<u8>);
+impl_from_value!(Cow<'_, [u8]>, Vec<u8>);
 impl_from_value!(bool, ParseIr<bool>);
 impl_from_value!(i64, ParseIr<i64>);
 impl_from_value!(u64, ParseIr<u64>);
@@ -779,55 +842,30 @@ impl<'a> From<&'a str> for Value {
     }
 }
 
+impl<'a, T: ToOwned> From<Cow<'a, T>> for Value
+where
+    T::Owned: Into<Value>,
+    &'a T: Into<Value>,
+{
+    fn from(x: Cow<'a, T>) -> Value {
+        match x {
+            Cow::Borrowed(x) => x.into(),
+            Cow::Owned(x) => x.into(),
+        }
+    }
+}
+
 impl From<String> for Value {
     fn from(x: String) -> Value {
         Value::Bytes(x.into_bytes())
     }
 }
 
-macro_rules! from_array_impl {
-    ($n:expr) => {
-        impl From<[u8; $n]> for Value {
-            fn from(x: [u8; $n]) -> Value {
-                Value::from(&x[..])
-            }
-        }
-    };
+impl<const N: usize> From<[u8; N]> for Value {
+    fn from(x: [u8; N]) -> Value {
+        Value::Bytes(x.to_vec())
+    }
 }
-
-from_array_impl!(0);
-from_array_impl!(1);
-from_array_impl!(2);
-from_array_impl!(3);
-from_array_impl!(4);
-from_array_impl!(5);
-from_array_impl!(6);
-from_array_impl!(7);
-from_array_impl!(8);
-from_array_impl!(9);
-from_array_impl!(10);
-from_array_impl!(11);
-from_array_impl!(12);
-from_array_impl!(13);
-from_array_impl!(14);
-from_array_impl!(15);
-from_array_impl!(16);
-from_array_impl!(17);
-from_array_impl!(18);
-from_array_impl!(19);
-from_array_impl!(20);
-from_array_impl!(21);
-from_array_impl!(22);
-from_array_impl!(23);
-from_array_impl!(24);
-from_array_impl!(25);
-from_array_impl!(26);
-from_array_impl!(27);
-from_array_impl!(28);
-from_array_impl!(29);
-from_array_impl!(30);
-from_array_impl!(31);
-from_array_impl!(32);
 
 #[cfg(test)]
 mod tests {
