@@ -400,11 +400,65 @@ pub trait OkPacketKind {
     ) -> io::Result<OkPacketBody<'de>>;
 }
 
-/// Ok pakcet that terminates a result set (text or binary).
+/// Ok packet that terminates a result set (text or binary).
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
 pub struct ResultSetTerminator;
 
 impl OkPacketKind for ResultSetTerminator {
+    const HEADER: u8 = 0xFE;
+
+    fn parse_body<'de>(
+        capabilities: CapabilityFlags,
+        buf: &mut ParseBuf<'de>,
+    ) -> io::Result<OkPacketBody<'de>> {
+        // We need to skip affected_rows and insert_id here
+        // because valid content of EOF packet includes
+        // packet marker, server status and warning count only.
+        // (see `read_ok_ex` in sql-common/client.cc)
+        buf.parse::<RawInt<LenEnc>>(())?;
+        buf.parse::<RawInt<LenEnc>>(())?;
+
+        // assume CLIENT_PROTOCOL_41 flag
+        let mut sbuf: ParseBuf = buf.parse(4)?;
+        let status_flags: Const<StatusFlags, LeU16> = sbuf.parse_unchecked(())?;
+        let warnings = sbuf.parse_unchecked(())?;
+
+        let (info, session_state_info) =
+            if capabilities.contains(CapabilityFlags::CLIENT_SESSION_TRACK) && !buf.is_empty() {
+                let info = buf.parse(())?;
+                let session_state_info =
+                    if status_flags.contains(StatusFlags::SERVER_SESSION_STATE_CHANGED) {
+                        buf.parse(())?
+                    } else {
+                        RawBytes::default()
+                    };
+                (info, session_state_info)
+            } else if !buf.is_empty() && buf.0[0] > 0 {
+                // The `info` field is a `string<EOF>` according to the MySQL Internals
+                // Manual, but actually it's a `string<lenenc>`.
+                // SEE: sql/protocol_classics.cc `net_send_ok`
+                let info = buf.parse(())?;
+                (info, RawBytes::default())
+            } else {
+                (RawBytes::default(), RawBytes::default())
+            };
+
+        Ok(OkPacketBody {
+            affected_rows: RawInt::new(0),
+            last_insert_id: RawInt::new(0),
+            status_flags,
+            warnings,
+            info,
+            session_state_info,
+        })
+    }
+}
+
+/// Old deprecated EOF packet.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
+pub struct OldEofPacket;
+
+impl OkPacketKind for OldEofPacket {
     const HEADER: u8 = 0xFE;
 
     fn parse_body<'de>(
@@ -438,7 +492,7 @@ impl OkPacketKind for NetworkStreamTerminator {
         flags: CapabilityFlags,
         buf: &mut ParseBuf<'de>,
     ) -> io::Result<OkPacketBody<'de>> {
-        ResultSetTerminator::parse_body(flags, buf)
+        OldEofPacket::parse_body(flags, buf)
     }
 }
 
@@ -455,6 +509,7 @@ impl OkPacketKind for CommonOkPacket {
     ) -> io::Result<OkPacketBody<'de>> {
         let affected_rows = buf.parse(())?;
         let last_insert_id = buf.parse(())?;
+
         // We assume that CLIENT_PROTOCOL_41 was set
         let mut sbuf: ParseBuf = buf.parse(4)?;
         let status_flags: Const<StatusFlags, LeU16> = sbuf.parse_unchecked(())?;
@@ -3217,6 +3272,14 @@ mod test {
     #[test]
     fn should_parse_ok_packet() {
         const PLAIN_OK: &[u8] = b"\x00\x01\x00\x02\x00\x00\x00";
+        const RESULT_SET_TERMINATOR: &[u8] = &[
+            0xfe, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x42, 0x52, 0x65, 0x61, 0x64, 0x20, 0x31,
+            0x20, 0x72, 0x6f, 0x77, 0x73, 0x2c, 0x20, 0x31, 0x2e, 0x30, 0x30, 0x20, 0x42, 0x20,
+            0x69, 0x6e, 0x20, 0x30, 0x2e, 0x30, 0x30, 0x32, 0x20, 0x73, 0x65, 0x63, 0x2e, 0x2c,
+            0x20, 0x36, 0x31, 0x31, 0x2e, 0x33, 0x34, 0x20, 0x72, 0x6f, 0x77, 0x73, 0x2f, 0x73,
+            0x65, 0x63, 0x2e, 0x2c, 0x20, 0x36, 0x31, 0x31, 0x2e, 0x33, 0x34, 0x20, 0x42, 0x2f,
+            0x73, 0x65, 0x63, 0x2e,
+        ];
         const SESS_STATE_SYS_VAR_OK: &[u8] =
             b"\x00\x00\x00\x02\x40\x00\x00\x00\x11\x00\x0f\x0a\x61\
               \x75\x74\x6f\x63\x6f\x6d\x6d\x69\x74\x03\x4f\x46\x46";
@@ -3262,6 +3325,24 @@ mod test {
         );
         assert_eq!(ok_packet.warnings(), 0);
         assert_eq!(ok_packet.info_ref(), None);
+        assert_eq!(ok_packet.session_state_info_ref(), None);
+
+        let ok_packet: OkPacket = OkPacketDeserializer::<ResultSetTerminator>::deserialize(
+            CapabilityFlags::CLIENT_SESSION_TRACK,
+            &mut ParseBuf(RESULT_SET_TERMINATOR),
+        )
+        .unwrap()
+        .into();
+        assert_eq!(ok_packet.affected_rows(), 0);
+        assert_eq!(ok_packet.last_insert_id(), None);
+        assert_eq!(ok_packet.status_flags(), StatusFlags::empty());
+        assert_eq!(ok_packet.warnings(), 0);
+        assert_eq!(
+            ok_packet.info_str(),
+            Some(Cow::Borrowed(
+                "Read 1 rows, 1.00 B in 0.002 sec., 611.34 rows/sec., 611.34 B/sec."
+            ))
+        );
         assert_eq!(ok_packet.session_state_info_ref(), None);
 
         let ok_packet: OkPacket = OkPacketDeserializer::<CommonOkPacket>::deserialize(
@@ -3330,7 +3411,7 @@ mod test {
             SessionStateChange::IsTracked(true),
         );
 
-        let ok_packet: OkPacket = OkPacketDeserializer::<ResultSetTerminator>::deserialize(
+        let ok_packet: OkPacket = OkPacketDeserializer::<OldEofPacket>::deserialize(
             CapabilityFlags::CLIENT_SESSION_TRACK,
             &mut ParseBuf(EOF),
         )

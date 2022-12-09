@@ -329,8 +329,12 @@ impl<'a> ParseBuf<'a> {
             .0
             .iter()
             .position(|x| *x == 0)
+            .map(|x| x + 1)
             .unwrap_or_else(|| self.len());
-        self.eat(pos)
+        match self.eat(pos) {
+            [head @ .., 0_u8] => head,
+            x => x,
+        }
     }
 }
 
