@@ -10,10 +10,12 @@ use bytes::BufMut;
 use lexical::parse;
 use regex::bytes::Regex;
 use smallvec::SmallVec;
+use uuid::Uuid;
 
 use std::{
     borrow::Cow, cmp::max, collections::HashMap, convert::TryFrom, fmt, io, marker::PhantomData,
 };
+use std::str::FromStr;
 
 use crate::{
     constants::{
@@ -2682,6 +2684,64 @@ impl<'de> MyDeserialize<'de> for Sid<'de> {
     }
 }
 
+impl Sid<'_> {
+    fn wrap_err(msg: String) -> io::Error {
+        io::Error::new(io::ErrorKind::InvalidInput, msg)
+    }
+
+    fn parse_interval_num(to_parse: &str, full: &str) -> Result<u64, io::Error> {
+        let n: u64 = to_parse.parse().map_err(|e| {
+            Sid::wrap_err(
+                format!("invalid interval format: {}, error: {}", full, e)
+            )
+        })?;
+        if n == 0 {
+            return Err(Sid::wrap_err(
+                format!("invalid interval format: {}, error: interval can't contain 0", full)
+            ));
+        }
+        Ok(n)
+    }
+}
+
+
+impl<'a> FromStr for Sid<'a> {
+    type Err = io::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let (uuid, intervals) = s.split_once(':').ok_or_else(|| {
+            Sid::wrap_err(format!("invalid sid format: {}", s))
+        })?;
+        let uuid = Uuid::parse_str(uuid).map_err(|e| {
+            Sid::wrap_err(format!("invalid uuid format: {}, error: {}", s, e))
+        })?;
+        let intervals = intervals
+            .split(':')
+            .map(|interval| {
+                let nums = interval.split('-').collect::<Vec<_>>();
+                if nums.len() != 1 && nums.len() != 2 {
+                    return Err(
+                        Sid::wrap_err(format!("invalid interval format: {}", s))
+                    )
+                }
+                if nums.len() == 1 {
+                    let start=  Sid::parse_interval_num(nums[0], s)?;
+                    Ok(Interval::new(start, start+1))
+                } else {
+                    let start = Sid::parse_interval_num(nums[0], s)?;
+                    let end = Sid::parse_interval_num(nums[1], s)?;
+                    // TODO: check that start >= end will cause error in MySQL?
+                    Ok(Interval::new(start, end+1))
+                }
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(Self {
+            sid: *uuid.as_bytes(),
+            intervals: Seq::new(intervals),
+        })
+    }
+}
+
 define_header!(
     ComBinlogDumpGtidHeader,
     COM_BINLOG_DUMP_GTID,
@@ -3445,5 +3505,41 @@ mod test {
         ]
         .to_vec();
         assert_eq!(expected, actual);
+    }
+
+    #[test]
+    fn parse_str_to_sid() {
+        let input = "3E11FA47-71CA-11E1-9E33-C80AA9429562:23";
+        let sid = input.parse::<Sid>().unwrap();
+        let expected_sid = Uuid::parse_str("3E11FA47-71CA-11E1-9E33-C80AA9429562").unwrap();
+        assert_eq!(sid.sid, *expected_sid.as_bytes());
+        assert_eq!(sid.intervals.len(), 1);
+        assert_eq!(sid.intervals[0].start.0, 23);
+        assert_eq!(sid.intervals[0].end.0, 24);
+
+        let input = "3E11FA47-71CA-11E1-9E33-C80AA9429562:1-5:10-15";
+        let sid = input.parse::<Sid>().unwrap();
+        assert_eq!(sid.sid, *expected_sid.as_bytes());
+        assert_eq!(sid.intervals.len(), 2);
+        assert_eq!(sid.intervals[0].start.0, 1);
+        assert_eq!(sid.intervals[0].end.0, 6);
+        assert_eq!(sid.intervals[1].start.0, 10);
+        assert_eq!(sid.intervals[1].end.0, 16);
+
+        let input = "3E11FA47-71CA-11E1-9E33-C80AA9429562";
+        let e = input.parse::<Sid>().unwrap_err();
+        assert_eq!(e.to_string(), "invalid sid format: 3E11FA47-71CA-11E1-9E33-C80AA9429562".to_string());
+
+        let input = "3E11FA47-71CA-11E1-9E33-C80AA9429562:1-5:10-15:20-";
+        let e = input.parse::<Sid>().unwrap_err();
+        assert_eq!(e.to_string(), "invalid interval format: 3E11FA47-71CA-11E1-9E33-C80AA9429562:1-5:10-15:20-, error: cannot parse integer from empty string".to_string());
+
+        let input = "3E11FA47-71CA-11E1-9E33-C80AA9429562:1-5:1aaa";
+        let e = input.parse::<Sid>().unwrap_err();
+        assert_eq!(e.to_string(), "invalid interval format: 3E11FA47-71CA-11E1-9E33-C80AA9429562:1-5:1aaa, error: invalid digit found in string".to_string());
+
+        let input = "3E11FA47-71CA-11E1-9E33-C80AA9429562:0-3";
+        let e = input.parse::<Sid>().unwrap_err();
+        assert_eq!(e.to_string(), "invalid interval format: 3E11FA47-71CA-11E1-9E33-C80AA9429562:0-3, error: interval can't contain 0".to_string());
     }
 }
