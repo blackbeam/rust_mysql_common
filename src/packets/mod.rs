@@ -3557,6 +3557,9 @@ mod test {
 
         let input = "3E11FA47-71CA-11E1-9E33-C80AA9429562:4-3";
         let e = input.parse::<Sid>().unwrap_err();
-        assert_eq!(e.to_string(), "start(4) >= end(4) in GnoInterval".to_string());
+        assert_eq!(
+            e.to_string(),
+            "start(4) >= end(4) in GnoInterval".to_string()
+        );
     }
 }
