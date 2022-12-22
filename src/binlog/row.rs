@@ -135,7 +135,7 @@ impl<'de> MyDeserialize<'de> for BinlogRow {
     /// * corresponding table map event
     type Ctx = (u64, &'de BitSlice<u8>, bool, &'de TableMapEvent<'de>);
 
-    fn deserialize(
+    fn deserialize_(
         (num_columns, cols, have_shared_image, table_info): Self::Ctx,
         buf: &mut ParseBuf<'de>,
     ) -> io::Result<Self> {

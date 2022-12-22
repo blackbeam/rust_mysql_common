@@ -131,7 +131,7 @@ impl<'de> MyDeserialize<'de> for JsonbString<'de> {
     const SIZE: Option<usize> = None;
     type Ctx = ();
 
-    fn deserialize((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+    fn deserialize_((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
         Ok(Self(buf.parse(())?))
     }
 }
@@ -344,7 +344,7 @@ impl<'de, T: StorageFormat, U: ComplexType> MyDeserialize<'de> for ComplexValue<
     const SIZE: Option<usize> = None;
     type Ctx = ();
 
-    fn deserialize((): Self::Ctx, whole_buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+    fn deserialize_((): Self::Ctx, whole_buf: &mut ParseBuf<'de>) -> io::Result<Self> {
         let mut sbuf = ParseBuf(whole_buf.0)
             .checked_eat_buf((T::OFFSET_SIZE * 2) as usize)
             .ok_or_else(unexpected_buf_eof)?;
@@ -595,7 +595,7 @@ impl<'de> MyDeserialize<'de> for Value<'de> {
     const SIZE: Option<usize> = None;
     type Ctx = ();
 
-    fn deserialize((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+    fn deserialize_((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
         if buf.is_empty() {
             // We'll interpret an empty jsonb value as null (MySql does so)
             return Ok(Value::Null);

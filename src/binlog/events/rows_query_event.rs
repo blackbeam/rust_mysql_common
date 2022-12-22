@@ -64,7 +64,7 @@ impl<'de> MyDeserialize<'de> for RowsQueryEvent<'de> {
     const SIZE: Option<usize> = None;
     type Ctx = BinlogCtx<'de>;
 
-    fn deserialize(_ctx: Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+    fn deserialize_(_ctx: Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
         Ok(Self {
             length: buf.parse(())?,
             query: buf.parse(())?,

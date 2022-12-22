@@ -6,7 +6,7 @@
 // option. All files in the project carrying such notice may not be copied,
 // modified, or distributed except according to those terms.
 
-use std::io;
+use std::{error::Error, io};
 
 use crate::io::ParseBuf;
 
@@ -20,6 +20,42 @@ pub struct Text;
 /// Binary protocol marker.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Binary;
+
+#[derive(Debug, thiserror::Error)]
+#[error("Error deserializing `{}`: {}", type_name, cause)]
+pub struct DeserializeError {
+    pub type_name: &'static str,
+    #[source]
+    pub cause: Box<dyn std::error::Error + Send + Sync + 'static>,
+}
+
+impl DeserializeError {
+    pub fn new<T, E: std::error::Error + Send + Sync + 'static>(e: E) -> io::Error {
+        io::Error::new(
+            io::ErrorKind::Other,
+            Self {
+                type_name: std::any::type_name::<T>(),
+                cause: Box::new(e),
+            },
+        )
+    }
+
+    pub fn actual_kind(mut err: &io::Error) -> io::ErrorKind {
+        let mut kind;
+        loop {
+            kind = err.kind();
+            match err.source() {
+                Some(e) => match e.downcast_ref::<io::Error>() {
+                    Some(e) => {
+                        err = e;
+                    }
+                    None => return kind,
+                },
+                None => return kind,
+            }
+        }
+    }
+}
 
 /// Serialization for various MySql types.
 pub trait MySerialize {
@@ -45,5 +81,9 @@ pub trait MyDeserialize<'de>: Sized {
     ///
     /// Implementation must panic on insufficient buffer length if `Self::SIZE.is_some()`.
     /// One should use `ParseBuf::checked_parse` for checked deserialization.
-    fn deserialize(ctx: Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self>;
+    fn deserialize(ctx: Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+        Self::deserialize_(ctx, buf).map_err(DeserializeError::new::<Self, _>)
+    }
+
+    fn deserialize_(ctx: Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self>;
 }

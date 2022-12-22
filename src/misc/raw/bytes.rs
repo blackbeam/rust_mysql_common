@@ -82,7 +82,7 @@ impl<'de, T: BytesRepr> MyDeserialize<'de> for RawBytes<'de, T> {
     type Ctx = T::Ctx;
 
     #[inline(always)]
-    fn deserialize(ctx: Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+    fn deserialize_(ctx: Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
         Ok(Self(T::deserialize(ctx, buf)?, PhantomData))
     }
 }
@@ -326,7 +326,7 @@ where
     const SIZE: Option<usize> = Some(LEN);
     type Ctx = ();
 
-    fn deserialize((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+    fn deserialize_((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
         let bytes: [u8; LEN] = buf.parse_unchecked(())?;
         if bytes == T::VALUE {
             Ok(Default::default())

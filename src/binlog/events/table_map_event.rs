@@ -246,7 +246,7 @@ impl<'de> MyDeserialize<'de> for TableMapEvent<'de> {
     const SIZE: Option<usize> = None;
     type Ctx = BinlogCtx<'de>;
 
-    fn deserialize(ctx: Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+    fn deserialize_(ctx: Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
         let table_id = if 6 == ctx.fde.get_event_type_header_length(Self::EVENT_TYPE) {
             // old server
             let table_id: RawInt<LeU32> = buf.parse(())?;
@@ -372,7 +372,7 @@ impl<'de> MyDeserialize<'de> for DefaultCharset<'de> {
     const SIZE: Option<usize> = None;
     type Ctx = ();
 
-    fn deserialize((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+    fn deserialize_((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
         Ok(Self {
             default_charset: buf.parse(())?,
             non_default: buf.parse(())?,
@@ -418,7 +418,7 @@ impl<'de> MyDeserialize<'de> for NonDefaultCharset {
     const SIZE: Option<usize> = None;
     type Ctx = ();
 
-    fn deserialize((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+    fn deserialize_((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
         Ok(Self {
             column_index: buf.parse(())?,
             charset: buf.parse(())?,
@@ -471,7 +471,7 @@ impl<'de> MyDeserialize<'de> for ColumnCharsets<'de> {
     const SIZE: Option<usize> = None;
     type Ctx = ();
 
-    fn deserialize((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+    fn deserialize_((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
         Ok(Self {
             charsets: buf.parse(())?,
         })
@@ -513,7 +513,7 @@ impl<'de> MyDeserialize<'de> for ColumnName<'de> {
     const SIZE: Option<usize> = None;
     type Ctx = ();
 
-    fn deserialize((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+    fn deserialize_((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
         Ok(Self {
             name: buf.parse(())?,
         })
@@ -553,7 +553,7 @@ impl<'de> MyDeserialize<'de> for ColumnNames<'de> {
     const SIZE: Option<usize> = None;
     type Ctx = ();
 
-    fn deserialize((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+    fn deserialize_((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
         Ok(Self {
             names: buf.parse(())?,
         })
@@ -593,7 +593,7 @@ impl<'de> MyDeserialize<'de> for SetsStrValues<'de> {
     const SIZE: Option<usize> = None;
     type Ctx = ();
 
-    fn deserialize((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+    fn deserialize_((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
         Ok(Self {
             values: buf.parse(())?,
         })
@@ -635,7 +635,7 @@ impl<'de> MyDeserialize<'de> for SetStrValue<'de> {
     const SIZE: Option<usize> = None;
     type Ctx = ();
 
-    fn deserialize((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+    fn deserialize_((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
         Ok(Self {
             value: buf.parse(())?,
         })
@@ -671,7 +671,7 @@ impl<'de> MyDeserialize<'de> for SetStrValues<'de> {
     const SIZE: Option<usize> = None;
     type Ctx = ();
 
-    fn deserialize((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+    fn deserialize_((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
         let num_variants: RawInt<LenEnc> = buf.parse(())?;
         let mut values = Vec::with_capacity(num_variants.0 as usize);
         for _ in 0..num_variants.0 {
@@ -720,7 +720,7 @@ impl<'de> MyDeserialize<'de> for EnumsStrValues<'de> {
     const SIZE: Option<usize> = None;
     type Ctx = ();
 
-    fn deserialize((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+    fn deserialize_((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
         Ok(Self {
             values: buf.parse(())?,
         })
@@ -762,7 +762,7 @@ impl<'de> MyDeserialize<'de> for EnumStrValue<'de> {
     const SIZE: Option<usize> = None;
     type Ctx = ();
 
-    fn deserialize((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+    fn deserialize_((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
         Ok(Self {
             value: buf.parse(())?,
         })
@@ -798,7 +798,7 @@ impl<'de> MyDeserialize<'de> for EnumStrValues<'de> {
     const SIZE: Option<usize> = None;
     type Ctx = ();
 
-    fn deserialize((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+    fn deserialize_((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
         let num_variants: RawInt<LenEnc> = buf.parse(())?;
         let mut values = Vec::with_capacity(num_variants.0 as usize);
         for _ in 0..num_variants.0 {
@@ -860,7 +860,7 @@ impl<'de> MyDeserialize<'de> for GeometryTypes<'de> {
     const SIZE: Option<usize> = None;
     type Ctx = ();
 
-    fn deserialize((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+    fn deserialize_((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
         Ok(Self {
             geometry_types: buf.parse(())?,
         })
@@ -900,7 +900,7 @@ impl<'de> MyDeserialize<'de> for SimplePrimaryKey<'de> {
     const SIZE: Option<usize> = None;
     type Ctx = ();
 
-    fn deserialize((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+    fn deserialize_((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
         Ok(Self {
             indexes: buf.parse(())?,
         })
@@ -940,7 +940,7 @@ impl<'de> MyDeserialize<'de> for PrimaryKeysWithPrefix<'de> {
     const SIZE: Option<usize> = None;
     type Ctx = ();
 
-    fn deserialize((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+    fn deserialize_((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
         Ok(Self {
             data: buf.parse(())?,
         })
@@ -984,7 +984,7 @@ impl<'de> MyDeserialize<'de> for PrimaryKeyWithPrefix {
     const SIZE: Option<usize> = None;
     type Ctx = ();
 
-    fn deserialize((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+    fn deserialize_((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
         Ok(Self {
             column_index: buf.parse(())?,
             prefix_length: buf.parse(())?,

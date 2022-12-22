@@ -450,7 +450,7 @@ impl<'de> MyDeserialize<'de> for BinlogEventHeader {
     const SIZE: Option<usize> = Some(Self::LEN);
     type Ctx = ();
 
-    fn deserialize((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+    fn deserialize_((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
         let mut buf: ParseBuf = buf.parse_unchecked(Self::LEN)?;
         Ok(Self {
             timestamp: buf.parse_unchecked(())?,

@@ -203,7 +203,7 @@ impl<'de> MyDeserialize<'de> for QueryEvent<'de> {
     const SIZE: Option<usize> = None;
     type Ctx = BinlogCtx<'de>;
 
-    fn deserialize(ctx: Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+    fn deserialize_(ctx: Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
         let mut sbuf: ParseBuf = buf.parse(13)?;
         let thread_id = sbuf.parse_unchecked(())?;
         let execution_time = sbuf.parse_unchecked(())?;
@@ -490,7 +490,7 @@ impl<'de> MyDeserialize<'de> for StatusVars<'de> {
     const SIZE: Option<usize> = None;
     type Ctx = u16;
 
-    fn deserialize(len: Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+    fn deserialize_(len: Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
         Ok(Self(buf.parse(len as usize)?))
     }
 }

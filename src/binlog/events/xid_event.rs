@@ -33,7 +33,7 @@ impl<'de> MyDeserialize<'de> for XidEvent {
     const SIZE: Option<usize> = None;
     type Ctx = BinlogCtx<'de>;
 
-    fn deserialize(ctx: Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+    fn deserialize_(ctx: Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
         let post_header_len = ctx.fde.get_event_type_header_length(Self::EVENT_TYPE);
 
         if !buf.checked_skip(post_header_len as usize) {

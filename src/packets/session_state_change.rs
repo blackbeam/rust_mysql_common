@@ -55,7 +55,7 @@ impl<'de> MyDeserialize<'de> for SessionStateChange<'de> {
     const SIZE: Option<usize> = None;
     type Ctx = SessionStateType;
 
-    fn deserialize(ty: SessionStateType, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+    fn deserialize_(ty: SessionStateType, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
         match ty {
             SessionStateType::SESSION_TRACK_SYSTEM_VARIABLES => {
                 let mut vars = Vec::new();
@@ -140,7 +140,7 @@ impl<'de> MyDeserialize<'de> for Gtids<'de> {
     const SIZE: Option<usize> = None;
     type Ctx = ();
 
-    fn deserialize((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+    fn deserialize_((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
         buf.parse_unchecked(()).map(Self)
     }
 }
@@ -182,7 +182,7 @@ impl<'de> MyDeserialize<'de> for Schema<'de> {
     const SIZE: Option<usize> = None;
     type Ctx = ();
 
-    fn deserialize((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+    fn deserialize_((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
         buf.parse_unchecked(()).map(Self)
     }
 }
@@ -242,7 +242,7 @@ impl<'de> MyDeserialize<'de> for SystemVariable<'de> {
     const SIZE: Option<usize> = None;
     type Ctx = ();
 
-    fn deserialize((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+    fn deserialize_((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
         Ok(Self {
             name: buf.parse_unchecked(())?,
             value: buf.parse_unchecked(())?,
@@ -289,7 +289,7 @@ impl<'de> MyDeserialize<'de> for TransactionCharacteristics<'de> {
     const SIZE: Option<usize> = None;
     type Ctx = ();
 
-    fn deserialize((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+    fn deserialize_((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
         buf.parse_unchecked(()).map(Self)
     }
 }
@@ -332,7 +332,7 @@ impl<'de> MyDeserialize<'de> for TransactionState<'de> {
     const SIZE: Option<usize> = None;
     type Ctx = ();
 
-    fn deserialize((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+    fn deserialize_((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
         buf.parse_unchecked(()).map(Self)
     }
 }
@@ -372,7 +372,7 @@ impl<'de> MyDeserialize<'de> for Unsupported<'de> {
     const SIZE: Option<usize> = None;
     type Ctx = ();
 
-    fn deserialize((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+    fn deserialize_((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
         buf.parse_unchecked(()).map(Self)
     }
 }

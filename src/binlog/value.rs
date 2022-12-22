@@ -48,7 +48,7 @@ impl<'de> MyDeserialize<'de> for BinlogValue<'de> {
     /// <col_type, col_meta, is_unsigned, is_partial>
     type Ctx = (ColumnType, &'de [u8], bool, bool);
 
-    fn deserialize(
+    fn deserialize_(
         (mut col_type, col_meta, is_unsigned, is_partial): Self::Ctx,
         buf: &mut ParseBuf<'de>,
     ) -> io::Result<Self> {

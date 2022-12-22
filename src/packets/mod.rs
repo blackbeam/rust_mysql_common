@@ -130,7 +130,7 @@ impl<'de> MyDeserialize<'de> for Column {
     const SIZE: Option<usize> = None;
     type Ctx = ();
 
-    fn deserialize((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+    fn deserialize_((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
         let catalog = buf.parse(())?;
         let schema = buf.parse_unchecked(())?;
         let table = buf.parse_unchecked(())?;
@@ -362,7 +362,7 @@ impl<'de> MyDeserialize<'de> for SessionStateInfo<'de> {
     const SIZE: Option<usize> = None;
     type Ctx = ();
 
-    fn deserialize(_ctx: Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+    fn deserialize_(_ctx: Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
         Ok(SessionStateInfo {
             data_type: buf.parse(())?,
             data: buf.parse(())?,
@@ -670,7 +670,7 @@ impl<'de, T: OkPacketKind> MyDeserialize<'de> for OkPacketDeserializer<'de, T> {
     const SIZE: Option<usize> = None;
     type Ctx = CapabilityFlags;
 
-    fn deserialize(capabilities: Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+    fn deserialize_(capabilities: Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
         if *buf.parse::<RawInt<u8>>(())? == T::HEADER {
             let body = T::parse_body(capabilities, buf)?;
             let ok = OkPacket::try_from(body)?;
@@ -746,7 +746,7 @@ impl<'de> MyDeserialize<'de> for ProgressReport<'de> {
     const SIZE: Option<usize> = None;
     type Ctx = ();
 
-    fn deserialize((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+    fn deserialize_((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
         let mut sbuf: ParseBuf = buf.parse(6)?;
 
         sbuf.skip(1); // Ignore number of strings.
@@ -830,7 +830,7 @@ impl<'de> MyDeserialize<'de> for ErrPacket<'de> {
     const SIZE: Option<usize> = None;
     type Ctx = CapabilityFlags;
 
-    fn deserialize(capabilities: Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+    fn deserialize_(capabilities: Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
         let mut sbuf: ParseBuf = buf.parse(3)?;
         sbuf.parse_unchecked::<ErrPacketHeader>(())?;
         let code: RawInt<LeU16> = sbuf.parse_unchecked(())?;
@@ -927,7 +927,7 @@ impl<'de> MyDeserialize<'de> for ServerError<'de> {
     /// An error packet error code.
     type Ctx = u16;
 
-    fn deserialize(code: Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+    fn deserialize_(code: Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
         match buf.0[0] {
             b'#' => {
                 buf.skip(1);
@@ -1009,7 +1009,7 @@ impl<'de> MyDeserialize<'de> for LocalInfilePacket<'de> {
     const SIZE: Option<usize> = None;
     type Ctx = ();
 
-    fn deserialize((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+    fn deserialize_((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
         Ok(LocalInfilePacket {
             __header: buf.parse(())?,
             file_name: buf.parse(())?,
@@ -1079,7 +1079,7 @@ impl<'de> MyDeserialize<'de> for AuthPlugin<'de> {
     const SIZE: Option<usize> = None;
     type Ctx = ();
 
-    fn deserialize((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+    fn deserialize_((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
         Ok(Self::from_bytes(buf.eat_all()))
     }
 }
@@ -1197,7 +1197,7 @@ impl<'de> MyDeserialize<'de> for AuthMoreData<'de> {
     const SIZE: Option<usize> = None;
     type Ctx = ();
 
-    fn deserialize((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+    fn deserialize_((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
         Ok(Self {
             __header: buf.parse(())?,
             data: buf.parse(())?,
@@ -1243,7 +1243,7 @@ impl<'de> MyDeserialize<'de> for OldAuthSwitchRequest {
     const SIZE: Option<usize> = Some(1);
     type Ctx = ();
 
-    fn deserialize((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+    fn deserialize_((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
         Ok(Self {
             __header: buf.parse(())?,
         })
@@ -1305,7 +1305,7 @@ impl<'de> MyDeserialize<'de> for AuthSwitchRequest<'de> {
     const SIZE: Option<usize> = None;
     type Ctx = ();
 
-    fn deserialize((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+    fn deserialize_((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
         Ok(Self {
             __header: buf.parse(())?,
             auth_plugin: buf.parse(())?,
@@ -1346,7 +1346,7 @@ impl<'de> MyDeserialize<'de> for HandshakePacket<'de> {
     const SIZE: Option<usize> = None;
     type Ctx = ();
 
-    fn deserialize((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+    fn deserialize_((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
         let protocol_version = buf.parse(())?;
         let server_version = buf.parse(())?;
 
@@ -1731,7 +1731,7 @@ impl<'de> MyDeserialize<'de> for HandshakeResponse<'de> {
     const SIZE: Option<usize> = None;
     type Ctx = ();
 
-    fn deserialize((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+    fn deserialize_((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
         let mut sbuf: ParseBuf = buf.parse(4 + 4 + 1 + 23)?;
         let client_flags: RawConst<LeU32, CapabilityFlags> = sbuf.parse_unchecked(())?;
         sbuf.parse_unchecked::<Skip<4>>(())?;
@@ -1851,7 +1851,7 @@ impl<'de> MyDeserialize<'de> for SslRequest {
     const SIZE: Option<usize> = Some(4 + 4 + 1 + 23);
     type Ctx = ();
 
-    fn deserialize((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+    fn deserialize_((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
         let mut buf: ParseBuf = buf.parse(Self::SIZE.unwrap())?;
         let raw_capabilities = buf.parse_unchecked::<RawConst<LeU32, CapabilityFlags>>(())?;
         Ok(Self {
@@ -1891,7 +1891,7 @@ impl<'de> MyDeserialize<'de> for StmtPacket {
     const SIZE: Option<usize> = Some(12);
     type Ctx = ();
 
-    fn deserialize((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+    fn deserialize_((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
         let mut buf: ParseBuf = buf.parse(Self::SIZE.unwrap())?;
         Ok(StmtPacket {
             status: buf.parse_unchecked(())?,
@@ -1947,7 +1947,7 @@ impl<'de, T: SerializationSide> MyDeserialize<'de> for NullBitmap<T, Cow<'de, [u
     const SIZE: Option<usize> = None;
     type Ctx = usize;
 
-    fn deserialize(num_columns: Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+    fn deserialize_(num_columns: Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
         let bitmap_len = Self::bitmap_len(num_columns);
         let bytes = buf.checked_eat(bitmap_len).ok_or_else(unexpected_buf_eof)?;
         Ok(Self::from_bytes(Cow::Borrowed(bytes)))
@@ -2405,7 +2405,7 @@ impl<'de> MyDeserialize<'de> for ComRegisterSlave<'de> {
     const SIZE: Option<usize> = None;
     type Ctx = ();
 
-    fn deserialize((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+    fn deserialize_((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
         let mut sbuf: ParseBuf = buf.parse(5)?;
         let header = sbuf.parse_unchecked(())?;
         let server_id = sbuf.parse_unchecked(())?;
@@ -2499,7 +2499,7 @@ impl<'de> MyDeserialize<'de> for ComTableDump<'de> {
     const SIZE: Option<usize> = None;
     type Ctx = ();
 
-    fn deserialize((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+    fn deserialize_((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
         Ok(Self {
             header: buf.parse(())?,
             database: buf.parse(())?,
@@ -2618,7 +2618,7 @@ impl<'de> MyDeserialize<'de> for ComBinlogDump<'de> {
     const SIZE: Option<usize> = None;
     type Ctx = ();
 
-    fn deserialize((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+    fn deserialize_((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
         let mut sbuf: ParseBuf = buf.parse(11)?;
         Ok(Self {
             header: sbuf.parse_unchecked(())?,
@@ -2658,7 +2658,7 @@ impl<'de> MyDeserialize<'de> for Interval {
     const SIZE: Option<usize> = Some(16);
     type Ctx = ();
 
-    fn deserialize((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+    fn deserialize_((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
         Ok(Self {
             start: buf.parse_unchecked(())?,
             end: buf.parse_unchecked(())?,
@@ -2729,7 +2729,7 @@ impl<'de> MyDeserialize<'de> for Sid<'de> {
     const SIZE: Option<usize> = None;
     type Ctx = ();
 
-    fn deserialize((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+    fn deserialize_((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
         Ok(Self {
             sid: buf.parse(())?,
             intervals: buf.parse(())?,
@@ -2888,7 +2888,7 @@ impl<'de> MyDeserialize<'de> for ComBinlogDumpGtid<'de> {
     const SIZE: Option<usize> = None;
     type Ctx = ();
 
-    fn deserialize((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+    fn deserialize_((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
         let mut sbuf: ParseBuf = buf.parse(7)?;
         let header = sbuf.parse_unchecked(())?;
         let flags: Const<BinlogDumpFlags, LeU16> = sbuf.parse_unchecked(())?;
@@ -2976,7 +2976,7 @@ impl<'de> MyDeserialize<'de> for SemiSyncAckPacket<'de> {
     const SIZE: Option<usize> = None;
     type Ctx = ();
 
-    fn deserialize((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+    fn deserialize_((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
         let mut sbuf: ParseBuf = buf.parse(9)?;
         Ok(Self {
             header: sbuf.parse_unchecked(())?,

@@ -36,7 +36,7 @@ impl<'de> MyDeserialize<'de> for RandEvent {
     const SIZE: Option<usize> = Some(16);
     type Ctx = BinlogCtx<'de>;
 
-    fn deserialize(_: Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+    fn deserialize_(_: Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
         Ok(Self {
             seed1: buf.parse_unchecked(())?,
             seed2: buf.parse_unchecked(())?,

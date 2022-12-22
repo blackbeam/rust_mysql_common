@@ -258,7 +258,7 @@ impl<'de> MyDeserialize<'de> for ExecuteLoadQueryEvent<'de> {
     const SIZE: Option<usize> = None;
     type Ctx = BinlogCtx<'de>;
 
-    fn deserialize(_: Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+    fn deserialize_(_: Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
         let mut sbuf: ParseBuf = buf.parse(26)?;
 
         let thread_id = sbuf.parse_unchecked(())?;

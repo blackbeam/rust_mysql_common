@@ -292,7 +292,7 @@ impl<'de> MyDeserialize<'de> for FormatDescriptionEvent<'de> {
     const SIZE: Option<usize> = None;
     type Ctx = BinlogCtx<'de>;
 
-    fn deserialize(_ctx: Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+    fn deserialize_(_ctx: Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
         let mut sbuf: ParseBuf = buf.parse(57)?;
         let binlog_version = sbuf.parse_unchecked(())?;
         let server_version = sbuf.parse_unchecked(())?;

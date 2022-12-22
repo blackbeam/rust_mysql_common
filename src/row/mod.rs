@@ -247,7 +247,7 @@ impl<'de, T> MyDeserialize<'de> for RowDeserializer<T, Text> {
     const SIZE: Option<usize> = None;
     type Ctx = Arc<[Column]>;
 
-    fn deserialize(columns: Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+    fn deserialize_(columns: Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
         let mut values = Vec::with_capacity(columns.len());
 
         for _ in 0..columns.len() {
@@ -264,7 +264,7 @@ impl<'de, S: SerializationSide> MyDeserialize<'de> for RowDeserializer<S, Binary
     const SIZE: Option<usize> = None;
     type Ctx = Arc<[Column]>;
 
-    fn deserialize(columns: Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+    fn deserialize_(columns: Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
         use Value::*;
 
         buf.checked_eat_u8().ok_or_else(unexpected_buf_eof)?;

@@ -92,7 +92,7 @@ where
     const SIZE: Option<usize> = None;
     type Ctx = U::Ctx;
 
-    fn deserialize(ctx: Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+    fn deserialize_(ctx: Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
         U::deserialize(ctx, &mut *buf).map(Self::new)
     }
 }
@@ -195,7 +195,7 @@ impl<'de, T: IntRepr<Primitive = u8>, U> MyDeserialize<'de> for RawSeq<'de, T, U
     const SIZE: Option<usize> = None;
     type Ctx = usize;
 
-    fn deserialize(length: Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+    fn deserialize_(length: Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
         let bytes: &[u8] = buf.parse(length)?;
         Ok(Self::new(bytes))
     }

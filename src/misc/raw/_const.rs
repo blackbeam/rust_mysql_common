@@ -58,7 +58,7 @@ where
     const SIZE: Option<usize> = U::SIZE;
     type Ctx = ();
 
-    fn deserialize((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+    fn deserialize_((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
         let raw_val = buf.parse_unchecked::<RawInt<U>>(())?;
         T::try_from(*raw_val)
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
@@ -141,7 +141,7 @@ impl<'de, T: IntRepr, U> MyDeserialize<'de> for RawConst<T, U> {
     const SIZE: Option<usize> = T::SIZE;
     type Ctx = ();
 
-    fn deserialize((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+    fn deserialize_((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
         let value = buf.parse_unchecked::<RawInt<T>>(())?.0;
         Ok(Self::new(value))
     }

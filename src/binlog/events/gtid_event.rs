@@ -250,7 +250,7 @@ impl<'de> MyDeserialize<'de> for GtidEvent {
     const SIZE: Option<usize> = None;
     type Ctx = BinlogCtx<'de>;
 
-    fn deserialize(_ctx: Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+    fn deserialize_(_ctx: Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
         let mut sbuf: ParseBuf = buf.parse(1 + Self::ENCODED_SID_LENGTH + 8)?;
         let flags = sbuf.parse_unchecked(())?;
         let sid: [u8; Self::ENCODED_SID_LENGTH] = sbuf.parse_unchecked(())?;

@@ -64,7 +64,7 @@ where
     const SIZE: Option<usize> = Some(size_of::<T::Repr>());
     type Ctx = ();
 
-    fn deserialize((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+    fn deserialize_((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
         let value = buf.parse_unchecked::<RawInt<U>>(())?;
         Ok(Self::new(*value))
     }

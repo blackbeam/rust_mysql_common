@@ -110,7 +110,7 @@ impl<'de> MyDeserialize<'de> for UserVarEvent<'de> {
     const SIZE: Option<usize> = None;
     type Ctx = BinlogCtx<'de>;
 
-    fn deserialize(_ctx: Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+    fn deserialize_(_ctx: Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
         let name = buf.parse(())?;
         let is_null = buf.parse::<RawInt<u8>>(())?.0 != 0;
 

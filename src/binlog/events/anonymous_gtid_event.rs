@@ -28,7 +28,7 @@ impl<'de> MyDeserialize<'de> for AnonymousGtidEvent {
     const SIZE: Option<usize> = GtidEvent::SIZE;
     type Ctx = BinlogCtx<'de>;
 
-    fn deserialize(ctx: Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+    fn deserialize_(ctx: Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
         buf.parse_unchecked(ctx).map(Self)
     }
 }

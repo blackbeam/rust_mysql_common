@@ -244,7 +244,7 @@ mod tests {
 
     use crate::{
         binlog::{events::RowsEventData, value::BinlogValue},
-        proto::MySerialize,
+        proto::{DeserializeError, MySerialize},
         value::Value,
     };
 
@@ -642,7 +642,7 @@ mod tests {
             let mut table_map_events = HashMap::new();
 
             while let Some(ev) = binlog_file.next() {
-                let ev = ev?;
+                let ev = dbg!(ev)?;
                 let _ = dbg!(ev.header().event_type());
                 let ev_end = ev_pos + ev.header().event_size() as usize;
                 let binlog_version = binlog_file.reader.fde.binlog_version();
@@ -684,7 +684,7 @@ mod tests {
                         }
                     }
                     Err(err)
-                        if err.kind() == std::io::ErrorKind::Other
+                        if DeserializeError::actual_kind(&err) == std::io::ErrorKind::Other
                             && ev.header().event_type() == Ok(EventType::XID_EVENT)
                             && ev.header().event_size() == 0x26
                             && file_path.file_name().unwrap() == "ver_5_1-wl2325_r.001" =>
@@ -693,7 +693,8 @@ mod tests {
                         continue 'outer;
                     }
                     Err(err)
-                        if err.kind() == std::io::ErrorKind::UnexpectedEof
+                        if DeserializeError::actual_kind(&err)
+                            == std::io::ErrorKind::UnexpectedEof
                             && ev.header().event_type() == Ok(EventType::QUERY_EVENT)
                             && ev.header().event_size() == 171
                             && file_path.file_name().unwrap() == "corrupt-relay-bin.000624" =>

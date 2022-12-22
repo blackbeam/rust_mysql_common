@@ -39,7 +39,7 @@ impl<'de> MyDeserialize<'de> for &'de [u8] {
     const SIZE: Option<usize> = None;
     type Ctx = usize;
 
-    fn deserialize(len: Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+    fn deserialize_(len: Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
         buf.checked_eat(len).ok_or_else(unexpected_buf_eof)
     }
 }
@@ -54,7 +54,7 @@ impl<'de, const LEN: usize> MyDeserialize<'de> for [u8; LEN] {
     const SIZE: Option<usize> = Some(LEN);
     type Ctx = ();
 
-    fn deserialize((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+    fn deserialize_((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
         let value = buf.eat(LEN);
         let mut this = [0_u8; LEN];
         this.copy_from_slice(value);
@@ -75,7 +75,7 @@ impl<'de, const LEN: usize> MyDeserialize<'de> for Skip<LEN> {
     const SIZE: Option<usize> = Some(LEN);
     type Ctx = ();
 
-    fn deserialize((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+    fn deserialize_((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
         buf.skip(LEN);
         Ok(Self)
     }
@@ -91,7 +91,7 @@ impl<'de> MyDeserialize<'de> for ParseBuf<'de> {
     const SIZE: Option<usize> = None;
     type Ctx = usize;
 
-    fn deserialize(len: Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+    fn deserialize_(len: Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
         buf.checked_eat_buf(len).ok_or_else(unexpected_buf_eof)
     }
 }
@@ -104,7 +104,7 @@ where
     const SIZE: Option<usize> = None;
     type Ctx = ();
 
-    fn deserialize((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+    fn deserialize_((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
         let mut small_vec = SmallVec::new();
         let s: RawBytes<'de, LenEnc> = buf.parse(())?;
         small_vec.extend_from_slice(s.as_bytes());
@@ -136,7 +136,7 @@ where
     /// Which one to deserialize.
     type Ctx = Either<T::Ctx, U::Ctx>;
 
-    fn deserialize(ctx: Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+    fn deserialize_(ctx: Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
         match ctx {
             Either::Left(ctx) => T::deserialize(ctx, buf).map(Either::Left),
             Either::Right(ctx) => U::deserialize(ctx, buf).map(Either::Right),
@@ -161,7 +161,7 @@ impl<'de> MyDeserialize<'de> for f64 {
     const SIZE: Option<usize> = Some(8);
     type Ctx = ();
 
-    fn deserialize((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+    fn deserialize_((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
         Ok(buf.eat_f64_le())
     }
 }

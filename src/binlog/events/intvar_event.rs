@@ -72,7 +72,7 @@ impl<'de> MyDeserialize<'de> for IntvarEvent {
     const SIZE: Option<usize> = Some(9);
     type Ctx = BinlogCtx<'de>;
 
-    fn deserialize(_ctx: Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+    fn deserialize_(_ctx: Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
         Ok(Self {
             subtype: buf.parse_unchecked(())?,
             value: buf.parse_unchecked(())?,

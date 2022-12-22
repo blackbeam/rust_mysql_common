@@ -63,7 +63,7 @@ impl<'de> MyDeserialize<'de> for DeleteRowsEventV1<'de> {
     const SIZE: Option<usize> = RowsEvent::SIZE;
     type Ctx = BinlogCtx<'de>;
 
-    fn deserialize(ctx: Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+    fn deserialize_(ctx: Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
         let ctx = RowsEventCtx {
             event_type: Self::EVENT_TYPE,
             binlog_ctx: ctx,

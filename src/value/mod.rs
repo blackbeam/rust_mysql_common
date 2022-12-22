@@ -150,7 +150,7 @@ impl<'de> MyDeserialize<'de> for ValueDeserializer<TextValue> {
     const SIZE: Option<usize> = None;
     type Ctx = ();
 
-    fn deserialize((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+    fn deserialize_((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
         let value = Value::deserialize_text(buf)?;
         Ok(Self(value, PhantomData))
     }
@@ -160,7 +160,7 @@ impl<'de> MyDeserialize<'de> for ValueDeserializer<BinValue> {
     const SIZE: Option<usize> = None;
     type Ctx = (ColumnType, ColumnFlags);
 
-    fn deserialize((col_type, col_flags): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+    fn deserialize_((col_type, col_flags): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
         let value = Value::deserialize_bin((col_type, col_flags), buf)?;
         Ok(Self(value, PhantomData))
     }

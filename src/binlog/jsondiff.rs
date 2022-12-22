@@ -99,7 +99,7 @@ impl<'de> MyDeserialize<'de> for JsonDiff<'de> {
     const SIZE: Option<usize> = None;
     type Ctx = ();
 
-    fn deserialize((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+    fn deserialize_((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
         let operation: Const<JsonDiffOperation, u8> = buf.parse(())?;
         let path = buf.parse(())?;
         let value = if *operation != JsonDiffOperation::REMOVE {

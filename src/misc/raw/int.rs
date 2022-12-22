@@ -59,7 +59,7 @@ impl<'de, T: IntRepr> MyDeserialize<'de> for RawInt<T> {
     const SIZE: Option<usize> = T::SIZE;
     type Ctx = ();
 
-    fn deserialize((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+    fn deserialize_((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
         T::deserialize(buf).map(Self::new)
     }
 }
@@ -240,7 +240,7 @@ where
     const SIZE: Option<usize> = Some(1);
     type Ctx = ();
 
-    fn deserialize((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+    fn deserialize_((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
         if buf.eat_u8() == N {
             Ok(Self(PhantomData))
         } else {
@@ -275,7 +275,7 @@ where
     const SIZE: Option<usize> = Some(4);
     type Ctx = ();
 
-    fn deserialize((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+    fn deserialize_((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
         if buf.eat_u32_le() == N {
             Ok(Self(PhantomData))
         } else {

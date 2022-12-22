@@ -182,7 +182,7 @@ impl<'de> MyDeserialize<'de> for RowsEvent<'de> {
     const SIZE: Option<usize> = None;
     type Ctx = RowsEventCtx<'de>;
 
-    fn deserialize(ctx: Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+    fn deserialize_(ctx: Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
         let post_header_len = ctx
             .binlog_ctx
             .fde
