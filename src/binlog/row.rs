@@ -29,7 +29,7 @@ use super::{
     value::{BinlogValue, BinlogValueToValueError},
 };
 
-/// Bonlog rows event row value options.
+/// Binlog rows event row value options.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[allow(non_camel_case_types)]
 #[repr(u64)]
@@ -267,7 +267,7 @@ impl fmt::Debug for BinlogRow {
 pub struct BinlogRowToRowError {
     /// Column offset.
     pub column_offset: usize,
-    /// Value convertion error.
+    /// Value conversion error.
     pub error: BinlogValueToValueError,
 }
 
