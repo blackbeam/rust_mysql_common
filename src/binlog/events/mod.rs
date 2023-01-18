@@ -578,7 +578,6 @@ pub enum EventData<'a> {
     HeartbeatEvent,
     IgnorableEvent(Cow<'a, [u8]>),
     RowsQueryEvent(RowsQueryEvent<'a>),
-    /// Not yet implemented.
     GtidEvent(GtidEvent),
     /// Not yet implemented.
     AnonymousGtidEvent(AnonymousGtidEvent),
