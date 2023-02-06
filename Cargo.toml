@@ -89,3 +89,17 @@ default = [
 test = ["derive"]
 derive = ["mysql-common-derive"]
 nightly = ["test"]
+
+[package.metadata.docs.rs]
+rustdoc-args = ["--cfg", "docsrs"]
+no-default-features = true
+features = [
+    "time",
+    "time03",
+    "uuid",
+    "rust_decimal",
+    "chrono",
+    "bigdecimal03",
+    "bigdecimal",
+    "derive",
+]
