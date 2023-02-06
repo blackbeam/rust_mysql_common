@@ -8,45 +8,43 @@
 
 //! This module implements conversion from/to `Value` for `BigInt` and `BigUint` types.
 
+use std::convert::TryFrom;
+
 use num_bigint::{BigInt, BigUint};
 use num_traits::{FromPrimitive, ToPrimitive};
 
-use super::{ConvIr, FromValue, FromValueError, ParseIr, Value};
+use super::{FromValue, FromValueError, ParseIr, Value};
 
-impl ConvIr<BigInt> for ParseIr<BigInt> {
-    fn new(v: Value) -> Result<Self, FromValueError> {
+impl TryFrom<Value> for ParseIr<BigInt> {
+    type Error = FromValueError;
+
+    fn try_from(v: Value) -> Result<Self, Self::Error> {
         match v {
-            Value::Int(x) => Ok(ParseIr {
-                value: Value::Int(x),
-                output: x.into(),
-            }),
-            Value::UInt(x) => Ok(ParseIr {
-                value: Value::UInt(x),
-                output: x.into(),
-            }),
-            Value::Bytes(bytes) => match BigInt::parse_bytes(&*bytes, 10) {
-                Some(x) => Ok(ParseIr {
-                    value: Value::Bytes(bytes),
-                    output: x,
-                }),
-                None => Err(FromValueError(Value::Bytes(bytes))),
+            Value::Int(x) => Ok(ParseIr(x.into(), v)),
+            Value::UInt(x) => Ok(ParseIr(x.into(), v)),
+            Value::Bytes(ref bytes) => match BigInt::parse_bytes(bytes, 10) {
+                Some(x) => Ok(ParseIr(x, v)),
+                None => Err(FromValueError(v)),
             },
-            v => Err(FromValueError(v)),
+            _ => Err(FromValueError(v)),
         }
     }
-    fn commit(self) -> BigInt {
-        self.output
+}
+
+impl From<ParseIr<BigInt>> for BigInt {
+    fn from(value: ParseIr<BigInt>) -> Self {
+        value.commit()
     }
-    fn rollback(self) -> Value {
-        self.value
+}
+
+impl From<ParseIr<BigInt>> for Value {
+    fn from(value: ParseIr<BigInt>) -> Self {
+        value.rollback()
     }
 }
 
 impl FromValue for BigInt {
     type Intermediate = ParseIr<BigInt>;
-    fn from_value(v: Value) -> BigInt {
-        <_>::from_value_opt(v).expect("Could not retrieve BigInt from Value")
-    }
 }
 
 impl From<BigInt> for Value {
@@ -61,46 +59,42 @@ impl From<BigInt> for Value {
     }
 }
 
-impl ConvIr<BigUint> for ParseIr<BigUint> {
-    fn new(v: Value) -> Result<Self, FromValueError> {
+impl TryFrom<Value> for ParseIr<BigUint> {
+    type Error = FromValueError;
+
+    fn try_from(v: Value) -> Result<Self, Self::Error> {
         match v {
             Value::Int(x) => {
-                if let Some(parsed) = <_>::from_i64(x) {
-                    Ok(ParseIr {
-                        value: Value::Int(x),
-                        output: parsed,
-                    })
+                if let Some(x) = BigUint::from_i64(x) {
+                    Ok(ParseIr(x, v))
                 } else {
-                    Err(FromValueError(Value::Int(x)))
+                    Err(FromValueError(v))
                 }
             }
-            Value::UInt(x) => Ok(ParseIr {
-                value: Value::UInt(x),
-                output: x.into(),
-            }),
-            Value::Bytes(bytes) => match BigUint::parse_bytes(&*bytes, 10) {
-                Some(x) => Ok(ParseIr {
-                    value: Value::Bytes(bytes),
-                    output: x,
-                }),
-                None => Err(FromValueError(Value::Bytes(bytes))),
+            Value::UInt(x) => Ok(ParseIr(x.into(), v)),
+            Value::Bytes(ref bytes) => match BigUint::parse_bytes(bytes, 10) {
+                Some(x) => Ok(ParseIr(x, v)),
+                None => Err(FromValueError(v)),
             },
-            v => Err(FromValueError(v)),
+            _ => Err(FromValueError(v)),
         }
     }
-    fn commit(self) -> BigUint {
-        self.output
+}
+
+impl From<ParseIr<BigUint>> for BigUint {
+    fn from(value: ParseIr<BigUint>) -> Self {
+        value.commit()
     }
-    fn rollback(self) -> Value {
-        self.value
+}
+
+impl From<ParseIr<BigUint>> for Value {
+    fn from(value: ParseIr<BigUint>) -> Self {
+        value.rollback()
     }
 }
 
 impl FromValue for BigUint {
     type Intermediate = ParseIr<BigUint>;
-    fn from_value(v: Value) -> BigUint {
-        <_>::from_value_opt(v).expect("Could not retrieve BigUint from Value")
-    }
 }
 
 impl From<BigUint> for Value {

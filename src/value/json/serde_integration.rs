@@ -6,14 +6,76 @@
 // option. All files in the project carrying such notice may not be copied,
 // modified, or distributed except according to those terms.
 
-use super::{Deserialized, DeserializedIr, Serialized};
-use crate::value::{
-    convert::{ConvIr, FromValue, FromValueError},
-    Value,
-};
+use std::convert::TryFrom;
+
 use serde::{de::DeserializeOwned, Serialize};
 use serde_json::{self, Value as Json};
-use std::str::{from_utf8, from_utf8_unchecked};
+
+use super::{Deserialized, Serialized};
+use crate::value::{
+    convert::{FromValue, FromValueError, ParseIr},
+    Value,
+};
+
+impl TryFrom<Value> for ParseIr<Json> {
+    type Error = FromValueError;
+
+    fn try_from(v: Value) -> Result<Self, Self::Error> {
+        match v {
+            Value::Bytes(ref bytes) => match serde_json::from_slice(bytes) {
+                Ok(x) => Ok(ParseIr(x, v)),
+                Err(_) => Err(FromValueError(v)),
+            },
+            v => Err(FromValueError(v)),
+        }
+    }
+}
+
+impl From<ParseIr<Json>> for Json {
+    fn from(value: ParseIr<Json>) -> Self {
+        value.commit()
+    }
+}
+
+impl From<ParseIr<Json>> for Value {
+    fn from(value: ParseIr<Json>) -> Self {
+        value.rollback()
+    }
+}
+
+impl FromValue for Json {
+    type Intermediate = ParseIr<Json>;
+}
+
+impl<T: DeserializeOwned> TryFrom<Value> for ParseIr<Deserialized<T>> {
+    type Error = FromValueError;
+
+    fn try_from(v: Value) -> Result<Self, Self::Error> {
+        match v {
+            Value::Bytes(ref bytes) => match serde_json::from_slice(bytes) {
+                Ok(x) => Ok(ParseIr(Deserialized(x), v)),
+                Err(_) => Err(FromValueError(v)),
+            },
+            v => Err(FromValueError(v)),
+        }
+    }
+}
+
+impl<T: DeserializeOwned> From<ParseIr<Deserialized<T>>> for Deserialized<T> {
+    fn from(value: ParseIr<Deserialized<T>>) -> Self {
+        value.commit()
+    }
+}
+
+impl<T: DeserializeOwned> From<ParseIr<Deserialized<T>>> for Value {
+    fn from(value: ParseIr<Deserialized<T>>) -> Self {
+        value.rollback()
+    }
+}
+
+impl<T: DeserializeOwned> FromValue for Deserialized<T> {
+    type Intermediate = ParseIr<Deserialized<T>>;
+}
 
 impl From<Json> for Value {
     fn from(x: Json) -> Value {
@@ -25,82 +87,4 @@ impl<T: Serialize> From<Serialized<T>> for Value {
     fn from(x: Serialized<T>) -> Value {
         Value::Bytes(serde_json::to_string(&x.0).unwrap().into())
     }
-}
-
-impl<T: DeserializeOwned> ConvIr<Deserialized<T>> for DeserializedIr<T> {
-    fn new(v: Value) -> Result<DeserializedIr<T>, FromValueError> {
-        let (output, bytes) = {
-            let bytes = match v {
-                Value::Bytes(bytes) => match from_utf8(&*bytes) {
-                    Ok(_) => bytes,
-                    Err(_) => return Err(FromValueError(Value::Bytes(bytes))),
-                },
-                v => return Err(FromValueError(v)),
-            };
-            let output = {
-                match serde_json::from_str(unsafe { from_utf8_unchecked(&*bytes) }) {
-                    Ok(output) => output,
-                    Err(_) => return Err(FromValueError(Value::Bytes(bytes))),
-                }
-            };
-            (output, bytes)
-        };
-        Ok(DeserializedIr {
-            bytes,
-            output: Deserialized(output),
-        })
-    }
-
-    fn commit(self) -> Deserialized<T> {
-        self.output
-    }
-
-    fn rollback(self) -> Value {
-        Value::Bytes(self.bytes)
-    }
-}
-
-impl<T: DeserializeOwned> FromValue for Deserialized<T> {
-    type Intermediate = DeserializedIr<T>;
-}
-
-/// Intermediate result of a Value-to-Json conversion.
-#[derive(Debug, Clone, PartialEq)]
-pub struct JsonIr {
-    bytes: Vec<u8>,
-    output: Json,
-}
-
-impl ConvIr<Json> for JsonIr {
-    fn new(v: Value) -> Result<JsonIr, FromValueError> {
-        let (output, bytes) = {
-            let bytes = match v {
-                Value::Bytes(bytes) => match from_utf8(&*bytes) {
-                    Ok(_) => bytes,
-                    Err(_) => return Err(FromValueError(Value::Bytes(bytes))),
-                },
-                v => return Err(FromValueError(v)),
-            };
-            let output = {
-                match serde_json::from_str(unsafe { from_utf8_unchecked(&*bytes) }) {
-                    Ok(output) => output,
-                    Err(_) => return Err(FromValueError(Value::Bytes(bytes))),
-                }
-            };
-            (output, bytes)
-        };
-        Ok(JsonIr { bytes, output })
-    }
-
-    fn commit(self) -> Json {
-        self.output
-    }
-
-    fn rollback(self) -> Value {
-        Value::Bytes(self.bytes)
-    }
-}
-
-impl FromValue for Json {
-    type Intermediate = JsonIr;
 }

@@ -116,9 +116,20 @@ pub use time03;
 #[cfg(feature = "uuid")]
 pub use uuid;
 
+#[cfg(feature = "derive")]
+pub use mysql_common_derive::FromValue;
+
 pub use num_bigint;
 pub use serde;
 pub use serde_json;
+
+pub use value::convert::FromValueError;
+pub use value::Value;
+
+pub mod prelude {
+    pub use crate::row::{convert::FromRow, ColumnIndex};
+    pub use crate::value::convert::{FromValue, ToValue};
+}
 
 /// This macro is a convenient way to pass named parameters to a statement.
 ///

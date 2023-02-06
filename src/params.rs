@@ -38,11 +38,27 @@ impl Error for MissingNamedParameterError {
 }
 
 /// Representations of parameters of a prepared statement.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub enum Params {
     Empty,
     Named(HashMap<Vec<u8>, Value>),
     Positional(Vec<Value>),
+}
+
+impl fmt::Debug for Params {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Empty => write!(f, "Empty"),
+            Self::Named(arg0) => {
+                let arg0 = arg0
+                    .iter()
+                    .map(|(k, v)| (String::from_utf8_lossy(k), v))
+                    .collect::<HashMap<_, _>>();
+                f.debug_tuple("Named").field(&arg0).finish()
+            }
+            Self::Positional(arg0) => f.debug_tuple("Positional").field(arg0).finish(),
+        }
+    }
 }
 
 impl Params {
