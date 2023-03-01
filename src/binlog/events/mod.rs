@@ -183,7 +183,7 @@ impl Event {
         Ok(())
     }
 
-    /// Returns a length of a serialized represenation of this event.
+    /// Returns a length of a serialized representation of this event.
     fn len(&self, _version: BinlogVersion) -> usize {
         let is_fde = self.header.event_type.0 == EventType::FORMAT_DESCRIPTION_EVENT as u8;
         let mut len = S(0);
@@ -440,7 +440,7 @@ impl BinlogEventHeader {
         self.flags.0
     }
 
-    /// Returns the parsed event flags. Unkonwn bits will be truncated.
+    /// Returns the parsed event flags. Unknown bits will be truncated.
     pub fn flags(&self) -> EventFlags {
         self.flags.get()
     }
@@ -578,7 +578,6 @@ pub enum EventData<'a> {
     HeartbeatEvent,
     IgnorableEvent(Cow<'a, [u8]>),
     RowsQueryEvent(RowsQueryEvent<'a>),
-    /// Not yet implemented.
     GtidEvent(GtidEvent),
     /// Not yet implemented.
     AnonymousGtidEvent(AnonymousGtidEvent),

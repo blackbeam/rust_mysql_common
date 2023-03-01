@@ -13,7 +13,7 @@ keywords = ["mysql", "database"]
 categories = ["database"]
 
 # * Invoke `cargo readme > README.md` if relevant!
-version = "0.29.1"
+version = "0.29.2"
 
 edition = "2018"
 exclude = [
@@ -83,7 +83,6 @@ default = [
     "bigdecimal03",
     "rust_decimal",
     "time03",
-    "uuid",
     "frunk",
 ]
 test = ["derive"]
