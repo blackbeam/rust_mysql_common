@@ -1029,18 +1029,32 @@ impl MySerialize for LocalInfilePacket<'_> {
 const MYSQL_OLD_PASSWORD_PLUGIN_NAME: &[u8] = b"mysql_old_password";
 const MYSQL_NATIVE_PASSWORD_PLUGIN_NAME: &[u8] = b"mysql_native_password";
 const CACHING_SHA2_PASSWORD_PLUGIN_NAME: &[u8] = b"caching_sha2_password";
+const MYSQL_CLEAR_PASSWORD_PLUGIN_NAME: &[u8] = b"mysql_clear_password";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum AuthPluginData {
+pub enum AuthPluginData<'a> {
     /// Auth data for the `mysql_old_password` plugin.
     Old([u8; 8]),
     /// Auth data for the `mysql_native_password` plugin.
     Native([u8; 20]),
     /// Auth data for `sha2_password` and `caching_sha2_password` plugins.
     Sha2([u8; 32]),
+    /// Clear password for `mysql_clear_password` plugin.
+    Clear(Cow<'a, [u8]>),
 }
 
-impl std::ops::Deref for AuthPluginData {
+impl<'a> AuthPluginData<'a> {
+    pub fn into_owned(self) -> AuthPluginData<'static> {
+        match self {
+            AuthPluginData::Old(x) => AuthPluginData::Old(x),
+            AuthPluginData::Native(x) => AuthPluginData::Native(x),
+            AuthPluginData::Sha2(x) => AuthPluginData::Sha2(x),
+            AuthPluginData::Clear(x) => AuthPluginData::Clear(Cow::Owned(x.into_owned())),
+        }
+    }
+}
+
+impl std::ops::Deref for AuthPluginData<'_> {
     type Target = [u8];
 
     fn deref(&self) -> &Self::Target {
@@ -1048,17 +1062,22 @@ impl std::ops::Deref for AuthPluginData {
             Self::Sha2(x) => &x[..],
             Self::Native(x) => &x[..],
             Self::Old(x) => &x[..],
+            Self::Clear(x) => &x[..],
         }
     }
 }
 
-impl MySerialize for AuthPluginData {
+impl MySerialize for AuthPluginData<'_> {
     fn serialize(&self, buf: &mut Vec<u8>) {
         match self {
             Self::Sha2(x) => buf.put_slice(&x[..]),
             Self::Native(x) => buf.put_slice(&x[..]),
             Self::Old(x) => {
                 buf.put_slice(&x[..]);
+                buf.push(0);
+            }
+            Self::Clear(x) => {
+                buf.put_slice(x);
                 buf.push(0);
             }
         }
@@ -1070,6 +1089,8 @@ impl MySerialize for AuthPluginData {
 pub enum AuthPlugin<'a> {
     /// Old Password Authentication
     MysqlOldPassword,
+    /// Client-Side Cleartext Pluggable Authentication
+    MysqlClearPassword,
     /// Legacy authentication plugin
     MysqlNativePassword,
     /// Default since MySql v8.0.4
@@ -1104,6 +1125,7 @@ impl<'a> AuthPlugin<'a> {
             CACHING_SHA2_PASSWORD_PLUGIN_NAME => AuthPlugin::CachingSha2Password,
             MYSQL_NATIVE_PASSWORD_PLUGIN_NAME => AuthPlugin::MysqlNativePassword,
             MYSQL_OLD_PASSWORD_PLUGIN_NAME => AuthPlugin::MysqlOldPassword,
+            MYSQL_CLEAR_PASSWORD_PLUGIN_NAME => AuthPlugin::MysqlClearPassword,
             name => AuthPlugin::Other(Cow::Borrowed(name)),
         }
     }
@@ -1113,6 +1135,7 @@ impl<'a> AuthPlugin<'a> {
             AuthPlugin::CachingSha2Password => CACHING_SHA2_PASSWORD_PLUGIN_NAME,
             AuthPlugin::MysqlNativePassword => MYSQL_NATIVE_PASSWORD_PLUGIN_NAME,
             AuthPlugin::MysqlOldPassword => MYSQL_OLD_PASSWORD_PLUGIN_NAME,
+            AuthPlugin::MysqlClearPassword => MYSQL_CLEAR_PASSWORD_PLUGIN_NAME,
             AuthPlugin::Other(name) => &*name,
         }
     }
@@ -1122,6 +1145,7 @@ impl<'a> AuthPlugin<'a> {
             AuthPlugin::CachingSha2Password => AuthPlugin::CachingSha2Password,
             AuthPlugin::MysqlNativePassword => AuthPlugin::MysqlNativePassword,
             AuthPlugin::MysqlOldPassword => AuthPlugin::MysqlOldPassword,
+            AuthPlugin::MysqlClearPassword => AuthPlugin::MysqlClearPassword,
             AuthPlugin::Other(name) => AuthPlugin::Other(Cow::Owned(name.into_owned())),
         }
     }
@@ -1131,6 +1155,7 @@ impl<'a> AuthPlugin<'a> {
             AuthPlugin::CachingSha2Password => AuthPlugin::CachingSha2Password,
             AuthPlugin::MysqlNativePassword => AuthPlugin::MysqlNativePassword,
             AuthPlugin::MysqlOldPassword => AuthPlugin::MysqlOldPassword,
+            AuthPlugin::MysqlClearPassword => AuthPlugin::MysqlClearPassword,
             AuthPlugin::Other(name) => AuthPlugin::Other(Cow::Borrowed(name.as_ref())),
         }
     }
@@ -1140,11 +1165,11 @@ impl<'a> AuthPlugin<'a> {
     /// It'll generate `None` if password is `None` or empty.
     ///
     /// Note, that you should trim terminating null character from the `nonce`.
-    pub fn gen_data(&self, pass: Option<&str>, nonce: &[u8]) -> Option<AuthPluginData> {
+    pub fn gen_data<'b>(&self, pass: Option<&'b str>, nonce: &[u8]) -> Option<AuthPluginData<'b>> {
         use super::scramble::{scramble_323, scramble_native, scramble_sha256};
 
         match pass {
-            Some(pass) => match self {
+            Some(pass) if !pass.is_empty() => match self {
                 AuthPlugin::CachingSha2Password => {
                     scramble_sha256(nonce, pass.as_bytes()).map(AuthPluginData::Sha2)
                 }
@@ -1155,9 +1180,12 @@ impl<'a> AuthPlugin<'a> {
                     scramble_323(nonce.chunks(8).next().unwrap(), pass.as_bytes())
                         .map(AuthPluginData::Old)
                 }
+                AuthPlugin::MysqlClearPassword => {
+                    Some(AuthPluginData::Clear(Cow::Borrowed(pass.as_bytes())))
+                }
                 AuthPlugin::Other(_) => None,
             },
-            None => None,
+            _ => None,
         }
     }
 }
