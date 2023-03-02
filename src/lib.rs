@@ -120,9 +120,9 @@ pub use time03;
 pub use uuid;
 
 #[cfg(feature = "derive")]
-#[doc(inline)]
-#[cfg_attr(docsrs, doc(cfg(feature = "derive")))]
-pub use mysql_common_derive::FromValue;
+#[allow(unused_imports)]
+#[macro_use]
+extern crate mysql_common_derive;
 
 pub use num_bigint;
 pub use serde;
@@ -131,7 +131,20 @@ pub use serde_json;
 pub use value::convert::FromValueError;
 pub use value::Value;
 
+pub use row::convert::FromRowError;
+pub use row::Row;
+
+pub use value::json::{Deserialized, Serialized};
+
 pub mod prelude {
+    #[cfg(feature = "derive")]
+    #[doc(inline)]
+    pub use mysql_common_derive::FromValue;
+
+    #[cfg(feature = "derive")]
+    #[doc(inline)]
+    pub use mysql_common_derive::FromRow;
+
     pub use crate::row::{convert::FromRow, ColumnIndex};
     pub use crate::value::convert::{FromValue, ToValue};
 }

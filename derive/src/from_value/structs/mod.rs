@@ -6,7 +6,7 @@ use quote::{ToTokens, TokenStreamExt};
 
 use super::enums::attrs::container::Crate;
 
-mod attrs;
+pub mod attrs;
 
 pub fn impl_from_value_for_struct(
     attrs: &[syn::Attribute],
@@ -51,6 +51,15 @@ pub fn impl_from_value_for_struct(
         .transpose()?
         .unwrap_or_default();
 
+    if let Some(ref x) = item_attrs.serialize_with {
+        if item_attrs.deserialize_with.is_none() {
+            abort!(crate::Error::AttributeRequired(
+                x.span(),
+                "deserialize_with"
+            ))
+        }
+    }
+
     if generics.params.is_empty() {
         let derived = NewTypeNoGenerics {
             ident,
@@ -93,46 +102,93 @@ impl ToTokens for NewTypeNoGenerics<'_> {
             Span::call_site(),
         );
 
-        let new_tokens = quote::quote!(
-            mod #ir_mod_name {
-                use super::#container_name;
-                use #crat::prelude::FromValue;
-                use #crat::Value;
-                use std::convert::TryFrom;
-
-                #[derive(Debug, Clone, Copy, Eq, PartialEq)]
-                pub struct #ir_name<T: FromValue>(T::Intermediate);
-
-                impl TryFrom<Value> for #ir_name<#field_type> {
-                    type Error = <<#field_type as FromValue>::Intermediate as TryFrom<Value>>::Error;
-
-                    fn try_from(value: Value) -> Result<Self, Self::Error> {
-                        <#field_type as FromValue>::Intermediate::try_from(value).map(Self)
+        let serialize_with = match self.item_attrs.serialize_with {
+            Some(ref x) => {
+                let path = &x.0;
+                Some(quote::quote!(
+                    impl From<#ir_name> for #crat::Value
+                    {
+                        fn from(x: #ir_name) -> Self {
+                            #path(x.0)
+                        }
                     }
-                }
-
-                impl From<#ir_name<#field_type>> for #container_name {
-                    fn from(ir: #ir_name<#field_type>) -> Self {
-                        Self(ir.0.into())
-                    }
-                }
-
-                impl From<#ir_name<#field_type>> for Value
-                where
-                    <#field_type as FromValue>::Intermediate: Into<Value>,
-                {
-                    fn from(ir: #ir_name<#field_type>) -> Self {
-                        ir.0.into()
-                    }
-                }
+                ))
             }
+            None => None,
+        };
 
-            pub use #ir_mod_name::#ir_name;
+        let new_tokens = if let Some(x) = &self.item_attrs.deserialize_with {
+            let path = &x.0;
+            quote::quote!(
+                mod #ir_mod_name {
+                    use super::*;
+                    pub struct #ir_name(pub #field_type);
 
-            impl #crat::prelude::FromValue for #container_name {
-                type Intermediate = #ir_name<#field_type>;
-            }
-        );
+                    impl std::convert::TryFrom<#crat::Value> for #ir_name {
+                        type Error = #crat::FromValueError;
+
+                        fn try_from(v: #crat::Value) -> Result<Self, Self::Error> {
+                            #path(v).map(Self)
+                        }
+                    }
+
+                    impl std::convert::From<#ir_name> for #container_name {
+                        fn from(x: #ir_name) -> #container_name {
+                            #container_name(x.0)
+                        }
+                    }
+
+                    #serialize_with
+                }
+
+                pub use #ir_mod_name::#ir_name;
+
+                impl #crat::prelude::FromValue for #container_name {
+                    type Intermediate = #ir_name;
+                }
+            )
+        } else {
+            quote::quote!(
+                mod #ir_mod_name {
+                    use super::#container_name;
+                    use #crat::prelude::FromValue;
+                    use #crat::Value;
+                    use std::convert::TryFrom;
+
+                    #[derive(Debug, Clone, Copy, Eq, PartialEq)]
+                    pub struct #ir_name<T: FromValue>(T::Intermediate);
+
+                    impl TryFrom<Value> for #ir_name<#field_type> {
+                        type Error = <<#field_type as FromValue>::Intermediate as TryFrom<Value>>::Error;
+
+                        fn try_from(value: Value) -> Result<Self, Self::Error> {
+                            <#field_type as FromValue>::Intermediate::try_from(value).map(Self)
+                        }
+                    }
+
+                    impl From<#ir_name<#field_type>> for #container_name {
+                        fn from(ir: #ir_name<#field_type>) -> Self {
+                            Self(ir.0.into())
+                        }
+                    }
+
+                    impl From<#ir_name<#field_type>> for Value
+                    where
+                        <#field_type as FromValue>::Intermediate: Into<Value>,
+                    {
+                        fn from(ir: #ir_name<#field_type>) -> Self {
+                            ir.0.into()
+                        }
+                    }
+                }
+
+                pub use #ir_mod_name::#ir_name;
+
+                impl #crat::prelude::FromValue for #container_name {
+                    type Intermediate = #ir_name<#field_type>;
+                }
+            )
+        };
 
         tokens.append_all(new_tokens);
     }
@@ -194,57 +250,101 @@ impl ToTokens for NewType<'_> {
         let from_value_bound = quote::quote!(#field_type: #crat::prelude::FromValue,);
         let into_value_bound = quote::quote!(<#field_type as #crat::prelude::FromValue>::Intermediate: Into<#crat::Value>,);
 
-        let new_tokens = quote::quote!(
-            mod #ir_mod_name {
-                use #crat::prelude::FromValue;
-
-                pub struct #ir_name<T: FromValue>(pub T::Intermediate);
+        let serialize_with = match self.item_attrs.serialize_with {
+            Some(ref x) => {
+                let path = &x.0;
+                Some(quote::quote!(
+                    impl<#impl_generics> From<#ir_name<#ident_generics>> for #crat::Value
+                    where
+                        #additional_bounds
+                    {
+                        fn from(x: #ir_name<#ident_generics>) -> Self {
+                            #path(x.0)
+                        }
+                    }
+                ))
             }
+            None => None,
+        };
 
-            pub use #ir_mod_name::#ir_name;
+        let new_tokens = if let Some(x) = &self.item_attrs.deserialize_with {
+            let path = &x.0;
+            quote::quote!(
+                mod #ir_mod_name {
+                    use super::*;
+                    pub struct #ir_name<#ident_generics>(pub #field_type);
 
-            impl<#impl_generics> std::convert::TryFrom<#crat::Value> for #ir_name<#field_type>
-            where
-                #additional_bounds
-                #from_value_bound
-            {
-                type Error = <<#field_type as #crat::prelude::FromValue>::Intermediate as std::convert::TryFrom<#crat::Value>>::Error;
+                    impl<#impl_generics> std::convert::TryFrom<#crat::Value> for #ir_name<#ident_generics>
+                    where #additional_bounds {
+                        type Error = #crat::FromValueError;
 
-                fn try_from(value: #crat::Value) -> Result<Self, Self::Error> {
-                    <#field_type as #crat::prelude::FromValue>::Intermediate::try_from(value).map(Self)
+                        fn try_from(v: #crat::Value) -> Result<Self, Self::Error> {
+                            #path(v)
+                        }
+                    }
+
+                    #serialize_with
                 }
-            }
 
-            impl<#impl_generics> From<#ir_name<#field_type>> for #container_name<#ident_generics>
-            where
-                #additional_bounds
-                #from_value_bound
-            {
-                fn from(ir: #ir_name<#field_type>) -> Self {
-                    Self(ir.0.into())
+                pub use #ir_mod_name::#ir_name;
+
+                impl <#impl_generics> #crat::prelude::FromValue for #container_name <#ident_generics>
+                where #additional_bounds {
+                    type Intermediate = #ir_name<#ident_generics>;
                 }
-            }
+            )
+        } else {
+            quote::quote!(
+                mod #ir_mod_name {
+                    use #crat::prelude::FromValue;
 
-
-            impl<#impl_generics> From<#ir_name<#field_type>> for #crat::Value
-            where
-                #additional_bounds
-                #from_value_bound
-                #into_value_bound
-            {
-                fn from(ir: #ir_name<#field_type>) -> Self {
-                    ir.0.into()
+                    pub struct #ir_name<T: FromValue>(pub T::Intermediate);
                 }
-            }
 
-            impl <#impl_generics> #crat::prelude::FromValue for #container_name <#ident_generics>
-            where
+                pub use #ir_mod_name::#ir_name;
+
+                impl<#impl_generics> std::convert::TryFrom<#crat::Value> for #ir_name<#field_type>
+                where
                     #additional_bounds
-                    #from_value_bound {
-                type Intermediate = #ir_name<#field_type>;
-            }
-        );
+                    #from_value_bound
+                {
+                    type Error = <<#field_type as #crat::prelude::FromValue>::Intermediate as std::convert::TryFrom<#crat::Value>>::Error;
 
+                    fn try_from(value: #crat::Value) -> Result<Self, Self::Error> {
+                        <#field_type as #crat::prelude::FromValue>::Intermediate::try_from(value).map(Self)
+                    }
+                }
+
+                impl<#impl_generics> From<#ir_name<#field_type>> for #container_name<#ident_generics>
+                where
+                    #additional_bounds
+                    #from_value_bound
+                {
+                    fn from(ir: #ir_name<#field_type>) -> Self {
+                        Self(ir.0.into())
+                    }
+                }
+
+
+                impl<#impl_generics> From<#ir_name<#field_type>> for #crat::Value
+                where
+                    #additional_bounds
+                    #from_value_bound
+                    #into_value_bound
+                {
+                    fn from(ir: #ir_name<#field_type>) -> Self {
+                        ir.0.into()
+                    }
+                }
+
+                impl <#impl_generics> #crat::prelude::FromValue for #container_name <#ident_generics>
+                where
+                        #additional_bounds
+                        #from_value_bound {
+                    type Intermediate = #ir_name<#field_type>;
+                }
+            )
+        };
         tokens.append_all(new_tokens);
     }
 }

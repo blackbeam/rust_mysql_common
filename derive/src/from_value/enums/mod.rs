@@ -36,6 +36,13 @@ pub fn impl_from_value_for_enum(
         .transpose()?
         .unwrap_or_default();
 
+    if matches!(
+        repr.0,
+        container::EnumRepr::U128(_) | container::EnumRepr::I128(_)
+    ) {
+        abort!(crate::Error::UnsupportedRepresentation(repr.0.span()));
+    }
+
     let item_attrs = meta
         .iter()
         .find_map(|x| match x {
@@ -45,6 +52,13 @@ pub fn impl_from_value_for_enum(
         .map(|x| <container::Mysql as FromMeta>::from_meta(x))
         .transpose()?
         .unwrap_or_default();
+
+    if *item_attrs.is_integer && *item_attrs.is_string {
+        abort!(crate::Error::ConflictingsAttributes(
+            item_attrs.is_string.span(),
+            item_attrs.is_integer.span()
+        ));
+    }
 
     let mut variants = Vec::new();
 
@@ -76,9 +90,13 @@ pub fn impl_from_value_for_enum(
         let discriminant = variant
             .discriminant
             .as_ref()
-            .map(misc::get_discriminant)
+            .map(|(_, e)| misc::get_discriminant(e))
             .transpose()?
             .unwrap_or(next_discriminant);
+
+        if discriminant >= BigInt::from(u64::MAX) {
+            abort!(crate::Error::UnsupportedRepresentation(variant.span()));
+        }
 
         min_discriminant = cmp::min(min_discriminant, discriminant.clone());
         max_discriminant = cmp::max(max_discriminant, discriminant.clone());
@@ -86,7 +104,10 @@ pub fn impl_from_value_for_enum(
         next_discriminant = &discriminant + BigInt::from(1u8);
 
         if discriminant < BigInt::default() || discriminant > BigInt::from(u16::MAX) {
-            if !item_attrs.allow_invalid_discriminants && !variant_attrs.allow_invalid_discriminants
+            if !item_attrs.allow_invalid_discriminants
+                && !variant_attrs.allow_invalid_discriminants
+                && !*item_attrs.is_integer
+                && !*item_attrs.is_string
             {
                 crate::warn::print_warning(
                     "negative discriminants for MySql enums are discouraging",
@@ -111,8 +132,12 @@ pub fn impl_from_value_for_enum(
         }
     }
 
-    if min_discriminant >= BigInt::default() && max_discriminant <= BigInt::from(u8::MAX) {
-        if !matches!(repr.0, EnumRepr::U8) {
+    if min_discriminant >= BigInt::default()
+        && max_discriminant <= BigInt::from(u8::MAX)
+        && !*item_attrs.is_integer
+        && !*item_attrs.is_string
+    {
+        if !matches!(repr.0, EnumRepr::U8(_)) {
             crate::warn::print_warning(
                 "enum representation is suboptimal. Consider the following annotation:",
                 format!("#[repr(u8)]\nenum {} {{", ident),
@@ -120,8 +145,12 @@ pub fn impl_from_value_for_enum(
             )
             .unwrap();
         }
-    } else if min_discriminant >= BigInt::default() && max_discriminant <= BigInt::from(u16::MAX) {
-        if !matches!(repr.0, EnumRepr::U8) {
+    } else if min_discriminant >= BigInt::default()
+        && max_discriminant <= BigInt::from(u16::MAX)
+        && !*item_attrs.is_integer
+        && !*item_attrs.is_string
+    {
+        if !matches!(repr.0, EnumRepr::U8(_)) {
             crate::warn::print_warning(
                 "enum representation is suboptimal. Consider the following annotation:",
                 format!("#[repr(u16)]\nenum {} {{", ident),
@@ -186,19 +215,64 @@ impl ToTokens for Enum {
                 }
                 let s = syn::LitByteStr::new(name.as_bytes(), Span::call_site());
                 let n = syn::LitInt::new(&discriminant.to_string(), Span::call_site());
-                quote::quote!(
-                    Value::Bytes(ref x) if x == #s => {
-                        Ok(#ir_name(Parsed::Parsed(#container_name::#ident, v)))
-                    }
-                    #crat::Value::Int(#n) | #crat::Value::UInt(#n) => {
-                        Ok(#ir_name(Parsed::Ready(#container_name::#ident)))
-                    }
-                )
+
+                if *item_attrs.is_integer {
+                    quote::quote!(
+                        #crat::Value::Int(#n) | #crat::Value::UInt(#n) => {
+                            Ok(#ir_name(Parsed::Ready(#container_name::#ident)))
+                        }
+                    )
+                } else if *item_attrs.is_string {
+                    quote::quote!(
+                        Value::Bytes(ref x) if x == #s => {
+                            Ok(#ir_name(Parsed::Parsed(#container_name::#ident, v)))
+                        }
+                    )
+                } else {
+                    quote::quote!(
+                        Value::Bytes(ref x) if x == #s => {
+                            Ok(#ir_name(Parsed::Parsed(#container_name::#ident, v)))
+                        }
+                        #crat::Value::Int(#n) | #crat::Value::UInt(#n) => {
+                            Ok(#ir_name(Parsed::Ready(#container_name::#ident)))
+                        }
+                    )
+                }
             },
         );
 
+        let to_value = if *item_attrs.is_string {
+            quote::quote!(
+                impl From<#container_name> for #crat::Value {
+                    fn from(x: #container_name) -> Self {
+                        #crat::Value::Int(x as #repr as i64)
+                    }
+                }
+            )
+        } else if *item_attrs.is_integer {
+            quote::quote!(
+                impl From<#container_name> for #crat::Value {
+                    fn from(x: #container_name) -> Self {
+                        match i64::try_from(x as #repr) {
+                            Ok(x) => #crat::Value::Int(x),
+                            _ => #crat::Value::UInt(x as #repr as u64),
+                        }
+                    }
+                }
+            )
+        } else {
+            quote::quote!(
+                impl From<#container_name> for #crat::Value {
+                    fn from(x: #container_name) -> Self {
+                        #crat::Value::Int(x as #repr as i64)
+                    }
+                }
+            )
+        };
+
         let new_tokens = quote::quote!(
             mod #ir_mod_name {
+                use std::convert::TryFrom;
                 use super::#container_name;
                 use #crat::Value;
                 use #crat::FromValueError;
@@ -258,11 +332,7 @@ impl ToTokens for Enum {
                 type Intermediate = #ir_name;
             }
 
-            impl From<#container_name> for #crat::Value {
-                fn from(x: #container_name) -> Self {
-                    #crat::Value::Int(x as #repr as i64)
-                }
-            }
+            #to_value
         );
 
         tokens.append_all(new_tokens);

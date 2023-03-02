@@ -1,7 +1,7 @@
 use proc_macro2::TokenStream;
 
-mod enums;
-mod structs;
+pub mod enums;
+pub mod structs;
 
 pub fn impl_from_value(input: &syn::DeriveInput) -> crate::Result<TokenStream> {
     match input.data {
@@ -26,5 +26,5 @@ fn impl_from_value_for_union(
     _generics: &syn::Generics,
     _data_union: &syn::DataUnion,
 ) -> crate::Result<TokenStream> {
-    Err(crate::Error::UnionNotImplemented)
+    Err(crate::Error::UnionsNotSupported(_ident.span()))
 }

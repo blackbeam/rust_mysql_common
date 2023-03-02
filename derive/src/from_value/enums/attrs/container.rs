@@ -1,4 +1,4 @@
-use darling::FromMeta;
+use darling::{util::SpannedValue, FromMeta};
 use proc_macro2::{Span, TokenStream};
 use proc_macro_crate::{crate_name, FoundCrate};
 use quote::TokenStreamExt;
@@ -11,6 +11,10 @@ pub struct Mysql {
     pub rename_all: Option<RenameAll>,
     #[darling(default)]
     pub allow_invalid_discriminants: bool,
+    #[darling(default)]
+    pub is_integer: SpannedValue<bool>,
+    #[darling(default)]
+    pub is_string: SpannedValue<bool>,
 }
 
 pub enum Crate {
@@ -26,13 +30,13 @@ impl Default for Crate {
         let mysql_async = crate_name("mysql_async");
         let mysql_common = crate_name("mysql_common");
         match (mysql, mysql_async, mysql_common) {
-            (Ok(_), Ok(_), _) | (_, Ok(_), Ok(_)) | (Ok(_), _, Ok(_)) => Self::Multiple,
-            (Ok(FoundCrate::Itself), Err(_), Err(_))
-            | (Err(_), Ok(FoundCrate::Itself), Err(_))
-            | (Err(_), Err(_), Ok(FoundCrate::Itself)) => Self::Itself,
-            (Ok(FoundCrate::Name(x)), Err(_), Err(_))
-            | (Err(_), Ok(FoundCrate::Name(x)), Err(_))
-            | (Err(_), Err(_), Ok(FoundCrate::Name(x))) => Self::Found(x),
+            (Ok(_), Ok(_), _) => Self::Multiple,
+            (Ok(FoundCrate::Name(x)), _, _)
+            | (_, Ok(FoundCrate::Name(x)), _)
+            | (_, _, Ok(FoundCrate::Name(x))) => Self::Found(x),
+            (Ok(FoundCrate::Itself), _, _)
+            | (_, Ok(FoundCrate::Itself), _)
+            | (_, _, Ok(FoundCrate::Itself)) => Self::Itself,
             (Err(_), Err(_), Err(_)) => Self::NotFound,
         }
     }
@@ -90,18 +94,18 @@ impl FromMeta for RenameAll {
 pub struct Repr(pub EnumRepr);
 
 pub enum EnumRepr {
-    I8,
-    U8,
-    I16,
-    U16,
-    I32,
-    U32,
-    I64,
-    U64,
-    I128,
-    U128,
-    ISize,
-    USize,
+    I8(Span),
+    U8(Span),
+    I16(Span),
+    U16(Span),
+    I32(Span),
+    U32(Span),
+    I64(Span),
+    U64(Span),
+    I128(Span),
+    U128(Span),
+    ISize(Span),
+    USize(Span),
 }
 
 impl EnumRepr {
@@ -118,37 +122,54 @@ impl EnumRepr {
     const ISIZE_IDENT: &str = "isize";
     const USIZE_IDENT: &str = "usize";
 
-    const fn ident(&self) -> &'static str {
+    pub fn span(&self) -> Span {
         match self {
-            EnumRepr::I8 => "i8",
-            EnumRepr::U8 => "u8",
-            EnumRepr::I16 => "i16",
-            EnumRepr::U16 => "u16",
-            EnumRepr::I32 => "i32",
-            EnumRepr::U32 => "u32",
-            EnumRepr::I64 => "i64",
-            EnumRepr::U64 => "u64",
-            EnumRepr::I128 => "i128",
-            EnumRepr::U128 => "u128",
-            EnumRepr::ISize => "isize",
-            EnumRepr::USize => "usize",
+            EnumRepr::I8(x) => *x,
+            EnumRepr::U8(x) => *x,
+            EnumRepr::I16(x) => *x,
+            EnumRepr::U16(x) => *x,
+            EnumRepr::I32(x) => *x,
+            EnumRepr::U32(x) => *x,
+            EnumRepr::I64(x) => *x,
+            EnumRepr::U64(x) => *x,
+            EnumRepr::I128(x) => *x,
+            EnumRepr::U128(x) => *x,
+            EnumRepr::ISize(x) => *x,
+            EnumRepr::USize(x) => *x,
         }
     }
 
-    fn from_ident(ident: &str) -> Option<Self> {
-        match ident {
-            Self::I8_IDENT => Some(EnumRepr::I8),
-            Self::U8_IDENT => Some(EnumRepr::U8),
-            Self::I16_IDENT => Some(EnumRepr::I16),
-            Self::U16_IDENT => Some(EnumRepr::U16),
-            Self::I32_IDENT => Some(EnumRepr::I32),
-            Self::U32_IDENT => Some(EnumRepr::U32),
-            Self::I64_IDENT => Some(EnumRepr::I64),
-            Self::U64_IDENT => Some(EnumRepr::U64),
-            Self::I128_IDENT => Some(EnumRepr::I128),
-            Self::U128_IDENT => Some(EnumRepr::U128),
-            Self::ISIZE_IDENT => Some(EnumRepr::ISize),
-            Self::USIZE_IDENT => Some(EnumRepr::USize),
+    const fn ident(&self) -> &'static str {
+        match self {
+            EnumRepr::I8(_) => "i8",
+            EnumRepr::U8(_) => "u8",
+            EnumRepr::I16(_) => "i16",
+            EnumRepr::U16(_) => "u16",
+            EnumRepr::I32(_) => "i32",
+            EnumRepr::U32(_) => "u32",
+            EnumRepr::I64(_) => "i64",
+            EnumRepr::U64(_) => "u64",
+            EnumRepr::I128(_) => "i128",
+            EnumRepr::U128(_) => "u128",
+            EnumRepr::ISize(_) => "isize",
+            EnumRepr::USize(_) => "usize",
+        }
+    }
+
+    fn from_ident(ident: &syn::Ident) -> Option<Self> {
+        match ident.to_string().as_str() {
+            Self::I8_IDENT => Some(EnumRepr::I8(ident.span())),
+            Self::U8_IDENT => Some(EnumRepr::U8(ident.span())),
+            Self::I16_IDENT => Some(EnumRepr::I16(ident.span())),
+            Self::U16_IDENT => Some(EnumRepr::U16(ident.span())),
+            Self::I32_IDENT => Some(EnumRepr::I32(ident.span())),
+            Self::U32_IDENT => Some(EnumRepr::U32(ident.span())),
+            Self::I64_IDENT => Some(EnumRepr::I64(ident.span())),
+            Self::U64_IDENT => Some(EnumRepr::U64(ident.span())),
+            Self::I128_IDENT => Some(EnumRepr::I128(ident.span())),
+            Self::U128_IDENT => Some(EnumRepr::U128(ident.span())),
+            Self::ISIZE_IDENT => Some(EnumRepr::ISize(ident.span())),
+            Self::USIZE_IDENT => Some(EnumRepr::USize(ident.span())),
             _ => None,
         }
     }
@@ -162,7 +183,7 @@ impl quote::ToTokens for EnumRepr {
 
 impl Default for EnumRepr {
     fn default() -> Self {
-        Self::ISize
+        Self::ISize(Span::call_site())
     }
 }
 
@@ -175,7 +196,7 @@ impl FromMeta for EnumRepr {
                 _ => None,
             })
             .filter_map(|x| x.get_ident())
-            .find_map(|x| Self::from_ident(&x.to_string()))
+            .find_map(|x| Self::from_ident(x))
             .unwrap_or_default())
     }
 }

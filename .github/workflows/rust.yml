@@ -21,7 +21,7 @@ jobs:
         run: cargo fmt -- --check
       - name: Features subsets
         run: |
-          ruby -e "fs=['bigdecimal', 'bigdecimal03', 'chrono', 'rust_decimal', 'time', 'time03', 'uuid', 'frunk', 'derive']; \
+          ruby -e "fs=['bigdecimal', 'bigdecimal03', 'chrono', 'rust_decimal', 'time', 'time03', 'frunk', 'derive']; \
             (1..fs.length).each do |n| puts fs.combination(n).to_a.map {|x| x.join(\" \")}.join(\"\n\"); end" \
           | while read -r line; do \
             echo "$line" && cargo check --quiet --tests --no-default-features --features "flate2/zlib test $line"; \

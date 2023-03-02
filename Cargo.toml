@@ -56,7 +56,7 @@ time = { version = "0.2", default-features = false, features = [
 time03 = { package = "time", version = "0.3", default-features = false, features = [
     "parsing",
 ], optional = true }
-uuid = { version = "1", optional = true }
+uuid = { version = "1" }
 saturating = "0.1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -78,13 +78,7 @@ subprocess = "0.2.4"
 debug = true
 
 [features]
-default = [
-    "flate2/zlib",
-    "bigdecimal03",
-    "rust_decimal",
-    "time03",
-    "frunk",
-]
+default = ["flate2/zlib", "bigdecimal03", "rust_decimal", "time03", "frunk"]
 test = ["derive"]
 derive = ["mysql-common-derive"]
 nightly = ["test"]
@@ -95,7 +89,6 @@ no-default-features = true
 features = [
     "time",
     "time03",
-    "uuid",
     "rust_decimal",
     "chrono",
     "bigdecimal03",
