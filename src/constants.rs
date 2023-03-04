@@ -634,6 +634,7 @@ impl ColumnType {
                 | MYSQL_TYPE_NEWDECIMAL
                 | MYSQL_TYPE_FLOAT
                 | MYSQL_TYPE_DOUBLE
+                | MYSQL_TYPE_YEAR // Yes, this is also included
         )
     }
 

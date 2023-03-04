@@ -234,7 +234,11 @@ impl ColumnType {
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::HashMap, io};
+    use std::{
+        collections::HashMap,
+        io,
+        iter::{once, repeat},
+    };
 
     use super::{
         consts::{EventFlags, EventType},
@@ -244,6 +248,7 @@ mod tests {
 
     use crate::{
         binlog::{events::RowsEventData, value::BinlogValue},
+        constants::ColumnFlags,
         proto::MySerialize,
         value::Value,
     };
@@ -675,7 +680,40 @@ mod tests {
                                 let table_map_event =
                                     binlog_file.reader().get_tme(rows_event.table_id()).unwrap();
                                 for row in rows_event.rows(table_map_event) {
-                                    row.unwrap();
+                                    let _row = row.unwrap();
+                                    if file_path.file_name().unwrap() == "mariadb-bin.000001" {
+                                        // should parse metadata for `binlog_row_metadata=FULL`
+                                        let after = _row.1.as_ref().unwrap();
+                                        let columns = after.columns_ref();
+
+                                        for col in columns.iter() {
+                                            assert_eq!(col.schema_ref(), b"toddy_test");
+                                            assert_eq!(col.table_ref(), b"outbox");
+                                            assert_eq!(col.org_table_ref(), b"outbox");
+                                        }
+
+                                        for (col, col_name) in columns.iter().zip([
+                                            "id",
+                                            "topic",
+                                            "event_type",
+                                            "event",
+                                            "created",
+                                        ]) {
+                                            assert_eq!(col.name_ref(), col_name.as_bytes());
+                                        }
+
+                                        for (col, f) in columns.iter().zip(
+                                            once(ColumnFlags::PRI_KEY_FLAG)
+                                                .chain(repeat(ColumnFlags::empty())),
+                                        ) {
+                                            assert_eq!(col.flags(), f);
+                                        }
+
+                                        for (col, charset) in columns.iter().zip([0, 45, 45, 63, 0])
+                                        {
+                                            assert_eq!(col.character_set(), charset);
+                                        }
+                                    }
                                 }
 
                                 event

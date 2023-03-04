@@ -49,7 +49,7 @@ impl<'a, T: BytesRepr> RawBytes<'a, T> {
     }
 
     /// Returns the _effective_ bytes (see `RawBytes::len`).
-    pub fn as_bytes(&'a self) -> &'a [u8] {
+    pub fn as_bytes(&self) -> &[u8] {
         &self.0.as_ref()[..self.len()]
     }
 
