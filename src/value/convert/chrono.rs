@@ -10,17 +10,29 @@
 
 #![cfg(feature = "chrono")]
 
+use std::convert::TryFrom;
+
 use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 
 use crate::value::Value;
 
 use super::{
-    parse_mysql_datetime_string, parse_mysql_time_string, ConvIr, FromValueError, ParseIr,
+    parse_mysql_datetime_string, parse_mysql_time_string, FromValue, FromValueError, ParseIr,
 };
 
-impl ConvIr<NaiveDateTime> for ParseIr<NaiveDateTime> {
-    fn new(value: Value) -> Result<ParseIr<NaiveDateTime>, FromValueError> {
-        let result = match value {
+impl FromValue for NaiveDate {
+    type Intermediate = ParseIr<NaiveDate>;
+}
+
+impl FromValue for NaiveDateTime {
+    type Intermediate = ParseIr<NaiveDateTime>;
+}
+
+impl TryFrom<Value> for ParseIr<NaiveDateTime> {
+    type Error = FromValueError;
+
+    fn try_from(v: Value) -> Result<Self, Self::Error> {
+        match v {
             Value::Date(year, month, day, hour, minute, second, micros) => {
                 let date = NaiveDate::from_ymd_opt(year.into(), month.into(), day.into());
                 let time = NaiveTime::from_hms_micro_opt(
@@ -29,48 +41,37 @@ impl ConvIr<NaiveDateTime> for ParseIr<NaiveDateTime> {
                     second.into(),
                     micros,
                 );
-                Ok((
-                    date,
-                    time,
-                    Value::Date(year, month, day, hour, minute, second, micros),
-                ))
+                if let Some((date, time)) = date.zip(time) {
+                    Ok(ParseIr(NaiveDateTime::new(date, time), v))
+                } else {
+                    Err(FromValueError(v))
+                }
             }
-            Value::Bytes(bytes) => {
+            Value::Bytes(ref bytes) => {
                 if let Some((year, month, day, hour, minute, second, micros)) =
-                    parse_mysql_datetime_string(&*bytes)
+                    parse_mysql_datetime_string(bytes)
                 {
                     let date = NaiveDate::from_ymd_opt(year as i32, month, day);
                     let time = NaiveTime::from_hms_micro_opt(hour, minute, second, micros);
-                    Ok((date, time, Value::Bytes(bytes)))
+                    if let Some((date, time)) = date.zip(time) {
+                        Ok(ParseIr(NaiveDateTime::new(date, time), v))
+                    } else {
+                        Err(FromValueError(v))
+                    }
                 } else {
-                    Err(FromValueError(Value::Bytes(bytes)))
+                    Err(FromValueError(v))
                 }
             }
-            v => Err(FromValueError(v)),
-        };
-
-        let (date, time, value) = result?;
-
-        if let (Some(date), Some(time)) = (date, time) {
-            Ok(ParseIr {
-                value,
-                output: NaiveDateTime::new(date, time),
-            })
-        } else {
-            Err(FromValueError(value))
+            _ => Err(FromValueError(v)),
         }
-    }
-    fn commit(self) -> NaiveDateTime {
-        self.output
-    }
-    fn rollback(self) -> Value {
-        self.value
     }
 }
 
-impl ConvIr<NaiveDate> for ParseIr<NaiveDate> {
-    fn new(value: Value) -> Result<ParseIr<NaiveDate>, FromValueError> {
-        let result = match value {
+impl TryFrom<Value> for ParseIr<NaiveDate> {
+    type Error = FromValueError;
+
+    fn try_from(v: Value) -> Result<Self, Self::Error> {
+        let result = match v {
             Value::Date(year, month, day, hour, minute, second, micros) => {
                 let date = NaiveDate::from_ymd_opt(year.into(), month.into(), day.into());
                 Ok((
@@ -92,29 +93,25 @@ impl ConvIr<NaiveDate> for ParseIr<NaiveDate> {
         let (date, value) = result?;
 
         if let Some(output) = date {
-            Ok(ParseIr { value, output })
+            Ok(ParseIr(output, value))
         } else {
             Err(FromValueError(value))
         }
     }
-    fn commit(self) -> NaiveDate {
-        self.output
-    }
-    fn rollback(self) -> Value {
-        self.value
-    }
 }
 
-impl ConvIr<NaiveTime> for ParseIr<NaiveTime> {
-    fn new(value: Value) -> Result<ParseIr<NaiveTime>, FromValueError> {
-        let result = match value {
+impl TryFrom<Value> for ParseIr<NaiveTime> {
+    type Error = FromValueError;
+
+    fn try_from(v: Value) -> Result<Self, Self::Error> {
+        let result = match v {
             Value::Time(false, 0, h, m, s, u) => {
                 let time = NaiveTime::from_hms_micro_opt(h.into(), m.into(), s.into(), u);
                 Ok((time, Value::Time(false, 0, h, m, s, u)))
             }
             Value::Bytes(bytes) => {
                 if let Some((false, h, m, s, u)) = parse_mysql_time_string(&*bytes) {
-                    let time = NaiveTime::from_hms_micro_opt(h, m, s, u);
+                    let time = NaiveTime::from_hms_micro_opt(h, m as u32, s as u32, u);
                     Ok((time, Value::Bytes(bytes)))
                 } else {
                     Err(FromValueError(Value::Bytes(bytes)))
@@ -126,65 +123,46 @@ impl ConvIr<NaiveTime> for ParseIr<NaiveTime> {
         let (time, value) = result?;
 
         if let Some(output) = time {
-            Ok(ParseIr { value, output })
+            Ok(ParseIr(output, value))
         } else {
             Err(FromValueError(value))
         }
     }
-    fn commit(self) -> NaiveTime {
-        self.output
-    }
-    fn rollback(self) -> Value {
-        self.value
+}
+
+impl From<ParseIr<NaiveDateTime>> for NaiveDateTime {
+    fn from(value: ParseIr<NaiveDateTime>) -> Self {
+        value.commit()
     }
 }
 
-#[cfg(feature = "chrono")]
-impl ConvIr<chrono::Duration> for ParseIr<chrono::Duration> {
-    fn new(v: Value) -> Result<ParseIr<chrono::Duration>, FromValueError> {
-        match v {
-            Value::Time(is_neg, days, hours, minutes, seconds, microseconds) => {
-                let duration = chrono::Duration::days(days.into())
-                    + chrono::Duration::hours(hours.into())
-                    + chrono::Duration::minutes(minutes.into())
-                    + chrono::Duration::seconds(seconds.into())
-                    + chrono::Duration::microseconds(microseconds.into());
-                Ok(ParseIr {
-                    value: Value::Time(is_neg, days, hours, minutes, seconds, microseconds),
-                    output: if is_neg { -duration } else { duration },
-                })
-            }
-            Value::Bytes(val_bytes) => {
-                // Parse the string using `parse_mysql_time_string`
-                // instead of `parse_mysql_time_string_with_time` here,
-                // as it may contain an hour value that's outside of a day's normal 0-23 hour range.
-                let duration = match parse_mysql_time_string(&*val_bytes) {
-                    Some((is_neg, hours, minutes, seconds, microseconds)) => {
-                        let duration = chrono::Duration::hours(hours.into())
-                            + chrono::Duration::minutes(minutes.into())
-                            + chrono::Duration::seconds(seconds.into())
-                            + chrono::Duration::microseconds(microseconds.into());
-                        if is_neg {
-                            -duration
-                        } else {
-                            duration
-                        }
-                    }
-                    _ => return Err(FromValueError(Value::Bytes(val_bytes))),
-                };
-                Ok(ParseIr {
-                    value: Value::Bytes(val_bytes),
-                    output: duration,
-                })
-            }
-            v => Err(FromValueError(v)),
-        }
+impl From<ParseIr<NaiveDate>> for NaiveDate {
+    fn from(value: ParseIr<NaiveDate>) -> Self {
+        value.commit()
     }
-    fn commit(self) -> chrono::Duration {
-        self.output
+}
+
+impl From<ParseIr<NaiveTime>> for NaiveTime {
+    fn from(value: ParseIr<NaiveTime>) -> Self {
+        value.commit()
     }
-    fn rollback(self) -> Value {
-        self.value
+}
+
+impl From<ParseIr<NaiveDateTime>> for Value {
+    fn from(value: ParseIr<NaiveDateTime>) -> Self {
+        value.rollback()
+    }
+}
+
+impl From<ParseIr<NaiveDate>> for Value {
+    fn from(value: ParseIr<NaiveDate>) -> Self {
+        value.rollback()
+    }
+}
+
+impl From<ParseIr<NaiveTime>> for Value {
+    fn from(value: ParseIr<NaiveTime>) -> Self {
+        value.rollback()
     }
 }
 
@@ -226,8 +204,3 @@ impl From<NaiveTime> for Value {
         )
     }
 }
-
-impl_from_value!(NaiveDateTime, ParseIr<NaiveDateTime>);
-impl_from_value!(NaiveDate, ParseIr<NaiveDate>);
-impl_from_value!(NaiveTime, ParseIr<NaiveTime>);
-impl_from_value!(chrono::Duration, ParseIr<chrono::Duration>);

@@ -8,7 +8,10 @@
 
 use crate::{
     row::Row,
-    value::convert::{ConvIr, FromValue, FromValueError},
+    value::{
+        convert::{FromValue, FromValueError},
+        Value,
+    },
 };
 
 use std::{any::type_name, error::Error, fmt};
@@ -112,7 +115,7 @@ macro_rules! take_or_place {
                 match $t::get_intermediate(value) {
                     Ok(ir) => ir,
                     Err(FromValueError(value)) => {
-                        $($row.place($idx, $ir.rollback());)*
+                        $($row.place($idx, Into::<Value>::into($ir));)*
                         $row.place($index, value);
                         return Err(FromRowError($row));
                     },
@@ -142,7 +145,7 @@ where
 {
     fn from_row_opt(mut row: Row) -> Result<T, FromRowError> {
         if row.len() == 1 {
-            Ok(take_or_place!(row, 0, T).commit())
+            Ok(take_or_place!(row, 0, T).into())
         } else {
             Err(FromRowError(row))
         }
@@ -153,8 +156,12 @@ impl<T1> FromRow for (T1,)
 where
     T1: FromValue,
 {
-    fn from_row_opt(row: Row) -> Result<(T1,), FromRowError> {
-        T1::from_row_opt(row).map(|t| (t,))
+    fn from_row_opt(mut row: Row) -> Result<(T1,), FromRowError> {
+        if row.len() == 1 {
+            Ok((take_or_place!(row, 0, T1).into(),))
+        } else {
+            Err(FromRowError(row))
+        }
     }
 }
 
@@ -162,6 +169,7 @@ impl<T1, T2> FromRow for (T1, T2)
 where
     T1: FromValue,
     T2: FromValue,
+    T1::Intermediate: Into<Value>,
 {
     fn from_row_opt(mut row: Row) -> Result<(T1, T2), FromRowError> {
         if row.len() != 2 {
@@ -169,7 +177,7 @@ where
         }
         let ir1 = take_or_place!(row, 0, T1);
         let ir2 = take_or_place!(row, 1, T2, [0, ir1]);
-        Ok((ir1.commit(), ir2.commit()))
+        Ok((Into::<T1>::into(ir1), Into::<T2>::into(ir2)))
     }
 }
 
@@ -178,6 +186,8 @@ where
     T1: FromValue,
     T2: FromValue,
     T3: FromValue,
+    T1::Intermediate: Into<Value>,
+    T2::Intermediate: Into<Value>,
 {
     fn from_row_opt(mut row: Row) -> Result<(T1, T2, T3), FromRowError> {
         if row.len() != 3 {
@@ -186,7 +196,7 @@ where
         let ir1 = take_or_place!(row, 0, T1);
         let ir2 = take_or_place!(row, 1, T2, [0, ir1]);
         let ir3 = take_or_place!(row, 2, T3, [0, ir1], [1, ir2]);
-        Ok((ir1.commit(), ir2.commit(), ir3.commit()))
+        Ok((Into::<T1>::into(ir1), Into::<T2>::into(ir2), ir3.into()))
     }
 }
 
@@ -196,6 +206,9 @@ where
     T2: FromValue,
     T3: FromValue,
     T4: FromValue,
+    T1::Intermediate: Into<Value>,
+    T2::Intermediate: Into<Value>,
+    T3::Intermediate: Into<Value>,
 {
     fn from_row_opt(mut row: Row) -> Result<(T1, T2, T3, T4), FromRowError> {
         if row.len() != 4 {
@@ -205,7 +218,12 @@ where
         let ir2 = take_or_place!(row, 1, T2, [0, ir1]);
         let ir3 = take_or_place!(row, 2, T3, [0, ir1], [1, ir2]);
         let ir4 = take_or_place!(row, 3, T4, [0, ir1], [1, ir2], [2, ir3]);
-        Ok((ir1.commit(), ir2.commit(), ir3.commit(), ir4.commit()))
+        Ok((
+            Into::<T1>::into(ir1),
+            Into::<T2>::into(ir2),
+            Into::<T3>::into(ir3),
+            ir4.into(),
+        ))
     }
 }
 
@@ -216,6 +234,10 @@ where
     T3: FromValue,
     T4: FromValue,
     T5: FromValue,
+    T1::Intermediate: Into<Value>,
+    T2::Intermediate: Into<Value>,
+    T3::Intermediate: Into<Value>,
+    T4::Intermediate: Into<Value>,
 {
     fn from_row_opt(mut row: Row) -> Result<(T1, T2, T3, T4, T5), FromRowError> {
         if row.len() != 5 {
@@ -227,11 +249,11 @@ where
         let ir4 = take_or_place!(row, 3, T4, [0, ir1], [1, ir2], [2, ir3]);
         let ir5 = take_or_place!(row, 4, T5, [0, ir1], [1, ir2], [2, ir3], [3, ir4]);
         Ok((
-            ir1.commit(),
-            ir2.commit(),
-            ir3.commit(),
-            ir4.commit(),
-            ir5.commit(),
+            Into::<T1>::into(ir1),
+            Into::<T2>::into(ir2),
+            Into::<T3>::into(ir3),
+            Into::<T4>::into(ir4),
+            ir5.into(),
         ))
     }
 }
@@ -244,6 +266,11 @@ where
     T4: FromValue,
     T5: FromValue,
     T6: FromValue,
+    T1::Intermediate: Into<Value>,
+    T2::Intermediate: Into<Value>,
+    T3::Intermediate: Into<Value>,
+    T4::Intermediate: Into<Value>,
+    T5::Intermediate: Into<Value>,
 {
     fn from_row_opt(mut row: Row) -> Result<(T1, T2, T3, T4, T5, T6), FromRowError> {
         if row.len() != 6 {
@@ -256,12 +283,12 @@ where
         let ir5 = take_or_place!(row, 4, T5, [0, ir1], [1, ir2], [2, ir3], [3, ir4]);
         let ir6 = take_or_place!(row, 5, T6, [0, ir1], [1, ir2], [2, ir3], [3, ir4], [4, ir5]);
         Ok((
-            ir1.commit(),
-            ir2.commit(),
-            ir3.commit(),
-            ir4.commit(),
-            ir5.commit(),
-            ir6.commit(),
+            Into::<T1>::into(ir1),
+            Into::<T2>::into(ir2),
+            Into::<T3>::into(ir3),
+            Into::<T4>::into(ir4),
+            Into::<T5>::into(ir5),
+            ir6.into(),
         ))
     }
 }
@@ -275,6 +302,12 @@ where
     T5: FromValue,
     T6: FromValue,
     T7: FromValue,
+    T1::Intermediate: Into<Value>,
+    T2::Intermediate: Into<Value>,
+    T3::Intermediate: Into<Value>,
+    T4::Intermediate: Into<Value>,
+    T5::Intermediate: Into<Value>,
+    T6::Intermediate: Into<Value>,
 {
     fn from_row_opt(mut row: Row) -> Result<(T1, T2, T3, T4, T5, T6, T7), FromRowError> {
         if row.len() != 7 {
@@ -298,13 +331,13 @@ where
             [5, ir6]
         );
         Ok((
-            ir1.commit(),
-            ir2.commit(),
-            ir3.commit(),
-            ir4.commit(),
-            ir5.commit(),
-            ir6.commit(),
-            ir7.commit(),
+            Into::<T1>::into(ir1),
+            Into::<T2>::into(ir2),
+            Into::<T3>::into(ir3),
+            Into::<T4>::into(ir4),
+            Into::<T5>::into(ir5),
+            Into::<T6>::into(ir6),
+            ir7.into(),
         ))
     }
 }
@@ -319,6 +352,13 @@ where
     T6: FromValue,
     T7: FromValue,
     T8: FromValue,
+    T1::Intermediate: Into<Value>,
+    T2::Intermediate: Into<Value>,
+    T3::Intermediate: Into<Value>,
+    T4::Intermediate: Into<Value>,
+    T5::Intermediate: Into<Value>,
+    T6::Intermediate: Into<Value>,
+    T7::Intermediate: Into<Value>,
 {
     fn from_row_opt(mut row: Row) -> Result<(T1, T2, T3, T4, T5, T6, T7, T8), FromRowError> {
         if row.len() != 8 {
@@ -354,14 +394,14 @@ where
             [6, ir7]
         );
         Ok((
-            ir1.commit(),
-            ir2.commit(),
-            ir3.commit(),
-            ir4.commit(),
-            ir5.commit(),
-            ir6.commit(),
-            ir7.commit(),
-            ir8.commit(),
+            Into::<T1>::into(ir1),
+            Into::<T2>::into(ir2),
+            Into::<T3>::into(ir3),
+            Into::<T4>::into(ir4),
+            Into::<T5>::into(ir5),
+            Into::<T6>::into(ir6),
+            Into::<T7>::into(ir7),
+            ir8.into(),
         ))
     }
 }
@@ -377,6 +417,14 @@ where
     T7: FromValue,
     T8: FromValue,
     T9: FromValue,
+    T1::Intermediate: Into<Value>,
+    T2::Intermediate: Into<Value>,
+    T3::Intermediate: Into<Value>,
+    T4::Intermediate: Into<Value>,
+    T5::Intermediate: Into<Value>,
+    T6::Intermediate: Into<Value>,
+    T7::Intermediate: Into<Value>,
+    T8::Intermediate: Into<Value>,
 {
     fn from_row_opt(mut row: Row) -> Result<(T1, T2, T3, T4, T5, T6, T7, T8, T9), FromRowError> {
         if row.len() != 9 {
@@ -425,15 +473,15 @@ where
             [7, ir8]
         );
         Ok((
-            ir1.commit(),
-            ir2.commit(),
-            ir3.commit(),
-            ir4.commit(),
-            ir5.commit(),
-            ir6.commit(),
-            ir7.commit(),
-            ir8.commit(),
-            ir9.commit(),
+            Into::<T1>::into(ir1),
+            Into::<T2>::into(ir2),
+            Into::<T3>::into(ir3),
+            Into::<T4>::into(ir4),
+            Into::<T5>::into(ir5),
+            Into::<T6>::into(ir6),
+            Into::<T7>::into(ir7),
+            Into::<T8>::into(ir8),
+            ir9.into(),
         ))
     }
 }
@@ -450,6 +498,15 @@ where
     T8: FromValue,
     T9: FromValue,
     T10: FromValue,
+    T1::Intermediate: Into<Value>,
+    T2::Intermediate: Into<Value>,
+    T3::Intermediate: Into<Value>,
+    T4::Intermediate: Into<Value>,
+    T5::Intermediate: Into<Value>,
+    T6::Intermediate: Into<Value>,
+    T7::Intermediate: Into<Value>,
+    T8::Intermediate: Into<Value>,
+    T9::Intermediate: Into<Value>,
 {
     fn from_row_opt(
         mut row: Row,
@@ -514,16 +571,16 @@ where
             [8, ir9]
         );
         Ok((
-            ir1.commit(),
-            ir2.commit(),
-            ir3.commit(),
-            ir4.commit(),
-            ir5.commit(),
-            ir6.commit(),
-            ir7.commit(),
-            ir8.commit(),
-            ir9.commit(),
-            ir10.commit(),
+            Into::<T1>::into(ir1),
+            Into::<T2>::into(ir2),
+            Into::<T3>::into(ir3),
+            Into::<T4>::into(ir4),
+            Into::<T5>::into(ir5),
+            Into::<T6>::into(ir6),
+            Into::<T7>::into(ir7),
+            Into::<T8>::into(ir8),
+            Into::<T9>::into(ir9),
+            ir10.into(),
         ))
     }
 }
@@ -542,6 +599,16 @@ where
     T9: FromValue,
     T10: FromValue,
     T11: FromValue,
+    T1::Intermediate: Into<Value>,
+    T2::Intermediate: Into<Value>,
+    T3::Intermediate: Into<Value>,
+    T4::Intermediate: Into<Value>,
+    T5::Intermediate: Into<Value>,
+    T6::Intermediate: Into<Value>,
+    T7::Intermediate: Into<Value>,
+    T8::Intermediate: Into<Value>,
+    T9::Intermediate: Into<Value>,
+    T10::Intermediate: Into<Value>,
 {
     fn from_row_opt(
         mut row: Row,
@@ -621,17 +688,17 @@ where
             [9, ir10]
         );
         Ok((
-            ir1.commit(),
-            ir2.commit(),
-            ir3.commit(),
-            ir4.commit(),
-            ir5.commit(),
-            ir6.commit(),
-            ir7.commit(),
-            ir8.commit(),
-            ir9.commit(),
-            ir10.commit(),
-            ir11.commit(),
+            Into::<T1>::into(ir1),
+            Into::<T2>::into(ir2),
+            Into::<T3>::into(ir3),
+            Into::<T4>::into(ir4),
+            Into::<T5>::into(ir5),
+            Into::<T6>::into(ir6),
+            Into::<T7>::into(ir7),
+            Into::<T8>::into(ir8),
+            Into::<T9>::into(ir9),
+            Into::<T10>::into(ir10),
+            ir11.into(),
         ))
     }
 }
@@ -651,6 +718,17 @@ where
     T10: FromValue,
     T11: FromValue,
     T12: FromValue,
+    T1::Intermediate: Into<Value>,
+    T2::Intermediate: Into<Value>,
+    T3::Intermediate: Into<Value>,
+    T4::Intermediate: Into<Value>,
+    T5::Intermediate: Into<Value>,
+    T6::Intermediate: Into<Value>,
+    T7::Intermediate: Into<Value>,
+    T8::Intermediate: Into<Value>,
+    T9::Intermediate: Into<Value>,
+    T10::Intermediate: Into<Value>,
+    T11::Intermediate: Into<Value>,
 {
     fn from_row_opt(
         mut row: Row,
@@ -746,18 +824,18 @@ where
             [10, ir11]
         );
         Ok((
-            ir1.commit(),
-            ir2.commit(),
-            ir3.commit(),
-            ir4.commit(),
-            ir5.commit(),
-            ir6.commit(),
-            ir7.commit(),
-            ir8.commit(),
-            ir9.commit(),
-            ir10.commit(),
-            ir11.commit(),
-            ir12.commit(),
+            Into::<T1>::into(ir1),
+            Into::<T2>::into(ir2),
+            Into::<T3>::into(ir3),
+            Into::<T4>::into(ir4),
+            Into::<T5>::into(ir5),
+            Into::<T6>::into(ir6),
+            Into::<T7>::into(ir7),
+            Into::<T8>::into(ir8),
+            Into::<T9>::into(ir9),
+            Into::<T10>::into(ir10),
+            Into::<T11>::into(ir11),
+            ir12.into(),
         ))
     }
 }

@@ -6,7 +6,8 @@
 // option. All files in the project carrying such notice may not be copied,
 // modified, or distributed except according to those terms.
 
-#[cfg(not(feature = "rustc_serialize"))]
+use serde::{Deserialize, Serialize};
+
 pub mod serde_integration;
 
 /// Use it to pass `T: Serialize` as JSON to a prepared statement.
@@ -20,7 +21,8 @@ pub mod serde_integration;
 /// conn.prep_exec("INSERT INTO table (json_column) VALUES (?)",
 ///                (Serialized(SerializableStruct),));
 /// ```
-#[derive(Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Debug, Hash)]
+#[derive(Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Debug, Hash, Serialize)]
+#[serde(transparent)]
 pub struct Serialized<T>(pub T);
 
 /// Use it to parse `T: Deserialize` from `Value`.
@@ -34,11 +36,6 @@ pub struct Serialized<T>(pub T);
 /// let (Deserialized(val),): (Deserialized<DeserializableStruct>,)
 ///     = from_row(row_with_single_json_column);
 /// ```
-#[derive(Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Debug, Hash)]
+#[derive(Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Debug, Hash, Deserialize)]
+#[serde(transparent)]
 pub struct Deserialized<T>(pub T);
-
-#[derive(Clone, PartialEq, PartialOrd, Eq, Ord, Debug, Hash)]
-pub struct DeserializedIr<T> {
-    bytes: Vec<u8>,
-    output: Deserialized<T>,
-}

@@ -12,47 +12,46 @@
 
 use rust_decimal::Decimal;
 
-use std::str::{from_utf8, FromStr};
+use std::{
+    convert::TryFrom,
+    str::{from_utf8, FromStr},
+};
 
-use super::{ConvIr, FromValue, FromValueError, ParseIr, Value};
+use super::{FromValue, FromValueError, ParseIr, Value};
 
-impl ConvIr<Decimal> for ParseIr<Decimal> {
-    fn new(v: Value) -> Result<Self, FromValueError> {
+impl TryFrom<Value> for ParseIr<Decimal> {
+    type Error = FromValueError;
+
+    fn try_from(v: Value) -> Result<Self, Self::Error> {
         match v {
-            Value::Int(x) => Ok(ParseIr {
-                value: Value::Int(x),
-                output: x.into(),
-            }),
-            Value::UInt(x) => Ok(ParseIr {
-                value: Value::UInt(x),
-                output: x.into(),
-            }),
-            Value::Bytes(bytes) => match from_utf8(&*bytes) {
+            Value::Int(x) => Ok(ParseIr(x.into(), v)),
+            Value::UInt(x) => Ok(ParseIr(x.into(), v)),
+            Value::Bytes(ref bytes) => match from_utf8(bytes) {
                 Ok(x) => match Decimal::from_str(x) {
-                    Ok(x) => Ok(ParseIr {
-                        value: Value::Bytes(bytes),
-                        output: x,
-                    }),
-                    Err(_) => Err(FromValueError(Value::Bytes(bytes))),
+                    Ok(x) => Ok(ParseIr(x, v)),
+                    Err(_) => Err(FromValueError(v)),
                 },
-                Err(_) => Err(FromValueError(Value::Bytes(bytes))),
+                Err(_) => Err(FromValueError(v)),
             },
-            v => Err(FromValueError(v)),
+            _ => Err(FromValueError(v)),
         }
     }
-    fn commit(self) -> Decimal {
-        self.output
+}
+
+impl From<ParseIr<Decimal>> for Decimal {
+    fn from(value: ParseIr<Decimal>) -> Self {
+        value.commit()
     }
-    fn rollback(self) -> Value {
-        self.value
+}
+
+impl From<ParseIr<Decimal>> for Value {
+    fn from(value: ParseIr<Decimal>) -> Self {
+        value.rollback()
     }
 }
 
 impl FromValue for Decimal {
     type Intermediate = ParseIr<Decimal>;
-    fn from_value(v: Value) -> Decimal {
-        <_>::from_value_opt(v).expect("Could not retrieve Decimal from Value")
-    }
 }
 
 impl From<Decimal> for Value {

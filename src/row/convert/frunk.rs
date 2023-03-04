@@ -17,7 +17,7 @@ use super::{FromRow, FromRowError};
 use crate::{
     row::{new_row_raw, Row},
     value::{
-        convert::{ConvIr, FromValue, FromValueError},
+        convert::{FromValue, FromValueError},
         Value,
     },
 };
@@ -37,6 +37,7 @@ impl FromRow for HNil {
 impl<H, T> FromRow for HCons<H, T>
 where
     H: FromValue,
+    H::Intermediate: Into<Value>,
     T: FromRow + sealed::HlistFromRow,
     T: HList,
 {
@@ -76,6 +77,7 @@ mod sealed {
     impl<H, T> HlistFromRow for HCons<H, T>
     where
         H: FromValue,
+        H::Intermediate: Into<Value>,
         T: HlistFromRow,
         T: HList,
     {
@@ -102,12 +104,12 @@ mod sealed {
             let tail = match T::hlist_from_row_opt(values) {
                 Ok(t) => t,
                 Err(mut values) => {
-                    values.insert(0, Some(ir.rollback()));
+                    values.insert(0, Some(Into::<Value>::into(ir)));
                     return Err(values);
                 }
             };
 
-            Ok(h_cons(ir.commit(), tail))
+            Ok(h_cons(Into::<H>::into(ir), tail))
         }
     }
 }

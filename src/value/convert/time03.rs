@@ -23,7 +23,7 @@ use time03::{
 
 use crate::value::Value;
 
-use super::{parse_mysql_time_string, ConvIr, FromValueError, ParseIr};
+use super::{parse_mysql_time_string, FromValue, FromValueError, ParseIr};
 
 lazy_static::lazy_static! {
     static ref FULL_YEAR: modifier::Year = {
@@ -121,73 +121,114 @@ lazy_static::lazy_static! {
     };
 }
 
-impl ConvIr<PrimitiveDateTime> for ParseIr<PrimitiveDateTime> {
-    fn new(value: Value) -> Result<ParseIr<PrimitiveDateTime>, FromValueError> {
-        match value {
-            Value::Date(year, month, day, hour, minute, second, micros) => Ok(ParseIr {
-                value: Value::Date(year, month, day, hour, minute, second, micros),
-                output: match create_primitive_date_time(
-                    year, month, day, hour, minute, second, micros,
-                ) {
-                    Some(datetime) => datetime,
-                    None => return Err(FromValueError(value)),
-                },
-            }),
-            Value::Bytes(bytes) => match parse_mysql_datetime_string_with_time(&*bytes) {
-                Ok(output) => Ok(ParseIr {
-                    value: Value::Bytes(bytes),
-                    output,
-                }),
-                Err(_) => Err(FromValueError(Value::Bytes(bytes))),
+impl TryFrom<Value> for ParseIr<PrimitiveDateTime> {
+    type Error = FromValueError;
+
+    fn try_from(v: Value) -> Result<Self, Self::Error> {
+        match v {
+            Value::Date(year, month, day, hour, minute, second, micros) => {
+                match create_primitive_date_time(year, month, day, hour, minute, second, micros) {
+                    Some(x) => Ok(ParseIr(x, v)),
+                    None => Err(FromValueError(v)),
+                }
+            }
+            Value::Bytes(ref bytes) => match parse_mysql_datetime_string_with_time(bytes) {
+                Ok(x) => Ok(ParseIr(x, v)),
+                Err(_) => Err(FromValueError(v)),
             },
             v => Err(FromValueError(v)),
         }
     }
-    fn commit(self) -> PrimitiveDateTime {
-        self.output
-    }
-    fn rollback(self) -> Value {
-        self.value
+}
+
+impl From<ParseIr<PrimitiveDateTime>> for PrimitiveDateTime {
+    fn from(value: ParseIr<PrimitiveDateTime>) -> Self {
+        value.commit()
     }
 }
 
-/// Converts a MySQL `DATE` value to a `time03::Date`.
-impl ConvIr<Date> for ParseIr<Date> {
-    fn new(value: Value) -> Result<ParseIr<Date>, FromValueError> {
-        match value {
-            Value::Date(year, month, day, hour, minute, second, micros) => {
+impl From<ParseIr<PrimitiveDateTime>> for Value {
+    fn from(value: ParseIr<PrimitiveDateTime>) -> Self {
+        value.rollback()
+    }
+}
+
+impl FromValue for PrimitiveDateTime {
+    type Intermediate = ParseIr<PrimitiveDateTime>;
+}
+
+impl TryFrom<Value> for ParseIr<Date> {
+    type Error = FromValueError;
+
+    fn try_from(v: Value) -> Result<Self, Self::Error> {
+        match v {
+            Value::Date(year, month, day, _, _, _, _) => {
                 let mon = match time03::Month::try_from(month) {
                     Ok(month) => month,
-                    Err(_) => return Err(FromValueError(value)),
+                    Err(_) => return Err(FromValueError(v)),
                 };
-                Ok(ParseIr {
-                    value: Value::Date(year, month, day, hour, minute, second, micros),
-                    output: match Date::from_calendar_date(year as i32, mon, day) {
-                        Ok(date) => date,
-                        Err(_) => return Err(FromValueError(value)),
-                    },
-                })
+                match Date::from_calendar_date(year as i32, mon, day) {
+                    Ok(x) => Ok(ParseIr(x, v)),
+                    Err(_) => Err(FromValueError(v)),
+                }
             }
-            Value::Bytes(bytes) => {
+            Value::Bytes(ref bytes) => {
                 match from_utf8(&*bytes)
                     .ok()
                     .and_then(|s| Date::parse(s, &*DATE_FORMAT).ok())
                 {
-                    Some(output) => Ok(ParseIr {
-                        value: Value::Bytes(bytes),
-                        output,
-                    }),
-                    None => Err(FromValueError(Value::Bytes(bytes))),
+                    Some(x) => Ok(ParseIr(x, v)),
+                    None => Err(FromValueError(v)),
                 }
             }
             v => Err(FromValueError(v)),
         }
     }
-    fn commit(self) -> Date {
-        self.output
+}
+
+impl From<ParseIr<Date>> for Date {
+    fn from(value: ParseIr<Date>) -> Self {
+        value.commit()
     }
-    fn rollback(self) -> Value {
-        self.value
+}
+
+impl From<ParseIr<Date>> for Value {
+    fn from(value: ParseIr<Date>) -> Self {
+        value.rollback()
+    }
+}
+
+impl FromValue for Date {
+    type Intermediate = ParseIr<Date>;
+}
+
+impl TryFrom<Value> for ParseIr<Time> {
+    type Error = FromValueError;
+
+    fn try_from(v: Value) -> Result<Self, Self::Error> {
+        match v {
+            Value::Time(false, 0, h, m, s, u) => match Time::from_hms_micro(h, m, s, u) {
+                Ok(x) => Ok(ParseIr(x, v)),
+                Err(_) => Err(FromValueError(v)),
+            },
+            Value::Bytes(ref bytes) => match parse_mysql_time_string_with_time(bytes) {
+                Ok(x) => Ok(ParseIr(x, v)),
+                Err(_) => Err(FromValueError(v)),
+            },
+            v => Err(FromValueError(v)),
+        }
+    }
+}
+
+impl From<ParseIr<Time>> for Time {
+    fn from(value: ParseIr<Time>) -> Self {
+        value.commit()
+    }
+}
+
+impl From<ParseIr<Time>> for Value {
+    fn from(value: ParseIr<Time>) -> Self {
+        value.rollback()
     }
 }
 
@@ -195,32 +236,8 @@ impl ConvIr<Date> for ParseIr<Date> {
 /// Note: `time03::Time` only allows for time values in the 00:00:00 - 23:59:59 range.
 /// If you're expecting `TIME` values in MySQL's `TIME` value range of -838:59:59 - 838:59:59,
 /// use time03::Duration instead.
-impl ConvIr<Time> for ParseIr<Time> {
-    fn new(value: Value) -> Result<ParseIr<Time>, FromValueError> {
-        match value {
-            Value::Time(false, 0, h, m, s, u) => Ok(ParseIr {
-                value: Value::Time(false, 0, h, m, s, u),
-                output: match Time::from_hms_micro(h, m, s, u) {
-                    Ok(time) => time,
-                    Err(_) => return Err(FromValueError(value)),
-                },
-            }),
-            Value::Bytes(bytes) => match parse_mysql_time_string_with_time(&*bytes) {
-                Ok(output) => Ok(ParseIr {
-                    value: Value::Bytes(bytes),
-                    output,
-                }),
-                Err(_) => Err(FromValueError(Value::Bytes(bytes))),
-            },
-            v => Err(FromValueError(v)),
-        }
-    }
-    fn commit(self) -> Time {
-        self.output
-    }
-    fn rollback(self) -> Value {
-        self.value
-    }
+impl FromValue for Time {
+    type Intermediate = ParseIr<Time>;
 }
 
 fn create_primitive_date_time(
@@ -270,8 +287,10 @@ fn parse_mysql_time_string_with_time(bytes: &[u8]) -> Result<Time, Parse> {
         })
 }
 
-impl ConvIr<time03::Duration> for ParseIr<time03::Duration> {
-    fn new(v: Value) -> Result<ParseIr<time03::Duration>, FromValueError> {
+impl TryFrom<Value> for ParseIr<time03::Duration> {
+    type Error = FromValueError;
+
+    fn try_from(v: Value) -> Result<Self, Self::Error> {
         match v {
             Value::Time(is_neg, days, hours, minutes, seconds, microseconds) => {
                 let duration = time03::Duration::days(days.into())
@@ -279,16 +298,13 @@ impl ConvIr<time03::Duration> for ParseIr<time03::Duration> {
                     + time03::Duration::minutes(minutes.into())
                     + time03::Duration::seconds(seconds.into())
                     + time03::Duration::microseconds(microseconds.into());
-                Ok(ParseIr {
-                    value: Value::Time(is_neg, days, hours, minutes, seconds, microseconds),
-                    output: if is_neg { -duration } else { duration },
-                })
+                Ok(ParseIr(if is_neg { -duration } else { duration }, v))
             }
-            Value::Bytes(val_bytes) => {
+            Value::Bytes(ref val_bytes) => {
                 // Parse the string using `parse_mysql_time_string`
                 // instead of `parse_mysql_time_string_with_time` here,
                 // as it may contain an hour value that's outside of a day's normal 0-23 hour range.
-                let duration = match parse_mysql_time_string(&*val_bytes) {
+                let duration = match parse_mysql_time_string(val_bytes) {
                     Some((is_neg, hours, minutes, seconds, microseconds)) => {
                         let duration = time03::Duration::hours(hours.into())
                             + time03::Duration::minutes(minutes.into())
@@ -300,22 +316,29 @@ impl ConvIr<time03::Duration> for ParseIr<time03::Duration> {
                             duration
                         }
                     }
-                    _ => return Err(FromValueError(Value::Bytes(val_bytes))),
+                    _ => return Err(FromValueError(v)),
                 };
-                Ok(ParseIr {
-                    value: Value::Bytes(val_bytes),
-                    output: duration,
-                })
+                Ok(ParseIr(duration, v))
             }
-            v => Err(FromValueError(v)),
+            _ => Err(FromValueError(v)),
         }
     }
-    fn commit(self) -> time03::Duration {
-        self.output
+}
+
+impl From<ParseIr<time03::Duration>> for time03::Duration {
+    fn from(value: ParseIr<time03::Duration>) -> Self {
+        value.commit()
     }
-    fn rollback(self) -> Value {
-        self.value
+}
+
+impl From<ParseIr<time03::Duration>> for Value {
+    fn from(value: ParseIr<time03::Duration>) -> Self {
+        value.rollback()
     }
+}
+
+impl FromValue for time03::Duration {
+    type Intermediate = ParseIr<time03::Duration>;
 }
 
 impl From<PrimitiveDateTime> for Value {
@@ -372,11 +395,6 @@ impl From<time03::Duration> for Value {
         Value::Time(negative, days, hours, minutes, seconds, microseconds)
     }
 }
-
-impl_from_value!(PrimitiveDateTime, ParseIr<PrimitiveDateTime>);
-impl_from_value!(Date, ParseIr<Date>);
-impl_from_value!(Time, ParseIr<Time>);
-impl_from_value!(time03::Duration, ParseIr<time03::Duration>);
 
 #[cfg(test)]
 mod tests {

@@ -10,54 +10,50 @@
 
 #![cfg(feature = "bigdecimal03")]
 
-use std::convert::TryInto;
+use std::convert::{TryFrom, TryInto};
 
 use bigdecimal03::BigDecimal;
 
-use super::{ConvIr, FromValue, FromValueError, ParseIr, Value};
+use super::{FromValue, FromValueError, ParseIr, Value};
 
-impl ConvIr<BigDecimal> for ParseIr<BigDecimal> {
-    fn new(v: Value) -> Result<Self, FromValueError> {
+impl TryFrom<Value> for ParseIr<BigDecimal> {
+    type Error = FromValueError;
+
+    fn try_from(v: Value) -> Result<Self, Self::Error> {
         match v {
-            Value::Int(x) => Ok(ParseIr {
-                value: Value::Int(x),
-                output: x.into(),
-            }),
-            Value::UInt(x) => Ok(ParseIr {
-                value: Value::UInt(x),
-                output: x.into(),
-            }),
-            Value::Float(x) => Ok(ParseIr {
-                value: Value::Float(x),
-                output: x.try_into().map_err(|_| FromValueError(Value::Float(x)))?,
-            }),
-            Value::Double(x) => Ok(ParseIr {
-                value: Value::Double(x),
-                output: x.try_into().map_err(|_| FromValueError(Value::Double(x)))?,
-            }),
-            Value::Bytes(bytes) => match BigDecimal::parse_bytes(&*bytes, 10) {
-                Some(x) => Ok(ParseIr {
-                    value: Value::Bytes(bytes),
-                    output: x,
-                }),
-                None => Err(FromValueError(Value::Bytes(bytes))),
+            Value::Int(x) => Ok(ParseIr(x.into(), v)),
+            Value::UInt(x) => Ok(ParseIr(x.into(), v)),
+            Value::Float(x) => match x.try_into() {
+                Ok(x) => Ok(ParseIr(x, v)),
+                Err(_) => Err(FromValueError(v)),
             },
-            v => Err(FromValueError(v)),
+            Value::Double(x) => match x.try_into() {
+                Ok(x) => Ok(ParseIr(x, v)),
+                Err(_) => Err(FromValueError(v)),
+            },
+            Value::Bytes(ref bytes) => match BigDecimal::parse_bytes(bytes, 10) {
+                Some(x) => Ok(ParseIr(x, v)),
+                None => Err(FromValueError(v)),
+            },
+            _ => Err(FromValueError(v)),
         }
     }
-    fn commit(self) -> BigDecimal {
-        self.output
+}
+
+impl From<ParseIr<BigDecimal>> for BigDecimal {
+    fn from(value: ParseIr<BigDecimal>) -> Self {
+        value.commit()
     }
-    fn rollback(self) -> Value {
-        self.value
+}
+
+impl From<ParseIr<BigDecimal>> for Value {
+    fn from(value: ParseIr<BigDecimal>) -> Self {
+        value.rollback()
     }
 }
 
 impl FromValue for BigDecimal {
     type Intermediate = ParseIr<BigDecimal>;
-    fn from_value(v: Value) -> BigDecimal {
-        <_>::from_value_opt(v).expect("Could not retrieve BigDecimal from Value")
-    }
 }
 
 impl From<BigDecimal> for Value {

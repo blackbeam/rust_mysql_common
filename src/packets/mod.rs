@@ -1969,7 +1969,7 @@ impl StmtPacket {
 
 /// Null-bitmap.
 ///
-/// http://dev.mysql.com/doc/internals/en/null-bitmap.html
+/// <http://dev.mysql.com/doc/internals/en/null-bitmap.html>
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct NullBitmap<T, U: AsRef<[u8]> = Vec<u8>>(U, PhantomData<T>);
 

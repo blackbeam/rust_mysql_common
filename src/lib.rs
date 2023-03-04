@@ -76,9 +76,12 @@
 //! | `time03`       | Enables `time` v0.3.x types support         | 🟢      |
 //! | `uuid`         | Enables `Uuid` type support                 | 🟢      |
 //! | `frunk`        | Enables `FromRow` for `frunk::Hlist!` types | 🟢      |
+//1 | `derive`       | Enables [`FromValue` derive macro][2]       | 🔴      |
 //!
 //! [1]: https://dev.mysql.com/doc/internals/en/binary-protocol-value.html
-#![cfg_attr(feature = "nightly", feature(test, const_fn))]
+//! [2]: https://docs.rs/mysql-common-derive
+#![cfg_attr(feature = "nightly", feature(test))]
+#![cfg_attr(docsrs, feature(doc_cfg))]
 
 // The `test` feature is required to compile tests.
 // It'll bind test binaries to an official C++ impl of MySql decimals (see build.rs)
@@ -116,9 +119,35 @@ pub use time03;
 #[cfg(feature = "uuid")]
 pub use uuid;
 
+#[cfg(feature = "derive")]
+#[allow(unused_imports)]
+#[macro_use]
+extern crate mysql_common_derive;
+
 pub use num_bigint;
 pub use serde;
 pub use serde_json;
+
+pub use value::convert::FromValueError;
+pub use value::Value;
+
+pub use row::convert::FromRowError;
+pub use row::Row;
+
+pub use value::json::{Deserialized, Serialized};
+
+pub mod prelude {
+    #[cfg(feature = "derive")]
+    #[doc(inline)]
+    pub use mysql_common_derive::FromValue;
+
+    #[cfg(feature = "derive")]
+    #[doc(inline)]
+    pub use mysql_common_derive::FromRow;
+
+    pub use crate::row::{convert::FromRow, ColumnIndex};
+    pub use crate::value::convert::{FromValue, ToValue};
+}
 
 /// This macro is a convenient way to pass named parameters to a statement.
 ///
