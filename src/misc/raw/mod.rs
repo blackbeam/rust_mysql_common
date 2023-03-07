@@ -127,6 +127,22 @@ pub enum Either<T, U> {
     Right(U),
 }
 
+impl<T, U> Either<T, U> {
+    pub fn unwrap_left(self) -> T {
+        match self {
+            Either::Left(x) => x,
+            Either::Right(_) => panic!("called unwrap_left on Either::Right value"),
+        }
+    }
+
+    pub fn unwrap_right(self) -> U {
+        match self {
+            Either::Right(x) => x,
+            Either::Left(_) => panic!("called unwrap_right on Either::Left value"),
+        }
+    }
+}
+
 impl<'de, T, U> MyDeserialize<'de> for Either<T, U>
 where
     T: MyDeserialize<'de>,

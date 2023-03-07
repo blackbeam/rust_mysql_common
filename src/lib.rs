@@ -66,17 +66,17 @@
 //!
 //! ### Crate features
 //!
-//! | Feature        | Description                                 | Default |
-//! | -------------- | ------------------------------------------- | ------- |
-//! | `bigdecimal`   | Enables `bigdecimal` v0.2.x types support   | 🔴      |
-//! | `bigdecimal03` | Enables `bigdecimal` v0.3.x types support   | 🟢      |
-//! | `chrono`       | Enables `chrono` types support              | 🔴      |
-//! | `rust_decimal` | Enables `rust_decimal` types support        | 🟢      |
-//! | `time`         | Enables `time` v0.2.x types support         | 🔴      |
-//! | `time03`       | Enables `time` v0.3.x types support         | 🟢      |
-//! | `uuid`         | Enables `Uuid` type support                 | 🟢      |
-//! | `frunk`        | Enables `FromRow` for `frunk::Hlist!` types | 🟢      |
-//1 | `derive`       | Enables [`FromValue` derive macro][2]       | 🔴      |
+//! | Feature        | Description                                          | Default |
+//! | -------------- | ---------------------------------------------------- | ------- |
+//! | `bigdecimal`   | Enables `bigdecimal` v0.2.x types support            | 🔴      |
+//! | `bigdecimal03` | Enables `bigdecimal` v0.3.x types support            | 🟢      |
+//! | `chrono`       | Enables `chrono` types support                       | 🔴      |
+//! | `rust_decimal` | Enables `rust_decimal` types support                 | 🟢      |
+//! | `time`         | Enables `time` v0.2.x types support                  | 🔴      |
+//! | `time03`       | Enables `time` v0.3.x types support                  | 🟢      |
+//! | `uuid`         | Enables `Uuid` type support                          | 🟢      |
+//! | `frunk`        | Enables `FromRow` for `frunk::Hlist!` types          | 🟢      |
+//! | `derive`       | Enables [`FromValue` and `FromRow` derive macros][2] | 🔴      |
 //!
 //! [1]: https://dev.mysql.com/doc/internals/en/binary-protocol-value.html
 //! [2]: https://docs.rs/mysql-common-derive

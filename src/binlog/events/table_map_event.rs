@@ -6,7 +6,7 @@
 // option. All files in the project carrying such notice may not be copied,
 // modified, or distributed except according to those terms.
 
-use std::{borrow::Cow, cmp::min, convert::TryFrom, io};
+use std::{borrow::Cow, cmp::min, convert::TryFrom, io, iter::Peekable};
 
 use bitvec::prelude::*;
 use byteorder::ReadBytesExt;
@@ -22,7 +22,7 @@ use crate::{
     misc::raw::{
         bytes::{BareBytes, EofBytes, LenEnc, U8Bytes},
         int::*,
-        RawBytes, RawConst, RawSeq, Skip,
+        Either, RawBytes, RawConst, RawSeq, Skip,
     },
     proto::{MyDeserialize, MySerialize},
 };
@@ -353,18 +353,32 @@ impl<'a> DefaultCharset<'a> {
     /// See [`ColumnType::is_character_type`] and [`ColumnType::is_enum_or_set_type`].
     ///
     /// The order is same to the order of [`TableMapEvent::get_column_type`] field.
-    pub fn iter_non_default(&'a self) -> impl Iterator<Item = io::Result<NonDefaultCharset>> + 'a {
-        let mut error = false;
-        let mut buf = ParseBuf(self.non_default.as_bytes());
-        std::iter::from_fn(move || {
-            if buf.is_empty() || error {
-                None
-            } else {
-                let result = buf.parse_unchecked(());
-                error = result.is_err();
-                Some(result)
+    pub fn iter_non_default(&self) -> IterNonDefault<'_> {
+        IterNonDefault {
+            buf: ParseBuf(self.non_default.as_bytes()),
+        }
+    }
+}
+
+pub struct IterNonDefault<'a> {
+    buf: ParseBuf<'a>,
+}
+
+impl<'a> Iterator for IterNonDefault<'a> {
+    type Item = io::Result<NonDefaultCharset>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.buf.is_empty() {
+            None
+        } else {
+            match self.buf.parse(()) {
+                Ok(x) => Some(Ok(x)),
+                Err(e) => {
+                    self.buf = ParseBuf(b"");
+                    Some(Err(e))
+                }
             }
-        })
+        }
     }
 }
 
@@ -452,18 +466,32 @@ impl<'a> ColumnCharsets<'a> {
     /// See [`ColumnType::is_character_type`] and [`ColumnType::is_enum_or_set_type`].
     ///
     /// The order is same to the order of [`TableMapEvent::get_column_type`] field.
-    pub fn iter_charsets(&'a self) -> impl Iterator<Item = io::Result<u16>> + 'a {
-        let mut error = false;
-        let mut buf = ParseBuf(self.charsets.as_bytes());
-        std::iter::from_fn(move || {
-            if buf.is_empty() || error {
-                None
-            } else {
-                let result = buf.parse::<RawInt<LenEnc>>(());
-                error = result.is_err();
-                Some(result.map(|x| x.0 as u16))
+    pub fn iter_charsets(&'a self) -> IterCharsets<'a> {
+        IterCharsets {
+            buf: ParseBuf(self.charsets.as_bytes()),
+        }
+    }
+}
+
+pub struct IterCharsets<'a> {
+    buf: ParseBuf<'a>,
+}
+
+impl<'a> Iterator for IterCharsets<'a> {
+    type Item = io::Result<u16>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.buf.is_empty() {
+            None
+        } else {
+            match self.buf.parse::<RawInt<LenEnc>>(()) {
+                Ok(x) => Some(Ok(x.0 as u16)),
+                Err(e) => {
+                    self.buf = ParseBuf(b"");
+                    Some(Err(e))
+                }
             }
-        })
+        }
     }
 }
 
@@ -507,6 +535,13 @@ impl<'a> ColumnName<'a> {
     pub fn name(&'a self) -> Cow<'a, str> {
         self.name.as_str()
     }
+
+    /// Converts self to a 'static version.
+    pub fn into_owned(self) -> ColumnName<'static> {
+        ColumnName {
+            name: self.name.into_owned(),
+        }
+    }
 }
 
 impl<'de> MyDeserialize<'de> for ColumnName<'de> {
@@ -534,18 +569,32 @@ pub struct ColumnNames<'a> {
 
 impl<'a> ColumnNames<'a> {
     /// Returns an iterator over names of columns.
-    pub fn iter_names(&'a self) -> impl Iterator<Item = io::Result<ColumnName<'a>>> + 'a {
-        let mut error = false;
-        let mut buf = ParseBuf(self.names.as_bytes());
-        std::iter::from_fn(move || {
-            if buf.is_empty() || error {
-                None
-            } else {
-                let result = buf.parse(());
-                error = result.is_err();
-                Some(result)
+    pub fn iter_names(&self) -> IterNames<'_> {
+        IterNames {
+            buf: ParseBuf(self.names.as_bytes()),
+        }
+    }
+}
+
+pub struct IterNames<'a> {
+    buf: ParseBuf<'a>,
+}
+
+impl<'a> Iterator for IterNames<'a> {
+    type Item = io::Result<ColumnName<'a>>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.buf.is_empty() {
+            None
+        } else {
+            match self.buf.parse(()) {
+                Ok(x) => Some(Ok(x)),
+                Err(e) => {
+                    self.buf = ParseBuf(b"");
+                    Some(Err(e))
+                }
             }
-        })
+        }
     }
 }
 
@@ -574,18 +623,32 @@ pub struct SetsStrValues<'a> {
 
 impl<'a> SetsStrValues<'a> {
     /// Returns an iterator over SET columns string values.
-    pub fn iter_values(&'a self) -> impl Iterator<Item = io::Result<SetStrValues<'a>>> + 'a {
-        let mut error = false;
-        let mut buf = ParseBuf(self.values.as_bytes());
-        std::iter::from_fn(move || {
-            if buf.is_empty() || error {
-                None
-            } else {
-                let result = buf.parse(());
-                error = result.is_err();
-                Some(result)
+    pub fn iter_values(&'a self) -> IterSetStrValues<'a> {
+        IterSetStrValues {
+            buf: ParseBuf(self.values.as_bytes()),
+        }
+    }
+}
+
+pub struct IterSetStrValues<'a> {
+    buf: ParseBuf<'a>,
+}
+
+impl<'a> Iterator for IterSetStrValues<'a> {
+    type Item = io::Result<SetStrValues<'a>>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.buf.is_empty() {
+            None
+        } else {
+            match self.buf.parse(()) {
+                Ok(x) => Some(Ok(x)),
+                Err(e) => {
+                    self.buf = ParseBuf(b"");
+                    Some(Err(e))
+                }
             }
-        })
+        }
     }
 }
 
@@ -701,18 +764,32 @@ pub struct EnumsStrValues<'a> {
 
 impl<'a> EnumsStrValues<'a> {
     /// Returns an iterator over ENUM columns string values.
-    pub fn iter_values(&'a self) -> impl Iterator<Item = io::Result<EnumStrValues<'a>>> + 'a {
-        let mut error = false;
-        let mut buf = ParseBuf(self.values.as_bytes());
-        std::iter::from_fn(move || {
-            if buf.is_empty() || error {
-                None
-            } else {
-                let result = buf.parse(());
-                error = result.is_err();
-                Some(result)
+    pub fn iter_values(&'a self) -> IterEnumStrValues<'a> {
+        IterEnumStrValues {
+            buf: ParseBuf(self.values.as_bytes()),
+        }
+    }
+}
+
+pub struct IterEnumStrValues<'a> {
+    buf: ParseBuf<'a>,
+}
+
+impl<'a> Iterator for IterEnumStrValues<'a> {
+    type Item = io::Result<EnumStrValues<'a>>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.buf.is_empty() {
+            None
+        } else {
+            match self.buf.parse(()) {
+                Ok(x) => Some(Ok(x)),
+                Err(e) => {
+                    self.buf = ParseBuf(b"");
+                    Some(Err(e))
+                }
             }
-        })
+        }
     }
 }
 
@@ -834,25 +911,35 @@ impl<'a> GeometryTypes<'a> {
     /// It'll continue iteration in case of unknown [`GeometryType`]. This error is indicated
     /// by the [`std::io::ErrorKind::InvalidData`] kind and
     /// [`crate::constants::UnknownGeometryType`] payload.
-    pub fn iter_geometry_types(&'a self) -> impl Iterator<Item = io::Result<GeometryType>> + 'a {
-        let mut broken = false;
-        let mut buf = ParseBuf(self.geometry_types.as_bytes());
-        std::iter::from_fn(move || {
-            if buf.is_empty() || broken {
-                None
-            } else {
-                match buf.parse::<RawInt<LenEnc>>(()) {
-                    Ok(x) => Some(
-                        GeometryType::try_from(x.0 as u8)
-                            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e)),
-                    ),
-                    Err(err) => {
-                        broken = true;
-                        Some(Err(err))
-                    }
+    pub fn iter_geometry_types(&'a self) -> IterGeometryTypes<'a> {
+        IterGeometryTypes {
+            buf: ParseBuf(self.geometry_types.as_bytes()),
+        }
+    }
+}
+
+pub struct IterGeometryTypes<'a> {
+    buf: ParseBuf<'a>,
+}
+
+impl<'a> Iterator for IterGeometryTypes<'a> {
+    type Item = io::Result<GeometryType>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.buf.is_empty() {
+            None
+        } else {
+            match self.buf.parse::<RawInt<LenEnc>>(()) {
+                Ok(x) => Some(
+                    GeometryType::try_from(x.0 as u8)
+                        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e)),
+                ),
+                Err(e) => {
+                    self.buf = ParseBuf(b"");
+                    Some(Err(e))
                 }
             }
-        })
+        }
     }
 }
 
@@ -881,18 +968,32 @@ pub struct SimplePrimaryKey<'a> {
 
 impl<'a> SimplePrimaryKey<'a> {
     /// Returns an iterator over column indexes.
-    pub fn iter_indexes(&'a self) -> impl Iterator<Item = io::Result<u64>> + 'a {
-        let mut error = false;
-        let mut buf = ParseBuf(self.indexes.as_bytes());
-        std::iter::from_fn(move || {
-            if buf.is_empty() || error {
-                None
-            } else {
-                let result = buf.parse::<RawInt<LenEnc>>(());
-                error = result.is_err();
-                Some(result.map(|x| x.0))
+    pub fn iter_indexes(&'a self) -> IterIndexes<'a> {
+        IterIndexes {
+            buf: ParseBuf(self.indexes.as_bytes()),
+        }
+    }
+}
+
+pub struct IterIndexes<'a> {
+    buf: ParseBuf<'a>,
+}
+
+impl<'a> Iterator for IterIndexes<'a> {
+    type Item = io::Result<u64>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.buf.is_empty() {
+            None
+        } else {
+            match self.buf.parse::<RawInt<LenEnc>>(()) {
+                Ok(x) => Some(Ok(x.0)),
+                Err(e) => {
+                    self.buf = ParseBuf(b"");
+                    Some(Err(e))
+                }
             }
-        })
+        }
     }
 }
 
@@ -921,18 +1022,32 @@ pub struct PrimaryKeysWithPrefix<'a> {
 
 impl<'a> PrimaryKeysWithPrefix<'a> {
     /// Returns an iterator over column indexes and corresponding prefix lengths.
-    pub fn iter_keys(&'a self) -> impl Iterator<Item = io::Result<PrimaryKeyWithPrefix>> + 'a {
-        let mut error = false;
-        let mut buf = ParseBuf(self.data.as_bytes());
-        std::iter::from_fn(move || {
-            if buf.is_empty() || error {
-                None
-            } else {
-                let result = buf.parse(());
-                error = result.is_err();
-                Some(result)
+    pub fn iter_keys(&'a self) -> IterKeys<'a> {
+        IterKeys {
+            buf: ParseBuf(self.data.as_bytes()),
+        }
+    }
+}
+
+pub struct IterKeys<'a> {
+    buf: ParseBuf<'a>,
+}
+
+impl<'a> Iterator for IterKeys<'a> {
+    type Item = io::Result<PrimaryKeyWithPrefix>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.buf.is_empty() {
+            None
+        } else {
+            match self.buf.parse(()) {
+                Ok(x) => Some(Ok(x)),
+                Err(e) => {
+                    self.buf = ParseBuf(b"");
+                    Some(Err(e))
+                }
             }
-        })
+        }
     }
 }
 
@@ -1154,4 +1269,205 @@ impl<'a> Iterator for OptionalMetadataIter<'a> {
             .map(Some)
             .transpose()
     }
+}
+
+/// Helper struct that extracts optional metadata for columns.
+pub struct OptionalMetaExtractor<'a> {
+    signedness: Option<&'a BitSlice<u8, Msb0>>,
+    default_charset: Option<DefaultCharset<'a>>,
+    column_charset: Option<ColumnCharsets<'a>>,
+    column_name: Option<ColumnNames<'a>>,
+    simple_primary_key: Option<SimplePrimaryKey<'a>>,
+    primary_key_with_prefix: Option<PrimaryKeysWithPrefix<'a>>,
+    enum_and_set_default_charset: Option<DefaultCharset<'a>>,
+    enum_and_set_column_charset: Option<ColumnCharsets<'a>>,
+}
+
+impl<'a> OptionalMetaExtractor<'a> {
+    pub fn new(iter_optional_meta: OptionalMetadataIter<'a>) -> io::Result<Self> {
+        let mut this = Self {
+            signedness: None,
+            default_charset: None,
+            column_charset: None,
+            column_name: None,
+            simple_primary_key: None,
+            primary_key_with_prefix: None,
+            enum_and_set_default_charset: None,
+            enum_and_set_column_charset: None,
+        };
+
+        for field in iter_optional_meta {
+            match field? {
+                OptionalMetadataField::Signedness(x) => this.signedness = Some(x),
+                OptionalMetadataField::DefaultCharset(x) => {
+                    this.default_charset = Some(x);
+                }
+                OptionalMetadataField::ColumnCharset(x) => {
+                    this.column_charset = Some(x);
+                }
+                OptionalMetadataField::ColumnName(x) => {
+                    this.column_name = Some(x);
+                }
+                OptionalMetadataField::SetStrValue(_) => (),
+                OptionalMetadataField::EnumStrValue(_) => (),
+                OptionalMetadataField::GeometryType(_) => (),
+                OptionalMetadataField::SimplePrimaryKey(x) => {
+                    this.simple_primary_key = Some(x);
+                }
+                OptionalMetadataField::PrimaryKeyWithPrefix(x) => {
+                    this.primary_key_with_prefix = Some(x);
+                }
+                OptionalMetadataField::EnumAndSetDefaultCharset(x) => {
+                    this.enum_and_set_default_charset = Some(x);
+                }
+                OptionalMetadataField::EnumAndSetColumnCharset(x) => {
+                    this.enum_and_set_column_charset = Some(x);
+                }
+                OptionalMetadataField::ColumnVisibility(_) => (),
+            }
+        }
+
+        Ok(this)
+    }
+
+    /// For every numeric column (in order) emits signedness data (`true` means _unsigned_).
+    ///
+    /// Emits nothing if there are no signedness data in the optional metadata.
+    pub fn iter_signedness(&'a self) -> impl Iterator<Item = bool> + 'a {
+        self.signedness
+            .as_ref()
+            .map(|x| x.iter().by_vals())
+            .into_iter()
+            .flatten()
+    }
+
+    /// For every character column (in order) emits its character set.
+    ///
+    /// Will use either `DEFAULT_CHARSET` or `COLUMN_CHARSET` metadata.
+    ///
+    /// ### Warning
+    ///
+    /// This iterator is infinite if `DEFAULT_CHARSET` is used.
+    ///
+    /// Emits nothing if there are no charset data in the optional metadata.
+    pub fn iter_charset(&'a self) -> impl Iterator<Item = Result<u16, io::Error>> + 'a {
+        let default_charset = self.default_charset.as_ref().map(|x| x.default_charset());
+        let non_default = self.default_charset.as_ref().map(|x| x.iter_non_default());
+        let per_column = self.column_charset.as_ref().map(|x| x.iter_charsets());
+
+        iter_charset_helper(default_charset, non_default, per_column)
+    }
+
+    /// For every ENUM and SET column (in order) emits its character set.
+    ///
+    /// Will use either `ENUM_AND_SET_DEFAULT_CHARSET` or `ENUM_AND_SET_COLUMN_CHARSET` metadata.
+    ///
+    /// ### Warning
+    ///
+    /// This iterator is infinite if `ENUM_AND_SET_DEFAULT_CHARSET` is used.
+    ///
+    /// Emits nothing if there are no charset data in the optional metadata.
+    pub fn iter_enum_and_set_charset(
+        &'a self,
+    ) -> impl Iterator<Item = Result<u16, io::Error>> + 'a {
+        let default_charset = self
+            .enum_and_set_default_charset
+            .as_ref()
+            .map(|x| x.default_charset());
+        let non_default = self
+            .enum_and_set_default_charset
+            .as_ref()
+            .map(|x| x.iter_non_default());
+        let per_column = self
+            .enum_and_set_column_charset
+            .as_ref()
+            .map(|x| x.iter_charsets());
+
+        iter_charset_helper(default_charset, non_default, per_column)
+    }
+
+    /// Iterates over column indexes for columns that are primary keys.
+    ///
+    /// Returns peekable iterator so that it is possible to observe next PK index.
+    ///
+    /// Emits nothing if there are no PK data in the optinal metadata.
+    pub fn iter_primary_key(&'a self) -> Peekable<impl Iterator<Item = io::Result<u64>> + 'a> {
+        let simple = self
+            .simple_primary_key
+            .as_ref()
+            .map(|x| x.iter_indexes())
+            .into_iter()
+            .flatten();
+        let prefixed = self
+            .primary_key_with_prefix
+            .as_ref()
+            .map(|x| x.iter_keys().map(|x| x.map(|x| x.column_index())))
+            .into_iter()
+            .flatten();
+
+        simple.chain(prefixed).peekable()
+    }
+
+    /// For every column (in order) emits its name
+    ///
+    /// Emits nothing if there are no column name data in the optional metadata.
+    pub fn iter_column_name(&'a self) -> impl Iterator<Item = io::Result<ColumnName<'a>>> + 'a {
+        self.column_name
+            .as_ref()
+            .map(|x| x.iter_names())
+            .into_iter()
+            .flatten()
+    }
+}
+
+fn iter_charset_helper<'a>(
+    default_charset: Option<u16>,
+    iter_non_default: Option<IterNonDefault<'a>>,
+    iter_charsets: Option<IterCharsets<'a>>,
+) -> impl Iterator<Item = Result<u16, io::Error>> + 'a {
+    let non_default = iter_non_default
+        .into_iter()
+        .flatten()
+        .map(|x| x.map(Either::Left));
+    let per_column = iter_charsets
+        .into_iter()
+        .flatten()
+        .map(|x| x.map(Either::Right));
+
+    let mut non_default = non_default.chain(per_column).peekable();
+    let mut broken = false;
+    let mut current = 0;
+    std::iter::from_fn(move || {
+        if broken {
+            return None;
+        }
+
+        let result = match non_default.peek() {
+            Some(x) => match x {
+                Ok(x) => match x {
+                    Either::Left(x) => {
+                        if x.column_index() == current {
+                            non_default
+                                .next()
+                                .map(|x| Ok(x.unwrap().unwrap_left().charset()))
+                        } else {
+                            default_charset.map(Ok)
+                        }
+                    }
+                    Either::Right(x) => {
+                        let x = *x;
+                        non_default.next().map(|_| Ok(x))
+                    }
+                },
+                Err(_) => {
+                    broken = true;
+                    non_default.next().map(|x| Err(x.unwrap_err()))
+                }
+            },
+            None => default_charset.map(Ok),
+        };
+
+        current += 1;
+        result
+    })
 }
