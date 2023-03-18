@@ -3,9 +3,9 @@
 [![Crates.io](https://img.shields.io/crates/v/mysql-common-derive.svg)](https://crates.io/crates/mysql-common-derive)
 [![Docs.rs](https://docs.rs/mysql-common-derive/badge.svg)](https://docs.rs/mysql-common-derive)
 
-# mysql-common-derive
+# {{crate}}
 
-Implements [`FromValue`] and [`FromRow`] derive macros.
+{{readme}}
 
 ## License
 

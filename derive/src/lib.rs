@@ -1,3 +1,5 @@
+//! Implements [`FromValue`] and [`FromRow`] derive macros.
+
 extern crate proc_macro;
 
 use proc_macro_error::abort;

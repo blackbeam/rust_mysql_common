@@ -15,9 +15,10 @@
 //! * implements helper traits for MySql protocol IO;
 //! * implements support of named parameters for prepared statements;
 //! * implements parsers for a subset of MySql protocol packets (including binlog packets);
-//! * defines rust representation of MySql protocol value and row;
+//! * defines rust representation of MySql protocol values and rows;
 //! * implements conversion between MySql values and rust types, between MySql rows and tuples
 //!   of rust types.
+//! * implements [FromRow and FromValue derive macros][2]
 //!
 //! ## Supported rust types
 //!
