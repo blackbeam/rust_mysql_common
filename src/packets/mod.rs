@@ -1480,12 +1480,10 @@ impl<'a> HandshakePacket<'a> {
         // Safety:
         // * capabilities are given as a valid CapabilityFlags instance
         // * the BitAnd operation can't set new bits
-        let (capabilities_1, capabilities_2) = unsafe {
-            (
-                CapabilityFlags::from_bits_unchecked(capabilities.bits() & 0x0000_FFFF),
-                CapabilityFlags::from_bits_unchecked(capabilities.bits() & 0xFFFF_0000),
-            )
-        };
+        let (capabilities_1, capabilities_2) = (
+            CapabilityFlags::from_bits_retain(capabilities.bits() & 0x0000_FFFF),
+            CapabilityFlags::from_bits_retain(capabilities.bits() & 0xFFFF_0000),
+        );
 
         let scramble_2 = scramble_2.map(RawBytes::new);
 
@@ -2545,6 +2543,7 @@ my_bitflags! {
     u16,
 
     /// Empty flags of a `LoadEvent`.
+    #[derive(PartialEq, Eq, Hash, Debug, Clone, Copy)]
     pub struct BinlogDumpFlags: u16 {
         /// If there is no more event to send a EOF_Packet instead of blocking the connection
         const BINLOG_DUMP_NON_BLOCK = 0x01;

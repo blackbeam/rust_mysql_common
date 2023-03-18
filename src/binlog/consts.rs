@@ -188,6 +188,7 @@ my_bitflags! {
     u16,
 
     /// Binlog Event Flags
+    #[derive(PartialEq, Eq, Hash, Debug, Clone, Copy)]
     pub struct EventFlags: u16 {
         /// Gets unset in the `FORMAT_DESCRIPTION_EVENT`
         /// when the file gets closed to detect broken binlogs.
@@ -393,6 +394,7 @@ my_bitflags! {
     u8,
 
     /// Semi-sync binlog flags.
+    #[derive(PartialEq, Eq, Hash, Debug, Clone, Copy)]
     pub struct SemiSyncFlags: u8 {
         // If the SEMI_SYNC_ACK_REQ flag is set the master waits for a Semi Sync ACK packet
         // from the slave before it sends the next event.
@@ -695,6 +697,7 @@ my_bitflags! {
     u8,
 
     /// Gtid event flags.
+    #[derive(PartialEq, Eq, Hash, Debug, Clone, Copy)]
     pub struct GtidFlags: u8 {
         /// Transaction may have changes logged with SBR.
         ///
@@ -753,6 +756,7 @@ my_bitflags! {
     u16,
 
     /// Rows event flags.
+    #[derive(PartialEq, Eq, Hash, Debug, Clone, Copy)]
     pub struct RowsEventFlags: u16 {
         /// Last event of a statement.
         const STMT_END = 0x0001;
@@ -773,6 +777,7 @@ my_bitflags! {
     u8,
 
     /// Flags of a user variable.
+    #[derive(PartialEq, Eq, Hash, Debug, Clone, Copy)]
     pub struct UserVarFlags: u8 {
         const UNSIGNED = 0x01;
     }

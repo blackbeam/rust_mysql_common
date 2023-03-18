@@ -6,7 +6,7 @@
 // option. All files in the project carrying such notice may not be copied,
 // modified, or distributed except according to those terms.
 
-use base64::{decode_config, CharacterSet, Config};
+use base64::{engine::general_purpose::STANDARD, Engine};
 use num_bigint::BigUint;
 use regex::bytes::Regex;
 use std::mem::size_of;
@@ -49,8 +49,9 @@ pub fn pem_to_der(pem: impl AsRef<[u8]>) -> (Vec<u8>, PubKeyFileType) {
         .cloned()
         .collect::<Vec<_>>();
 
-    let base64_config = Config::new(CharacterSet::Standard, true);
-    let der = decode_config(&*pem_body, base64_config).expect("valid base64 is mandatory here");
+    let der = STANDARD
+        .decode(&*pem_body)
+        .expect("valid base64 is mandatory here");
 
     (der, key_file_type)
 }
