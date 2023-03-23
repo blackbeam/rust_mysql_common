@@ -10,11 +10,13 @@
 
 #![cfg(feature = "uuid")]
 
+use std::convert::TryFrom;
+
 use uuid::Uuid;
 
 use crate::value::Value;
 
-use super::{ConvIr, FromValue, FromValueError};
+use super::{FromValue, FromValueError, ParseIr};
 
 impl From<Uuid> for Value {
     fn from(uuid: Uuid) -> Value {
@@ -22,31 +24,32 @@ impl From<Uuid> for Value {
     }
 }
 
-/// Intermediate result of a Value-to-Uuid conversion.
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub struct UuidIr {
-    val: Uuid,
-    bytes: Vec<u8>,
-}
+impl TryFrom<Value> for ParseIr<Uuid> {
+    type Error = FromValueError;
 
-impl ConvIr<Uuid> for UuidIr {
-    fn new(v: Value) -> Result<UuidIr, FromValueError> {
+    fn try_from(v: Value) -> Result<Self, Self::Error> {
         match v {
-            Value::Bytes(bytes) => match Uuid::from_slice(bytes.as_slice()) {
-                Ok(val) => Ok(UuidIr { val, bytes }),
-                Err(_) => Err(FromValueError(Value::Bytes(bytes))),
+            Value::Bytes(ref bytes) => match Uuid::from_slice(bytes.as_slice()) {
+                Ok(val) => Ok(ParseIr(val, v)),
+                Err(_) => Err(FromValueError(v)),
             },
             v => Err(FromValueError(v)),
         }
     }
-    fn commit(self) -> Uuid {
-        self.val
+}
+
+impl From<ParseIr<Uuid>> for Uuid {
+    fn from(value: ParseIr<Uuid>) -> Self {
+        value.commit()
     }
-    fn rollback(self) -> Value {
-        Value::Bytes(self.bytes)
+}
+
+impl From<ParseIr<Uuid>> for Value {
+    fn from(value: ParseIr<Uuid>) -> Self {
+        value.rollback()
     }
 }
 
 impl FromValue for Uuid {
-    type Intermediate = UuidIr;
+    type Intermediate = ParseIr<Uuid>;
 }

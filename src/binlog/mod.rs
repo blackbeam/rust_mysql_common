@@ -234,7 +234,11 @@ impl ColumnType {
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::HashMap, io};
+    use std::{
+        collections::HashMap,
+        io,
+        iter::{once, repeat},
+    };
 
     use super::{
         consts::{EventFlags, EventType},
@@ -242,7 +246,12 @@ mod tests {
         BinlogFile, BinlogFileHeader, BinlogVersion,
     };
 
-    use crate::{binlog::value::BinlogValue, proto::MySerialize, value::Value};
+    use crate::{
+        binlog::{events::RowsEventData, value::BinlogValue},
+        constants::ColumnFlags,
+        proto::MySerialize,
+        value::Value,
+    };
 
     const BINLOG_FILE: &[u8] = &[
         0xfe, 0x62, 0x69, 0x6e, 0xfc, 0x35, 0xbb, 0x4a, 0x0f, 0x01, 0x00, 0x00, 0x00, 0x5e, 0x00,
@@ -639,6 +648,7 @@ mod tests {
 
             while let Some(ev) = binlog_file.next() {
                 let ev = ev?;
+                let _ = dbg!(ev.header().event_type());
                 let ev_end = ev_pos + ev.header().event_size() as usize;
                 let binlog_version = binlog_file.reader.fde.binlog_version();
 
@@ -647,10 +657,17 @@ mod tests {
 
                 let event = match ev.read_data() {
                     Ok(event) => {
-                        let event = event.unwrap_or_else(|| {
-                            dbg!(&ev);
-                            panic!()
-                        });
+                        let event = match event {
+                            Some(e) => e,
+                            None => {
+                                if file_path.file_name().unwrap() == "mariadb-bin.000001" {
+                                    continue;
+                                } else {
+                                    dbg!(&ev);
+                                    panic!();
+                                }
+                            }
+                        };
                         match event {
                             EventData::TableMapEvent(ref ev) => {
                                 // store table maps for later use
@@ -663,7 +680,40 @@ mod tests {
                                 let table_map_event =
                                     binlog_file.reader().get_tme(rows_event.table_id()).unwrap();
                                 for row in rows_event.rows(table_map_event) {
-                                    row.unwrap();
+                                    let _row = row.unwrap();
+                                    if file_path.file_name().unwrap() == "mariadb-bin.000001" {
+                                        // should parse metadata for `binlog_row_metadata=FULL`
+                                        let after = _row.1.as_ref().unwrap();
+                                        let columns = after.columns_ref();
+
+                                        for col in columns.iter() {
+                                            assert_eq!(col.schema_ref(), b"toddy_test");
+                                            assert_eq!(col.table_ref(), b"outbox");
+                                            assert_eq!(col.org_table_ref(), b"outbox");
+                                        }
+
+                                        for (col, col_name) in columns.iter().zip([
+                                            "id",
+                                            "topic",
+                                            "event_type",
+                                            "event",
+                                            "created",
+                                        ]) {
+                                            assert_eq!(col.name_ref(), col_name.as_bytes());
+                                        }
+
+                                        for (col, f) in columns.iter().zip(
+                                            once(ColumnFlags::PRI_KEY_FLAG)
+                                                .chain(repeat(ColumnFlags::empty())),
+                                        ) {
+                                            assert_eq!(col.flags(), f);
+                                        }
+
+                                        for (col, charset) in columns.iter().zip([0, 45, 45, 63, 0])
+                                        {
+                                            assert_eq!(col.character_set(), charset);
+                                        }
+                                    }
                                 }
 
                                 event
@@ -694,11 +744,99 @@ mod tests {
 
                 if file_path.file_name().unwrap() == "binlog-invisible-columns.000001" {
                     if let Some(EventData::TableMapEvent(ev)) = ev.read_data().unwrap() {
-                        dbg!(&ev);
-                        let optional_meta = dbg!(ev.iter_optional_meta());
+                        let optional_meta = ev.iter_optional_meta();
                         for meta in optional_meta {
-                            dbg!(meta.unwrap());
+                            meta.unwrap();
                         }
+                    }
+                }
+
+                if file_path.file_name().unwrap() == "mysql-enum-string-set.000001" {
+                    if let Some(EventData::RowsEvent(data)) = ev.read_data().unwrap() {
+                        let table_map_event =
+                            binlog_file.reader().get_tme(data.table_id()).unwrap();
+                        for row in data.rows(table_map_event) {
+                            let (before, after) = row.unwrap();
+                            match data {
+                                RowsEventData::WriteRowsEvent(_) => {
+                                    assert!(before.is_none());
+                                    let after = after.unwrap().unwrap();
+                                    let mut j = 0;
+                                    for v in after {
+                                        j += 1;
+                                        match j {
+                                            1 => assert_eq!(v, BinlogValue::Value("0123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789".into())),
+                                            2 => assert_eq!(v, BinlogValue::Value("0123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456780123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456780123456789012345678901234567890123456789".into())),
+                                            3 => assert_eq!(v, BinlogValue::Value(1_i8.into())),
+                                            4 => assert_eq!(v, BinlogValue::Value([0b00000101_u8].into())),
+                                            5 => assert_eq!(v, BinlogValue::Value("0123456789".into())),
+
+                                            _ => panic!(),
+                                        }
+                                    }
+                                    assert_eq!(j, 5);
+                                }
+                                RowsEventData::UpdateRowsEvent(_) => {
+                                    let before = before.unwrap().unwrap();
+                                    let mut j = 0;
+                                    for v in before {
+                                        j += 1;
+                                        match j {
+                                            1 => assert_eq!(v, BinlogValue::Value("0123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789".into())),
+                                            2 => assert_eq!(v, BinlogValue::Value("0123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456780123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456780123456789012345678901234567890123456789".into())),
+                                            3 => assert_eq!(v, BinlogValue::Value(1_i8.into())),
+                                            4 => assert_eq!(v, BinlogValue::Value([0b00000101_u8].into())),
+                                            5 => assert_eq!(v, BinlogValue::Value("0123456789".into())),
+
+                                            _ => panic!(),
+                                        }
+                                    }
+                                    assert_eq!(j, 5);
+
+                                    let after = after.unwrap().unwrap();
+                                    let mut j = 0;
+                                    for v in after {
+                                        j += 1;
+                                        match j {
+                                            1 => assert_eq!(v, BinlogValue::Value("field1".into())),
+                                            2 => assert_eq!(v, BinlogValue::Value("field_2".into())),
+                                            3 => assert_eq!(v, BinlogValue::Value(2_i8.into())),
+                                            4 => assert_eq!(v, BinlogValue::Value([0b00001010_u8].into())),
+                                            5 => assert_eq!(v, BinlogValue::Value("0123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456780123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456780123456789012345678901234567890123456789".into())),
+                                            _ => panic!(),
+                                        }
+                                    }
+                                    assert_eq!(j, 5);
+                                }
+                                RowsEventData::DeleteRowsEvent(_) => {
+                                    assert!(after.is_none());
+
+                                    let before = before.unwrap().unwrap();
+                                    let mut j = 0;
+                                    for v in before {
+                                        j += 1;
+                                        match j {
+                                            1 => assert_eq!(v, BinlogValue::Value("field1".into())),
+                                            2 => assert_eq!(v, BinlogValue::Value("field_2".into())),
+                                            3 => assert_eq!(v, BinlogValue::Value(2_i8.into())),
+                                            4 => assert_eq!(v, BinlogValue::Value([0b00001010_u8].into())),
+                                            5 => assert_eq!(v, BinlogValue::Value("0123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456780123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456780123456789012345678901234567890123456789".into())),
+                                            _ => panic!(),
+                                        }
+                                    }
+                                    assert_eq!(j, 5);
+                                }
+                                _ => panic!(),
+                            }
+                        }
+                    }
+                }
+
+                if file_path.file_name().unwrap() == "mariadb-bin.000001" {
+                    // Extraneous bytes in RotateEvent file name
+                    // https://github.com/blackbeam/mysql_async/issues/189
+                    if let Some(EventData::RotateEvent(ev)) = ev.read_data().unwrap() {
+                        assert_ne!(ev.name_raw(), b"mariadb-bin.000001");
                     }
                 }
 
@@ -720,7 +858,9 @@ mod tests {
                     }
                 }
 
-                assert_eq!(output, &file_data[ev_pos..ev_end]);
+                if file_path.file_name().unwrap() != "mariadb-bin.000001" {
+                    assert_eq!(output, &file_data[ev_pos..ev_end]);
+                }
 
                 output = Vec::new();
                 event.serialize(&mut output);

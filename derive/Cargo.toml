@@ -1,0 +1,27 @@
+[package]
+name = "mysql-common-derive"
+edition = "2021"
+
+# * Invoke `cargo readme > README.md` if relevant!
+version = "0.30.0"
+
+[lib]
+proc-macro = true
+bench = false
+
+[dependencies]
+darling = "0.14.1"
+heck = "0.4.0"
+num-bigint = "0.4.3"
+proc-macro-crate = "1.2.1"
+proc-macro-error = "1"
+proc-macro2 = "1.0.42"
+quote = "1.0.9"
+syn = { version = "1.0", features = ["full"] }
+termcolor = "1.1.3"
+thiserror = "1"
+
+[dev-dependencies]
+mysql_common = { path = "..", features = ["derive"] }
+serde = { version = "1.0.93", features = ["derive"] }
+serde_json = "1.0.93"

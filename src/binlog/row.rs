@@ -7,6 +7,7 @@
 // modified, or distributed except according to those terms.
 
 use std::{
+    borrow::Cow,
     convert::{TryFrom, TryInto},
     fmt, io,
     sync::Arc,
@@ -25,11 +26,11 @@ use crate::{
 };
 
 use super::{
-    events::{OptionalMetadataField, TableMapEvent},
+    events::{OptionalMetaExtractor, TableMapEvent},
     value::{BinlogValue, BinlogValueToValueError},
 };
 
-/// Bonlog rows event row value options.
+/// Binlog rows event row value options.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[allow(non_camel_case_types)]
 #[repr(u64)]
@@ -166,78 +167,85 @@ impl<'de> MyDeserialize<'de> for BinlogRow {
 
         let mut image_idx = 0;
 
-        let signedness = table_info.iter_optional_meta().find_map(|m| {
-            m.map(|f| match f {
-                OptionalMetadataField::Signedness(bit_slice) => Some(bit_slice),
-                _ => None,
-            })
-            .unwrap_or(None)
-        });
+        let opt_meta_extractor = OptionalMetaExtractor::new(table_info.iter_optional_meta())?;
 
-        let mut numeric_index = 0;
+        let mut signedness_iterator = opt_meta_extractor.iter_signedness();
+        let mut charset_iter = opt_meta_extractor.iter_charset();
+        let mut enum_and_set_charset_iter = opt_meta_extractor.iter_enum_and_set_charset();
+        let mut primary_key_iter = opt_meta_extractor.iter_primary_key();
+        let mut column_name_iter = opt_meta_extractor.iter_column_name();
+
         for i in 0..(num_columns as usize) {
             // check if column is in columns list
             if cols.get(i).as_deref().copied().unwrap_or(false) {
-                let raw_column_type = table_info.get_column_type(i);
+                let column_type = table_info.get_column_type(i);
 
                 // TableMapEvent must define column type for the current column.
-                let raw_column_type = match raw_column_type {
+                let column_type = match column_type {
                     Ok(Some(ty)) => ty,
                     Ok(None) => {
                         return Err(io::Error::new(io::ErrorKind::InvalidData, "No column type"))
                     }
-                    Err(_) => {
-                        return Err(io::Error::new(
-                            io::ErrorKind::InvalidData,
-                            "Unknown column type",
-                        ))
-                    }
+                    Err(e) => return Err(io::Error::new(io::ErrorKind::InvalidData, e)),
                 };
 
                 let column_meta = table_info.get_column_metadata(i).unwrap_or(&[]);
-                let column_type = match raw_column_type {
-                    ColumnType::MYSQL_TYPE_STRING => {
-                        let real_type = column_meta[0];
-                        if real_type == ColumnType::MYSQL_TYPE_ENUM as u8
-                            || real_type == ColumnType::MYSQL_TYPE_SET as u8
-                        {
-                            ColumnType::try_from(real_type).unwrap_or(raw_column_type)
-                        } else {
-                            raw_column_type
-                        }
-                    }
-                    ColumnType::MYSQL_TYPE_DATE => ColumnType::MYSQL_TYPE_NEWDATE,
-                    other => other,
-                };
 
-                let is_partial = raw_column_type == ColumnType::MYSQL_TYPE_JSON
+                let is_partial = column_type == ColumnType::MYSQL_TYPE_JSON
                     && partial_cols
                         .as_mut()
                         .and_then(|bits| bits.next().as_deref().copied())
                         .unwrap_or(false);
 
-                let is_unsigned = if column_type.is_numeric_type() {
-                    let is_unsigned = signedness
-                        .as_ref()
-                        .and_then(|bits| bits.get(numeric_index).as_deref().copied())
-                        .unwrap_or_default();
-                    numeric_index += 1;
-                    is_unsigned
+                let is_unsigned = column_type
+                    .is_numeric_type()
+                    .then(|| signedness_iterator.next())
+                    .flatten()
+                    .unwrap_or_default();
+
+                let charset = if column_type.is_character_type() {
+                    charset_iter.next().transpose()?.unwrap_or_default()
+                } else if column_type.is_enum_or_set_type() {
+                    enum_and_set_charset_iter
+                        .next()
+                        .transpose()?
+                        .unwrap_or_default()
                 } else {
-                    false
+                    Default::default()
                 };
 
+                let column_name_raw = column_name_iter.next().transpose()?;
+                let column_name = column_name_raw
+                    .as_ref()
+                    .map(|x| Cow::Borrowed(x.name_raw()))
+                    .unwrap_or_else(|| {
+                        // default column name is `@<i>` where i is a column offset in a table
+                        Cow::Owned(format!("@{}", i).into())
+                    });
+
                 let mut column_flags = ColumnFlags::empty();
+
                 if is_unsigned {
                     column_flags |= ColumnFlags::UNSIGNED_FLAG;
                 }
+
+                if let Some(_) = primary_key_iter
+                    .next_if(|next| next.is_err() || next.as_ref().ok() == Some(&(i as u64)))
+                    .transpose()?
+                {
+                    column_flags |= ColumnFlags::PRI_KEY_FLAG;
+                }
+
                 let column = Column::new(column_type)
-                    // column name – `@<i>` where i is a column offset in a table
-                    .with_name(format!("@{}", i).as_bytes())
+                    .with_schema(table_info.database_name_raw())
+                    .with_table(table_info.table_name_raw())
+                    .with_name(column_name.as_ref())
                     .with_flags(column_flags)
                     .with_schema(table_info.database_name_raw())
                     .with_org_table(table_info.table_name_raw())
-                    .with_table(table_info.table_name_raw());
+                    .with_table(table_info.table_name_raw())
+                    .with_character_set(charset);
+
                 columns.push(column);
 
                 // check if column is null
@@ -287,7 +295,7 @@ impl fmt::Debug for BinlogRow {
 pub struct BinlogRowToRowError {
     /// Column offset.
     pub column_offset: usize,
-    /// Value convertion error.
+    /// Value conversion error.
     pub error: BinlogValueToValueError,
 }
 

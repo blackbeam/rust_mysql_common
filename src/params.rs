@@ -19,11 +19,15 @@ use crate::value::{convert::ToValue, Value};
 
 /// `FromValue` conversion error.
 #[derive(Debug, Eq, PartialEq, Clone)]
-pub struct MissingNamedParameterError(pub String);
+pub struct MissingNamedParameterError(pub Vec<u8>);
 
 impl fmt::Display for MissingNamedParameterError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Missing named parameter `{}` for statement", self.0)
+        write!(
+            f,
+            "Missing named parameter `{}` for statement",
+            String::from_utf8_lossy(&self.0)
+        )
     }
 }
 
@@ -34,11 +38,27 @@ impl Error for MissingNamedParameterError {
 }
 
 /// Representations of parameters of a prepared statement.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub enum Params {
     Empty,
-    Named(HashMap<String, Value>),
+    Named(HashMap<Vec<u8>, Value>),
     Positional(Vec<Value>),
+}
+
+impl fmt::Debug for Params {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Empty => write!(f, "Empty"),
+            Self::Named(arg0) => {
+                let arg0 = arg0
+                    .iter()
+                    .map(|(k, v)| (String::from_utf8_lossy(k), v))
+                    .collect::<HashMap<_, _>>();
+                f.debug_tuple("Named").field(&arg0).finish()
+            }
+            Self::Positional(arg0) => f.debug_tuple("Positional").field(arg0).finish(),
+        }
+    }
 }
 
 impl Params {
@@ -46,7 +66,7 @@ impl Params {
     /// attribute.
     pub fn into_positional(
         self,
-        named_params: &[String],
+        named_params: &[Vec<u8>],
     ) -> Result<Params, MissingNamedParameterError> {
         match self {
             Params::Named(mut map) => {
@@ -99,17 +119,20 @@ where
 
 impl<N, V> From<Vec<(N, V)>> for Params
 where
-    String: From<N>,
+    Vec<u8>: From<N>,
     Value: From<V>,
 {
     fn from(x: Vec<(N, V)>) -> Params {
         let mut map = HashMap::default();
         for (name, value) in x.into_iter() {
-            let name = String::from(name);
+            let name: Vec<u8> = name.into();
             match map.entry(name) {
                 Entry::Vacant(entry) => entry.insert(Value::from(value)),
                 Entry::Occupied(entry) => {
-                    panic!("Redefinition of named parameter `{}'", entry.key());
+                    panic!(
+                        "Redefinition of named parameter `{}'",
+                        String::from_utf8_lossy(entry.key())
+                    );
                 }
             };
         }

@@ -7,20 +7,17 @@
 // modified, or distributed except according to those terms.
 
 use lexical::parse;
-use num_traits::{FromPrimitive, ToPrimitive};
+use num_traits::ToPrimitive;
 use regex::bytes::Regex;
 
-use std::{any::type_name, error::Error, fmt, str::from_utf8, time::Duration};
+use std::{
+    any::type_name,
+    borrow::Cow,
+    convert::{TryFrom, TryInto},
+    time::Duration,
+};
 
 use crate::value::Value;
-
-macro_rules! impl_from_value {
-    ($ty:ty, $ir:ty) => {
-        impl crate::value::convert::FromValue for $ty {
-            type Intermediate = $ir;
-        }
-    };
-}
 
 pub mod bigdecimal;
 pub mod bigdecimal03;
@@ -102,90 +99,380 @@ fn parse_mysql_datetime_string(bytes: &[u8]) -> Option<(u32, u32, u32, u32, u32,
 }
 
 /// `FromValue` conversion error.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, thiserror::Error)]
+#[error("Couldn't convert the value `{:?}` to a desired type", _0)]
 pub struct FromValueError(pub Value);
 
-impl fmt::Display for FromValueError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "Couldn't convert the value `{:?}` to a desired type",
-            self.0
-        )
-    }
-}
-
-impl Error for FromValueError {
-    fn description(&self) -> &str {
-        "Couldn't convert the value to a desired type"
-    }
-}
-
-/// Basic operations on `FromValue` conversion intermediate result.
+/// Implement this trait to convert a value to some type.
 ///
-/// See [`FromValue`](trait.FromValue.html)
-pub trait ConvIr<T>: Sized {
-    fn new(v: Value) -> Result<Self, FromValueError>;
-    fn commit(self) -> T;
-    fn rollback(self) -> Value;
-}
-
-/// Implement this trait to convert value to something.
-///
-/// `FromRow` requires ability to cheaply rollback `FromValue` conversion. This ability is
-/// provided via `Intermediate` associated type.
-///
-/// Example implementation:
-///
-/// ```ignore
-/// #[derive(Debug)]
-/// pub struct StringIr {
-///     bytes: Vec<u8>,
-/// }
-///
-/// impl ConvIr<String> for StringIr {
-///     fn new(v: Value) -> MyResult<StringIr> {
-///         match v {
-///             Value::Bytes(bytes) => match from_utf8(&*bytes) {
-///                 Ok(_) => Ok(StringIr { bytes: bytes }),
-///                 Err(_) => Err(Error::FromValueError(Value::Bytes(bytes))),
-///             },
-///             v => Err(Error::FromValueError(v)),
-///         }
-///     }
-///     fn commit(self) -> String {
-///         unsafe { String::from_utf8_unchecked(self.bytes) }
-///     }
-///     fn rollback(self) -> Value {
-///         Value::Bytes(self.bytes)
-///     }
-/// }
-///
-/// impl FromValue for String {
-///     type Intermediate = StringIr;
-/// }
-/// ```
+/// The `FromRow` trait requires an ability to rollback this conversion to an original `Value`
+/// instance. Thats the reason why there is the `Intermediate` type – consider implementing
+/// `Into<Value>` for your `Intermediate` type if you want `FromRow` to work with your type.
 pub trait FromValue: Sized {
-    type Intermediate: ConvIr<Self>;
+    type Intermediate: TryFrom<Value, Error = FromValueError> + Into<Self>;
 
     /// Will panic if could not convert `v` to `Self`.
     fn from_value(v: Value) -> Self {
         match Self::from_value_opt(v) {
             Ok(this) => this,
-            Err(_) => panic!("Could not retrieve {} from Value", type_name::<Self>()),
+            Err(e) => panic!("Could not retrieve `{}`: {e}", type_name::<Self>(),),
         }
     }
 
     /// Will return `Err(Error::FromValueError(v))` if could not convert `v` to `Self`.
     fn from_value_opt(v: Value) -> Result<Self, FromValueError> {
-        let ir = Self::Intermediate::new(v)?;
-        Ok(ir.commit())
+        Self::Intermediate::try_from(v).map(Into::into)
     }
 
     /// Will return `Err(Error::FromValueError(v))` if `v` is not convertible to `Self`.
     fn get_intermediate(v: Value) -> Result<Self::Intermediate, FromValueError> {
-        Self::Intermediate::new(v)
+        Self::Intermediate::try_from(v)
     }
+}
+
+/// Intermediate result for a type that requires parsing.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ParseIr<T>(pub T, pub Value);
+
+impl<T> ParseIr<T> {
+    pub fn commit(self) -> T {
+        self.0
+    }
+
+    pub fn rollback(self) -> Value {
+        self.1
+    }
+}
+
+/// Intermediate result for a type that optionally requires parsing.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ParseIrOpt<T> {
+    /// Type instance is ready without parsing.
+    Ready(T),
+    /// Type instance is successfully parsed from this value.
+    Parsed(T, Value),
+}
+
+impl<T> ParseIrOpt<T> {
+    pub fn commit(self) -> T {
+        match self {
+            ParseIrOpt::Ready(t) | ParseIrOpt::Parsed(t, _) => t,
+        }
+    }
+
+    pub fn rollback(self) -> Value
+    where
+        T: Into<Value>,
+    {
+        match self {
+            ParseIrOpt::Ready(t) => t.into(),
+            ParseIrOpt::Parsed(_, v) => v,
+        }
+    }
+}
+
+macro_rules! impl_from_value_num {
+    ($ty:ident) => {
+        impl TryFrom<Value> for ParseIrOpt<$ty> {
+            type Error = FromValueError;
+
+            fn try_from(v: Value) -> Result<Self, Self::Error> {
+                match v {
+                    Value::Int(x) => $ty::try_from(x)
+                        .map(ParseIrOpt::Ready)
+                        .map_err(|_| FromValueError(Value::Int(x))),
+                    Value::UInt(x) => $ty::try_from(x)
+                        .map(ParseIrOpt::Ready)
+                        .map_err(|_| FromValueError(Value::UInt(x))),
+                    Value::Bytes(bytes) => match parse(&*bytes) {
+                        Ok(x) => Ok(ParseIrOpt::Parsed(x, Value::Bytes(bytes))),
+                        _ => Err(FromValueError(Value::Bytes(bytes))),
+                    },
+                    v => Err(FromValueError(v)),
+                }
+            }
+        }
+
+        impl From<ParseIrOpt<$ty>> for $ty {
+            fn from(value: ParseIrOpt<$ty>) -> Self {
+                value.commit()
+            }
+        }
+
+        impl From<ParseIrOpt<$ty>> for Value {
+            fn from(value: ParseIrOpt<$ty>) -> Self {
+                value.rollback()
+            }
+        }
+
+        impl FromValue for $ty {
+            type Intermediate = ParseIrOpt<$ty>;
+        }
+    };
+}
+
+impl_from_value_num!(i8);
+impl_from_value_num!(u8);
+impl_from_value_num!(i16);
+impl_from_value_num!(u16);
+impl_from_value_num!(i32);
+impl_from_value_num!(u32);
+impl_from_value_num!(i64);
+impl_from_value_num!(u64);
+impl_from_value_num!(isize);
+impl_from_value_num!(usize);
+impl_from_value_num!(i128);
+impl_from_value_num!(u128);
+
+impl TryFrom<Value> for ParseIrOpt<bool> {
+    type Error = FromValueError;
+
+    fn try_from(v: Value) -> Result<Self, Self::Error> {
+        match v {
+            Value::Int(0) => Ok(ParseIrOpt::Ready(false)),
+            Value::Int(1) => Ok(ParseIrOpt::Ready(true)),
+            Value::Bytes(ref bytes) => match bytes.as_slice() {
+                [b'0'] => Ok(ParseIrOpt::Parsed(false, v)),
+                [b'1'] => Ok(ParseIrOpt::Parsed(true, v)),
+                _ => Err(FromValueError(v)),
+            },
+            v => Err(FromValueError(v)),
+        }
+    }
+}
+
+impl From<ParseIrOpt<bool>> for bool {
+    fn from(value: ParseIrOpt<bool>) -> Self {
+        value.commit()
+    }
+}
+
+impl From<ParseIrOpt<bool>> for Value {
+    fn from(value: ParseIrOpt<bool>) -> Self {
+        value.rollback()
+    }
+}
+
+impl FromValue for bool {
+    type Intermediate = ParseIrOpt<bool>;
+}
+
+impl TryFrom<Value> for ParseIrOpt<f32> {
+    type Error = FromValueError;
+
+    fn try_from(v: Value) -> Result<Self, Self::Error> {
+        match v {
+            Value::Float(x) => Ok(ParseIrOpt::Ready(x)),
+            Value::Bytes(bytes) => match parse(&*bytes) {
+                Ok(x) => Ok(ParseIrOpt::Parsed(x, Value::Bytes(bytes))),
+                _ => Err(FromValueError(Value::Bytes(bytes))),
+            },
+            v => Err(FromValueError(v)),
+        }
+    }
+}
+
+impl From<ParseIrOpt<f32>> for f32 {
+    fn from(value: ParseIrOpt<f32>) -> Self {
+        value.commit()
+    }
+}
+
+impl From<ParseIrOpt<f32>> for Value {
+    fn from(value: ParseIrOpt<f32>) -> Self {
+        value.rollback()
+    }
+}
+
+impl FromValue for f32 {
+    type Intermediate = ParseIrOpt<f32>;
+}
+
+impl TryFrom<Value> for ParseIrOpt<f64> {
+    type Error = FromValueError;
+
+    fn try_from(v: Value) -> Result<Self, Self::Error> {
+        match v {
+            Value::Double(x) => Ok(ParseIrOpt::Ready(x)),
+            Value::Float(x) => Ok(ParseIrOpt::Ready(x.into())),
+            Value::Bytes(bytes) => match parse(&*bytes) {
+                Ok(x) => Ok(ParseIrOpt::Parsed(x, Value::Bytes(bytes))),
+                _ => Err(FromValueError(Value::Bytes(bytes))),
+            },
+            v => Err(FromValueError(v)),
+        }
+    }
+}
+
+impl From<ParseIrOpt<f64>> for f64 {
+    fn from(value: ParseIrOpt<f64>) -> Self {
+        value.commit()
+    }
+}
+
+impl From<ParseIrOpt<f64>> for Value {
+    fn from(value: ParseIrOpt<f64>) -> Self {
+        value.rollback()
+    }
+}
+
+impl FromValue for f64 {
+    type Intermediate = ParseIrOpt<f64>;
+}
+
+fn mysql_time_to_duration(
+    days: u32,
+    hours: u8,
+    minutes: u8,
+    seconds: u8,
+    microseconds: u32,
+) -> Duration {
+    let nanos = (microseconds as u32) * 1000;
+    let secs = u64::from(seconds)
+        + u64::from(minutes) * 60
+        + u64::from(hours) * 60 * 60
+        + u64::from(days) * 60 * 60 * 24;
+    Duration::new(secs, nanos)
+}
+
+impl TryFrom<Value> for ParseIrOpt<Duration> {
+    type Error = FromValueError;
+
+    fn try_from(v: Value) -> Result<Self, Self::Error> {
+        match v {
+            Value::Time(false, days, hours, minutes, seconds, microseconds) => {
+                let duration = mysql_time_to_duration(days, hours, minutes, seconds, microseconds);
+                Ok(ParseIrOpt::Parsed(duration, v))
+            }
+            Value::Bytes(ref val_bytes) => {
+                let duration = match parse_mysql_time_string(&*val_bytes) {
+                    Some((false, hours, minutes, seconds, microseconds)) => {
+                        let days = hours / 24;
+                        let hours = (hours % 24) as u8;
+                        mysql_time_to_duration(days, hours, minutes, seconds, microseconds)
+                    }
+                    _ => return Err(FromValueError(v)),
+                };
+                Ok(ParseIrOpt::Parsed(duration, v))
+            }
+            v => Err(FromValueError(v)),
+        }
+    }
+}
+
+impl From<ParseIrOpt<Duration>> for Duration {
+    fn from(value: ParseIrOpt<Duration>) -> Self {
+        value.commit()
+    }
+}
+
+impl From<ParseIrOpt<Duration>> for Value {
+    fn from(value: ParseIrOpt<Duration>) -> Self {
+        value.rollback()
+    }
+}
+
+impl FromValue for Duration {
+    type Intermediate = ParseIrOpt<Duration>;
+}
+
+impl TryFrom<Value> for String {
+    type Error = FromValueError;
+
+    fn try_from(v: Value) -> Result<Self, Self::Error> {
+        match v {
+            Value::Bytes(bytes) => match String::from_utf8(bytes) {
+                Ok(x) => Ok(x),
+                Err(e) => Err(FromValueError(Value::Bytes(e.into_bytes()))),
+            },
+            v => Err(FromValueError(v)),
+        }
+    }
+}
+
+impl FromValue for String {
+    type Intermediate = String;
+}
+
+impl TryFrom<Value> for Vec<u8> {
+    type Error = FromValueError;
+
+    fn try_from(v: Value) -> Result<Self, Self::Error> {
+        match v {
+            Value::Bytes(bytes) => Ok(bytes),
+            v => Err(FromValueError(v)),
+        }
+    }
+}
+
+impl FromValue for Vec<u8> {
+    type Intermediate = Vec<u8>;
+}
+
+/// Intermediate result of a Value-to-Option<T> conversion.
+#[derive(Debug, Clone, PartialEq)]
+pub enum OptionIr2<T: FromValue> {
+    None,
+    Some(T::Intermediate),
+}
+
+impl<T: FromValue> TryFrom<Value> for OptionIr2<T> {
+    type Error = <<T as FromValue>::Intermediate as TryFrom<Value>>::Error;
+
+    fn try_from(value: Value) -> Result<Self, Self::Error> {
+        match value {
+            Value::NULL => Ok(Self::None),
+            v => <T as FromValue>::Intermediate::try_from(v).map(Self::Some),
+        }
+    }
+}
+
+impl<T: FromValue> From<OptionIr2<T>> for Option<T> {
+    fn from(ir: OptionIr2<T>) -> Self {
+        match ir {
+            OptionIr2::None => None,
+            OptionIr2::Some(ir) => Some(ir.into()),
+        }
+    }
+}
+
+impl<T: FromValue> From<OptionIr2<T>> for Value
+where
+    <T as FromValue>::Intermediate: Into<Value>,
+{
+    fn from(ir: OptionIr2<T>) -> Self {
+        match ir {
+            OptionIr2::None => Value::NULL,
+            OptionIr2::Some(ir) => ir.into(),
+        }
+    }
+}
+
+impl<T: FromValue> FromValue for Option<T> {
+    type Intermediate = OptionIr2<T>;
+}
+
+// TODO: rustc is unable to conclude that Infallible equals FromValueError
+#[derive(Debug, Clone, PartialEq, PartialOrd)]
+#[repr(transparent)]
+pub struct ValueIr(pub Value);
+
+impl TryFrom<Value> for ValueIr {
+    type Error = FromValueError;
+
+    fn try_from(value: Value) -> Result<Self, Self::Error> {
+        Ok(ValueIr(value))
+    }
+}
+
+impl From<ValueIr> for Value {
+    fn from(value: ValueIr) -> Self {
+        value.0
+    }
+}
+
+impl FromValue for Value {
+    type Intermediate = ValueIr;
 }
 
 /// Will panic if could not convert `v` to `T`
@@ -198,324 +485,54 @@ pub fn from_value_opt<T: FromValue>(v: Value) -> Result<T, FromValueError> {
     FromValue::from_value_opt(v)
 }
 
-macro_rules! impl_from_value_num {
-    ($t:ident) => {
-        impl ConvIr<$t> for ParseIr<$t> {
-            fn new(v: Value) -> Result<ParseIr<$t>, FromValueError> {
-                match v {
-                    Value::Int(x) => {
-                        if let Some(output) = $t::from_i64(x) {
-                            Ok(ParseIr {
-                                value: Value::Int(x),
-                                output,
-                            })
-                        } else {
-                            Err(FromValueError(Value::Int(x)))
-                        }
-                    }
-                    Value::UInt(x) => {
-                        if let Some(output) = $t::from_u64(x) {
-                            Ok(ParseIr {
-                                value: Value::UInt(x),
-                                output,
-                            })
-                        } else {
-                            Err(FromValueError(Value::UInt(x)))
-                        }
-                    }
-                    Value::Bytes(bytes) => match parse(&*bytes) {
-                        Ok(x) => Ok(ParseIr {
-                            value: Value::Bytes(bytes),
-                            output: x,
-                        }),
-                        _ => Err(FromValueError(Value::Bytes(bytes))),
-                    },
-                    v => Err(FromValueError(v)),
-                }
-            }
-            fn commit(self) -> $t {
-                self.output
-            }
-            fn rollback(self) -> Value {
-                self.value
-            }
-        }
+impl TryFrom<Value> for Cow<'static, str> {
+    type Error = FromValueError;
 
-        impl_from_value!($t, ParseIr<$t>);
-    };
-}
-
-/// Intermediate result of a Value-to-Option<T> conversion.
-#[derive(Debug, Clone, PartialEq)]
-pub struct OptionIr<T> {
-    value: Option<Value>,
-    ir: Option<T>,
-}
-
-impl<T, Ir> ConvIr<Option<T>> for OptionIr<Ir>
-where
-    T: FromValue<Intermediate = Ir>,
-    Ir: ConvIr<T>,
-{
-    fn new(v: Value) -> Result<OptionIr<Ir>, FromValueError> {
+    fn try_from(v: Value) -> Result<Self, Self::Error> {
         match v {
-            Value::NULL => Ok(OptionIr {
-                value: Some(Value::NULL),
-                ir: None,
-            }),
-            v => match T::get_intermediate(v) {
-                Ok(ir) => Ok(OptionIr {
-                    value: None,
-                    ir: Some(ir),
-                }),
-                Err(err) => Err(err),
-            },
-        }
-    }
-    fn commit(self) -> Option<T> {
-        self.ir.map(|ir| ir.commit())
-    }
-    fn rollback(self) -> Value {
-        let OptionIr { value, ir } = self;
-        match value {
-            Some(v) => v,
-            None => match ir {
-                Some(ir) => ir.rollback(),
-                None => unreachable!(),
-            },
-        }
-    }
-}
-
-impl<T> FromValue for Option<T>
-where
-    T: FromValue,
-{
-    type Intermediate = OptionIr<T::Intermediate>;
-}
-
-impl ConvIr<Value> for Value {
-    fn new(v: Value) -> Result<Self, FromValueError> {
-        Ok(v)
-    }
-
-    fn commit(self) -> Value {
-        self
-    }
-
-    fn rollback(self) -> Value {
-        self
-    }
-}
-
-impl FromValue for Value {
-    type Intermediate = Value;
-    fn from_value(v: Value) -> Value {
-        v
-    }
-    fn from_value_opt(v: Value) -> Result<Value, FromValueError> {
-        Ok(v)
-    }
-}
-
-impl ConvIr<String> for Vec<u8> {
-    fn new(v: Value) -> Result<Vec<u8>, FromValueError> {
-        match v {
-            Value::Bytes(bytes) => match from_utf8(&*bytes) {
-                Ok(_) => Ok(bytes),
-                Err(_) => Err(FromValueError(Value::Bytes(bytes))),
+            Value::Bytes(bytes) => match String::from_utf8(bytes) {
+                Ok(x) => Ok(Cow::Owned(x)),
+                Err(e) => Err(FromValueError(Value::Bytes(e.into_bytes()))),
             },
             v => Err(FromValueError(v)),
         }
     }
-    fn commit(self) -> String {
-        unsafe { String::from_utf8_unchecked(self) }
-    }
-    fn rollback(self) -> Value {
-        Value::Bytes(self)
-    }
 }
 
-/// Intermediate result of a Value-to-Integer conversion.
-#[derive(Debug, Clone, PartialEq)]
-pub struct ParseIr<T> {
-    value: Value,
-    output: T,
+impl FromValue for Cow<'static, str> {
+    type Intermediate = String;
 }
 
-impl ConvIr<i64> for ParseIr<i64> {
-    fn new(v: Value) -> Result<ParseIr<i64>, FromValueError> {
+impl TryFrom<Value> for Cow<'static, [u8]> {
+    type Error = FromValueError;
+
+    fn try_from(v: Value) -> Result<Self, Self::Error> {
         match v {
-            Value::Int(x) => Ok(ParseIr {
-                value: Value::Int(x),
-                output: x,
-            }),
-            Value::UInt(x) if x <= ::std::i64::MAX as u64 => Ok(ParseIr {
-                value: Value::UInt(x),
-                output: x as i64,
-            }),
-            Value::Bytes(bytes) => match parse(&*bytes) {
-                Ok(x) => Ok(ParseIr {
-                    value: Value::Bytes(bytes),
-                    output: x,
-                }),
-                _ => Err(FromValueError(Value::Bytes(bytes))),
-            },
+            Value::Bytes(x) => Ok(Cow::Owned(x)),
             v => Err(FromValueError(v)),
         }
     }
-    fn commit(self) -> i64 {
-        self.output
-    }
-    fn rollback(self) -> Value {
-        self.value
-    }
 }
 
-impl ConvIr<u64> for ParseIr<u64> {
-    fn new(v: Value) -> Result<ParseIr<u64>, FromValueError> {
+impl FromValue for Cow<'static, [u8]> {
+    type Intermediate = Cow<'static, [u8]>;
+}
+
+impl<const N: usize> TryFrom<Value> for [u8; N] {
+    type Error = FromValueError;
+
+    fn try_from(v: Value) -> Result<Self, Self::Error> {
         match v {
-            Value::Int(x) if x >= 0 => Ok(ParseIr {
-                value: Value::Int(x),
-                output: x as u64,
-            }),
-            Value::UInt(x) => Ok(ParseIr {
-                value: Value::UInt(x),
-                output: x,
-            }),
-            Value::Bytes(bytes) => match parse(&*bytes) {
-                Ok(x) => Ok(ParseIr {
-                    value: Value::Bytes(bytes),
-                    output: x,
-                }),
-                _ => Err(FromValueError(Value::Bytes(bytes))),
-            },
+            Value::Bytes(bytes) => bytes
+                .try_into()
+                .map_err(|x| FromValueError(Value::Bytes(x))),
             v => Err(FromValueError(v)),
         }
     }
-    fn commit(self) -> u64 {
-        self.output
-    }
-    fn rollback(self) -> Value {
-        self.value
-    }
 }
 
-impl ConvIr<f32> for ParseIr<f32> {
-    fn new(v: Value) -> Result<ParseIr<f32>, FromValueError> {
-        match v {
-            Value::Float(x) => Ok(ParseIr {
-                value: Value::Float(x),
-                output: x,
-            }),
-            Value::Bytes(bytes) => {
-                let val = parse(&*bytes).ok();
-                match val {
-                    Some(x) => Ok(ParseIr {
-                        value: Value::Bytes(bytes),
-                        output: x,
-                    }),
-                    None => Err(FromValueError(Value::Bytes(bytes))),
-                }
-            }
-            v => Err(FromValueError(v)),
-        }
-    }
-    fn commit(self) -> f32 {
-        self.output
-    }
-    fn rollback(self) -> Value {
-        self.value
-    }
-}
-
-impl ConvIr<f64> for ParseIr<f64> {
-    fn new(v: Value) -> Result<ParseIr<f64>, FromValueError> {
-        match v {
-            Value::Double(x) => Ok(ParseIr {
-                value: Value::Double(x),
-                output: x,
-            }),
-            Value::Float(x) => {
-                let double = x.into();
-                Ok(ParseIr {
-                    value: Value::Double(double),
-                    output: double,
-                })
-            }
-            Value::Bytes(bytes) => {
-                let val = parse(&*bytes).ok();
-                match val {
-                    Some(x) => Ok(ParseIr {
-                        value: Value::Bytes(bytes),
-                        output: x,
-                    }),
-                    _ => Err(FromValueError(Value::Bytes(bytes))),
-                }
-            }
-            v => Err(FromValueError(v)),
-        }
-    }
-    fn commit(self) -> f64 {
-        self.output
-    }
-    fn rollback(self) -> Value {
-        self.value
-    }
-}
-
-impl ConvIr<bool> for ParseIr<bool> {
-    fn new(v: Value) -> Result<ParseIr<bool>, FromValueError> {
-        match v {
-            Value::Int(0) => Ok(ParseIr {
-                value: Value::Int(0),
-                output: false,
-            }),
-            Value::Int(1) => Ok(ParseIr {
-                value: Value::Int(1),
-                output: true,
-            }),
-            Value::Bytes(bytes) => {
-                if bytes.len() == 1 {
-                    match bytes[0] {
-                        0x30 => Ok(ParseIr {
-                            value: Value::Bytes(bytes),
-                            output: false,
-                        }),
-                        0x31 => Ok(ParseIr {
-                            value: Value::Bytes(bytes),
-                            output: true,
-                        }),
-                        _ => Err(FromValueError(Value::Bytes(bytes))),
-                    }
-                } else {
-                    Err(FromValueError(Value::Bytes(bytes)))
-                }
-            }
-            v => Err(FromValueError(v)),
-        }
-    }
-    fn commit(self) -> bool {
-        self.output
-    }
-    fn rollback(self) -> Value {
-        self.value
-    }
-}
-
-impl ConvIr<Vec<u8>> for Vec<u8> {
-    fn new(v: Value) -> Result<Vec<u8>, FromValueError> {
-        match v {
-            Value::Bytes(bytes) => Ok(bytes),
-            v => Err(FromValueError(v)),
-        }
-    }
-    fn commit(self) -> Vec<u8> {
-        self
-    }
-    fn rollback(self) -> Value {
-        Value::Bytes(self)
-    }
+impl<const N: usize> FromValue for [u8; N] {
+    type Intermediate = [u8; N];
 }
 
 fn parse_micros(micros_bytes: &[u8]) -> u32 {
@@ -537,7 +554,7 @@ fn parse_micros(micros_bytes: &[u8]) -> u32 {
 }
 
 /// Returns (is_neg, hours, minutes, seconds, microseconds)
-fn parse_mysql_time_string(mut bytes: &[u8]) -> Option<(bool, u32, u32, u32, u32)> {
+fn parse_mysql_time_string(mut bytes: &[u8]) -> Option<(bool, u32, u8, u8, u32)> {
     #[derive(PartialEq, Eq, PartialOrd, Ord)]
     #[repr(u8)]
     enum TimeKind {
@@ -586,47 +603,6 @@ fn parse_mysql_time_string(mut bytes: &[u8]) -> Option<(bool, u32, u32, u32, u32
     ))
 }
 
-impl ConvIr<Duration> for ParseIr<Duration> {
-    fn new(v: Value) -> Result<ParseIr<Duration>, FromValueError> {
-        match v {
-            Value::Time(false, days, hours, minutes, seconds, microseconds) => {
-                let nanos = (microseconds as u32) * 1000;
-                let secs = u64::from(seconds)
-                    + u64::from(minutes) * 60
-                    + u64::from(hours) * 60 * 60
-                    + u64::from(days) * 60 * 60 * 24;
-                Ok(ParseIr {
-                    value: Value::Time(false, days, hours, minutes, seconds, microseconds),
-                    output: Duration::new(secs, nanos),
-                })
-            }
-            Value::Bytes(val_bytes) => {
-                let duration = match parse_mysql_time_string(&*val_bytes) {
-                    Some((false, hours, minutes, seconds, microseconds)) => {
-                        let nanos = microseconds * 1000;
-                        let secs = u64::from(seconds)
-                            + u64::from(minutes) * 60
-                            + u64::from(hours) * 60 * 60;
-                        Duration::new(secs, nanos)
-                    }
-                    _ => return Err(FromValueError(Value::Bytes(val_bytes))),
-                };
-                Ok(ParseIr {
-                    value: Value::Bytes(val_bytes),
-                    output: duration,
-                })
-            }
-            v => Err(FromValueError(v)),
-        }
-    }
-    fn commit(self) -> Duration {
-        self.output
-    }
-    fn rollback(self) -> Value {
-        self.value
-    }
-}
-
 impl From<Duration> for Value {
     fn from(x: Duration) -> Value {
         let mut secs_total = x.as_secs();
@@ -647,25 +623,6 @@ impl From<Duration> for Value {
         )
     }
 }
-
-impl_from_value!(String, Vec<u8>);
-impl_from_value!(Vec<u8>, Vec<u8>);
-impl_from_value!(bool, ParseIr<bool>);
-impl_from_value!(i64, ParseIr<i64>);
-impl_from_value!(u64, ParseIr<u64>);
-impl_from_value!(f32, ParseIr<f32>);
-impl_from_value!(f64, ParseIr<f64>);
-impl_from_value!(Duration, ParseIr<Duration>);
-impl_from_value_num!(i8);
-impl_from_value_num!(u8);
-impl_from_value_num!(i16);
-impl_from_value_num!(u16);
-impl_from_value_num!(i32);
-impl_from_value_num!(u32);
-impl_from_value_num!(isize);
-impl_from_value_num!(usize);
-impl_from_value_num!(i128);
-impl_from_value_num!(u128);
 
 pub trait ToValue {
     fn to_value(&self) -> Value;
@@ -779,55 +736,30 @@ impl<'a> From<&'a str> for Value {
     }
 }
 
+impl<'a, T: ToOwned> From<Cow<'a, T>> for Value
+where
+    T::Owned: Into<Value>,
+    &'a T: Into<Value>,
+{
+    fn from(x: Cow<'a, T>) -> Value {
+        match x {
+            Cow::Borrowed(x) => x.into(),
+            Cow::Owned(x) => x.into(),
+        }
+    }
+}
+
 impl From<String> for Value {
     fn from(x: String) -> Value {
         Value::Bytes(x.into_bytes())
     }
 }
 
-macro_rules! from_array_impl {
-    ($n:expr) => {
-        impl From<[u8; $n]> for Value {
-            fn from(x: [u8; $n]) -> Value {
-                Value::from(&x[..])
-            }
-        }
-    };
+impl<const N: usize> From<[u8; N]> for Value {
+    fn from(x: [u8; N]) -> Value {
+        Value::Bytes(x.to_vec())
+    }
 }
-
-from_array_impl!(0);
-from_array_impl!(1);
-from_array_impl!(2);
-from_array_impl!(3);
-from_array_impl!(4);
-from_array_impl!(5);
-from_array_impl!(6);
-from_array_impl!(7);
-from_array_impl!(8);
-from_array_impl!(9);
-from_array_impl!(10);
-from_array_impl!(11);
-from_array_impl!(12);
-from_array_impl!(13);
-from_array_impl!(14);
-from_array_impl!(15);
-from_array_impl!(16);
-from_array_impl!(17);
-from_array_impl!(18);
-from_array_impl!(19);
-from_array_impl!(20);
-from_array_impl!(21);
-from_array_impl!(22);
-from_array_impl!(23);
-from_array_impl!(24);
-from_array_impl!(25);
-from_array_impl!(26);
-from_array_impl!(27);
-from_array_impl!(28);
-from_array_impl!(29);
-from_array_impl!(30);
-from_array_impl!(31);
-from_array_impl!(32);
 
 #[cfg(test)]
 mod tests {
@@ -897,8 +829,8 @@ mod tests {
         fn parse_mysql_time_string_parses_correctly(
             sign in 0..2,
             h in 0u32..900,
-            m in 0u32..59,
-            s in 0u32..59,
+            m in 0u8..59,
+            s in 0u8..59,
             have_us in 0..2,
             us in 0u32..1000000,
         ) {

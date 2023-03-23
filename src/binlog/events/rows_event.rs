@@ -43,7 +43,7 @@ pub struct RowsEvent<'a> {
     /// the end of statement flag set that declares that all table maps can be freed.
     /// Otherwise it refers to a table defined by `TABLE_MAP_EVENT`.
     table_id: RawInt<LeU48>,
-    /// Raw rows event flags (see `RowsEventFalgs`).
+    /// Raw rows event flags (see `RowsEventFlags`).
     flags: RawFlags<RowsEventFlags, LeU16>,
     /// Raw extra data.
     ///

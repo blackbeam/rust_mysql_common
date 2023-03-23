@@ -15,9 +15,10 @@ This crate:
 * implements helper traits for MySql protocol IO;
 * implements support of named parameters for prepared statements;
 * implements parsers for a subset of MySql protocol packets (including binlog packets);
-* defines rust representation of MySql protocol value and row;
+* defines rust representation of MySql protocol values and rows;
 * implements conversion between MySql values and rust types, between MySql rows and tuples
   of rust types.
+* implements [FromRow and FromValue derive macros][2]
 
 ### Supported rust types
 
@@ -66,18 +67,20 @@ Also crate provides from-row convertion for the following list of types (see `Fr
 
 #### Crate features
 
-| Feature        | Description                                 | Default |
-| -------------- | ------------------------------------------- | ------- |
-| `bigdecimal`   | Enables `bigdecimal` v0.2.x types support   | 🔴      |
-| `bigdecimal03` | Enables `bigdecimal` v0.3.x types support   | 🟢      |
-| `chrono`       | Enables `chrono` types support              | 🔴      |
-| `rust_decimal` | Enables `rust_decimal` types support        | 🟢      |
-| `time`         | Enables `time` v0.2.x types support         | 🔴      |
-| `time03`       | Enables `time` v0.3.x types support         | 🟢      |
-| `uuid`         | Enables `Uuid` type support                 | 🟢      |
-| `frunk`        | Enables `FromRow` for `frunk::Hlist!` types | 🟢      |
+| Feature        | Description                                          | Default |
+| -------------- | ---------------------------------------------------- | ------- |
+| `bigdecimal`   | Enables `bigdecimal` v0.2.x types support            | 🔴      |
+| `bigdecimal03` | Enables `bigdecimal` v0.3.x types support            | 🟢      |
+| `chrono`       | Enables `chrono` types support                       | 🔴      |
+| `rust_decimal` | Enables `rust_decimal` types support                 | 🟢      |
+| `time`         | Enables `time` v0.2.x types support                  | 🔴      |
+| `time03`       | Enables `time` v0.3.x types support                  | 🟢      |
+| `uuid`         | Enables `Uuid` type support                          | 🟢      |
+| `frunk`        | Enables `FromRow` for `frunk::Hlist!` types          | 🟢      |
+| `derive`       | Enables [`FromValue` and `FromRow` derive macros][2] | 🔴      |
 
 [1]: https://dev.mysql.com/doc/internals/en/binary-protocol-value.html
+[2]: https://docs.rs/mysql-common-derive
 
 ## License
 

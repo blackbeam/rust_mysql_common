@@ -15,9 +15,10 @@
 //! * implements helper traits for MySql protocol IO;
 //! * implements support of named parameters for prepared statements;
 //! * implements parsers for a subset of MySql protocol packets (including binlog packets);
-//! * defines rust representation of MySql protocol value and row;
+//! * defines rust representation of MySql protocol values and rows;
 //! * implements conversion between MySql values and rust types, between MySql rows and tuples
 //!   of rust types.
+//! * implements [FromRow and FromValue derive macros][2]
 //!
 //! ## Supported rust types
 //!
@@ -66,19 +67,22 @@
 //!
 //! ### Crate features
 //!
-//! | Feature        | Description                                 | Default |
-//! | -------------- | ------------------------------------------- | ------- |
-//! | `bigdecimal`   | Enables `bigdecimal` v0.2.x types support   | 🔴      |
-//! | `bigdecimal03` | Enables `bigdecimal` v0.3.x types support   | 🟢      |
-//! | `chrono`       | Enables `chrono` types support              | 🔴      |
-//! | `rust_decimal` | Enables `rust_decimal` types support        | 🟢      |
-//! | `time`         | Enables `time` v0.2.x types support         | 🔴      |
-//! | `time03`       | Enables `time` v0.3.x types support         | 🟢      |
-//! | `uuid`         | Enables `Uuid` type support                 | 🟢      |
-//! | `frunk`        | Enables `FromRow` for `frunk::Hlist!` types | 🟢      |
+//! | Feature        | Description                                          | Default |
+//! | -------------- | ---------------------------------------------------- | ------- |
+//! | `bigdecimal`   | Enables `bigdecimal` v0.2.x types support            | 🔴      |
+//! | `bigdecimal03` | Enables `bigdecimal` v0.3.x types support            | 🟢      |
+//! | `chrono`       | Enables `chrono` types support                       | 🔴      |
+//! | `rust_decimal` | Enables `rust_decimal` types support                 | 🟢      |
+//! | `time`         | Enables `time` v0.2.x types support                  | 🔴      |
+//! | `time03`       | Enables `time` v0.3.x types support                  | 🟢      |
+//! | `uuid`         | Enables `Uuid` type support                          | 🟢      |
+//! | `frunk`        | Enables `FromRow` for `frunk::Hlist!` types          | 🟢      |
+//! | `derive`       | Enables [`FromValue` and `FromRow` derive macros][2] | 🔴      |
 //!
 //! [1]: https://dev.mysql.com/doc/internals/en/binary-protocol-value.html
-#![cfg_attr(feature = "nightly", feature(test, const_fn))]
+//! [2]: https://docs.rs/mysql-common-derive
+#![cfg_attr(feature = "nightly", feature(test))]
+#![cfg_attr(docsrs, feature(doc_cfg))]
 
 // The `test` feature is required to compile tests.
 // It'll bind test binaries to an official C++ impl of MySql decimals (see build.rs)
@@ -116,9 +120,35 @@ pub use time03;
 #[cfg(feature = "uuid")]
 pub use uuid;
 
+#[cfg(feature = "derive")]
+#[allow(unused_imports)]
+#[macro_use]
+extern crate mysql_common_derive;
+
 pub use num_bigint;
 pub use serde;
 pub use serde_json;
+
+pub use value::convert::FromValueError;
+pub use value::Value;
+
+pub use row::convert::FromRowError;
+pub use row::Row;
+
+pub use value::json::{Deserialized, Serialized};
+
+pub mod prelude {
+    #[cfg(feature = "derive")]
+    #[doc(inline)]
+    pub use mysql_common_derive::FromValue;
+
+    #[cfg(feature = "derive")]
+    #[doc(inline)]
+    pub use mysql_common_derive::FromRow;
+
+    pub use crate::row::{convert::FromRow, ColumnIndex};
+    pub use crate::value::convert::{FromValue, ToValue};
+}
 
 /// This macro is a convenient way to pass named parameters to a statement.
 ///
@@ -133,17 +163,17 @@ pub use serde_json;
 macro_rules! params {
     () => {};
     (@to_pair $map:expr, $name:expr => $value:expr) => (
-        let entry = $map.entry(std::string::String::from($name));
+        let entry = $map.entry(std::vec::Vec::<u8>::from($name));
         if let std::collections::hash_map::Entry::Occupied(_) = entry {
-            panic!("Redefinition of named parameter `{}'", entry.key());
+            panic!("Redefinition of named parameter `{}'", std::string::String::from_utf8_lossy(entry.key()));
         } else {
             entry.or_insert($crate::value::Value::from($value));
         }
     );
     (@to_pair $map:expr, $name:ident) => (
-        let entry = $map.entry(std::string::String::from(stringify!($name)));
+        let entry = $map.entry(stringify!($name).as_bytes().to_vec());
         if let std::collections::hash_map::Entry::Occupied(_) = entry {
-            panic!("Redefinition of named parameter `{}'", entry.key());
+            panic!("Redefinition of named parameter `{}'", std::string::String::from_utf8_lossy(entry.key()));
         } else {
             entry.or_insert($crate::value::Value::from($name));
         }
@@ -167,21 +197,21 @@ macro_rules! params {
     };
     ($i:ident, $($tail:tt)*) => {
         {
-            let mut map: std::collections::HashMap<std::string::String, $crate::value::Value, _> = std::default::Default::default();
+            let mut map: std::collections::HashMap<std::vec::Vec<u8>, $crate::value::Value, _> = std::default::Default::default();
             params!(@expand (&mut map); $i, $($tail)*);
             $crate::params::Params::Named(map)
         }
     };
     ($i:expr => $($tail:tt)*) => {
         {
-            let mut map: std::collections::HashMap<std::string::String, $crate::value::Value, _> = std::default::Default::default();
+            let mut map: std::collections::HashMap<std::vec::Vec<u8>, $crate::value::Value, _> = std::default::Default::default();
             params!(@expand (&mut map); $i => $($tail)*);
             $crate::params::Params::Named(map)
         }
     };
     ($i:ident) => {
         {
-            let mut map: std::collections::HashMap<std::string::String, $crate::value::Value, _> = std::default::Default::default();
+            let mut map: std::collections::HashMap<std::vec::Vec<u8>, $crate::value::Value, _> = std::default::Default::default();
             params!(@expand (&mut map); $i);
             $crate::params::Params::Named(map)
         }

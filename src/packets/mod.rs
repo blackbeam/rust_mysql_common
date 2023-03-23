@@ -10,7 +10,9 @@ use bytes::BufMut;
 use lexical::parse;
 use regex::bytes::Regex;
 use smallvec::SmallVec;
+use uuid::Uuid;
 
+use std::str::FromStr;
 use std::{
     borrow::Cow, cmp::max, collections::HashMap, convert::TryFrom, fmt, io, marker::PhantomData,
 };
@@ -400,11 +402,65 @@ pub trait OkPacketKind {
     ) -> io::Result<OkPacketBody<'de>>;
 }
 
-/// Ok pakcet that terminates a result set (text or binary).
+/// Ok packet that terminates a result set (text or binary).
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
 pub struct ResultSetTerminator;
 
 impl OkPacketKind for ResultSetTerminator {
+    const HEADER: u8 = 0xFE;
+
+    fn parse_body<'de>(
+        capabilities: CapabilityFlags,
+        buf: &mut ParseBuf<'de>,
+    ) -> io::Result<OkPacketBody<'de>> {
+        // We need to skip affected_rows and insert_id here
+        // because valid content of EOF packet includes
+        // packet marker, server status and warning count only.
+        // (see `read_ok_ex` in sql-common/client.cc)
+        buf.parse::<RawInt<LenEnc>>(())?;
+        buf.parse::<RawInt<LenEnc>>(())?;
+
+        // assume CLIENT_PROTOCOL_41 flag
+        let mut sbuf: ParseBuf = buf.parse(4)?;
+        let status_flags: Const<StatusFlags, LeU16> = sbuf.parse_unchecked(())?;
+        let warnings = sbuf.parse_unchecked(())?;
+
+        let (info, session_state_info) =
+            if capabilities.contains(CapabilityFlags::CLIENT_SESSION_TRACK) && !buf.is_empty() {
+                let info = buf.parse(())?;
+                let session_state_info =
+                    if status_flags.contains(StatusFlags::SERVER_SESSION_STATE_CHANGED) {
+                        buf.parse(())?
+                    } else {
+                        RawBytes::default()
+                    };
+                (info, session_state_info)
+            } else if !buf.is_empty() && buf.0[0] > 0 {
+                // The `info` field is a `string<EOF>` according to the MySQL Internals
+                // Manual, but actually it's a `string<lenenc>`.
+                // SEE: sql/protocol_classics.cc `net_send_ok`
+                let info = buf.parse(())?;
+                (info, RawBytes::default())
+            } else {
+                (RawBytes::default(), RawBytes::default())
+            };
+
+        Ok(OkPacketBody {
+            affected_rows: RawInt::new(0),
+            last_insert_id: RawInt::new(0),
+            status_flags,
+            warnings,
+            info,
+            session_state_info,
+        })
+    }
+}
+
+/// Old deprecated EOF packet.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
+pub struct OldEofPacket;
+
+impl OkPacketKind for OldEofPacket {
     const HEADER: u8 = 0xFE;
 
     fn parse_body<'de>(
@@ -438,7 +494,7 @@ impl OkPacketKind for NetworkStreamTerminator {
         flags: CapabilityFlags,
         buf: &mut ParseBuf<'de>,
     ) -> io::Result<OkPacketBody<'de>> {
-        ResultSetTerminator::parse_body(flags, buf)
+        OldEofPacket::parse_body(flags, buf)
     }
 }
 
@@ -455,6 +511,7 @@ impl OkPacketKind for CommonOkPacket {
     ) -> io::Result<OkPacketBody<'de>> {
         let affected_rows = buf.parse(())?;
         let last_insert_id = buf.parse(())?;
+
         // We assume that CLIENT_PROTOCOL_41 was set
         let mut sbuf: ParseBuf = buf.parse(4)?;
         let status_flags: Const<StatusFlags, LeU16> = sbuf.parse_unchecked(())?;
@@ -972,18 +1029,32 @@ impl MySerialize for LocalInfilePacket<'_> {
 const MYSQL_OLD_PASSWORD_PLUGIN_NAME: &[u8] = b"mysql_old_password";
 const MYSQL_NATIVE_PASSWORD_PLUGIN_NAME: &[u8] = b"mysql_native_password";
 const CACHING_SHA2_PASSWORD_PLUGIN_NAME: &[u8] = b"caching_sha2_password";
+const MYSQL_CLEAR_PASSWORD_PLUGIN_NAME: &[u8] = b"mysql_clear_password";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum AuthPluginData {
+pub enum AuthPluginData<'a> {
     /// Auth data for the `mysql_old_password` plugin.
     Old([u8; 8]),
     /// Auth data for the `mysql_native_password` plugin.
     Native([u8; 20]),
     /// Auth data for `sha2_password` and `caching_sha2_password` plugins.
     Sha2([u8; 32]),
+    /// Clear password for `mysql_clear_password` plugin.
+    Clear(Cow<'a, [u8]>),
 }
 
-impl std::ops::Deref for AuthPluginData {
+impl<'a> AuthPluginData<'a> {
+    pub fn into_owned(self) -> AuthPluginData<'static> {
+        match self {
+            AuthPluginData::Old(x) => AuthPluginData::Old(x),
+            AuthPluginData::Native(x) => AuthPluginData::Native(x),
+            AuthPluginData::Sha2(x) => AuthPluginData::Sha2(x),
+            AuthPluginData::Clear(x) => AuthPluginData::Clear(Cow::Owned(x.into_owned())),
+        }
+    }
+}
+
+impl std::ops::Deref for AuthPluginData<'_> {
     type Target = [u8];
 
     fn deref(&self) -> &Self::Target {
@@ -991,17 +1062,22 @@ impl std::ops::Deref for AuthPluginData {
             Self::Sha2(x) => &x[..],
             Self::Native(x) => &x[..],
             Self::Old(x) => &x[..],
+            Self::Clear(x) => &x[..],
         }
     }
 }
 
-impl MySerialize for AuthPluginData {
+impl MySerialize for AuthPluginData<'_> {
     fn serialize(&self, buf: &mut Vec<u8>) {
         match self {
             Self::Sha2(x) => buf.put_slice(&x[..]),
             Self::Native(x) => buf.put_slice(&x[..]),
             Self::Old(x) => {
                 buf.put_slice(&x[..]);
+                buf.push(0);
+            }
+            Self::Clear(x) => {
+                buf.put_slice(x);
                 buf.push(0);
             }
         }
@@ -1013,6 +1089,8 @@ impl MySerialize for AuthPluginData {
 pub enum AuthPlugin<'a> {
     /// Old Password Authentication
     MysqlOldPassword,
+    /// Client-Side Cleartext Pluggable Authentication
+    MysqlClearPassword,
     /// Legacy authentication plugin
     MysqlNativePassword,
     /// Default since MySql v8.0.4
@@ -1047,6 +1125,7 @@ impl<'a> AuthPlugin<'a> {
             CACHING_SHA2_PASSWORD_PLUGIN_NAME => AuthPlugin::CachingSha2Password,
             MYSQL_NATIVE_PASSWORD_PLUGIN_NAME => AuthPlugin::MysqlNativePassword,
             MYSQL_OLD_PASSWORD_PLUGIN_NAME => AuthPlugin::MysqlOldPassword,
+            MYSQL_CLEAR_PASSWORD_PLUGIN_NAME => AuthPlugin::MysqlClearPassword,
             name => AuthPlugin::Other(Cow::Borrowed(name)),
         }
     }
@@ -1056,6 +1135,7 @@ impl<'a> AuthPlugin<'a> {
             AuthPlugin::CachingSha2Password => CACHING_SHA2_PASSWORD_PLUGIN_NAME,
             AuthPlugin::MysqlNativePassword => MYSQL_NATIVE_PASSWORD_PLUGIN_NAME,
             AuthPlugin::MysqlOldPassword => MYSQL_OLD_PASSWORD_PLUGIN_NAME,
+            AuthPlugin::MysqlClearPassword => MYSQL_CLEAR_PASSWORD_PLUGIN_NAME,
             AuthPlugin::Other(name) => &*name,
         }
     }
@@ -1065,6 +1145,7 @@ impl<'a> AuthPlugin<'a> {
             AuthPlugin::CachingSha2Password => AuthPlugin::CachingSha2Password,
             AuthPlugin::MysqlNativePassword => AuthPlugin::MysqlNativePassword,
             AuthPlugin::MysqlOldPassword => AuthPlugin::MysqlOldPassword,
+            AuthPlugin::MysqlClearPassword => AuthPlugin::MysqlClearPassword,
             AuthPlugin::Other(name) => AuthPlugin::Other(Cow::Owned(name.into_owned())),
         }
     }
@@ -1074,6 +1155,7 @@ impl<'a> AuthPlugin<'a> {
             AuthPlugin::CachingSha2Password => AuthPlugin::CachingSha2Password,
             AuthPlugin::MysqlNativePassword => AuthPlugin::MysqlNativePassword,
             AuthPlugin::MysqlOldPassword => AuthPlugin::MysqlOldPassword,
+            AuthPlugin::MysqlClearPassword => AuthPlugin::MysqlClearPassword,
             AuthPlugin::Other(name) => AuthPlugin::Other(Cow::Borrowed(name.as_ref())),
         }
     }
@@ -1083,11 +1165,11 @@ impl<'a> AuthPlugin<'a> {
     /// It'll generate `None` if password is `None` or empty.
     ///
     /// Note, that you should trim terminating null character from the `nonce`.
-    pub fn gen_data(&self, pass: Option<&str>, nonce: &[u8]) -> Option<AuthPluginData> {
+    pub fn gen_data<'b>(&self, pass: Option<&'b str>, nonce: &[u8]) -> Option<AuthPluginData<'b>> {
         use super::scramble::{scramble_323, scramble_native, scramble_sha256};
 
         match pass {
-            Some(pass) => match self {
+            Some(pass) if !pass.is_empty() => match self {
                 AuthPlugin::CachingSha2Password => {
                     scramble_sha256(nonce, pass.as_bytes()).map(AuthPluginData::Sha2)
                 }
@@ -1098,9 +1180,12 @@ impl<'a> AuthPlugin<'a> {
                     scramble_323(nonce.chunks(8).next().unwrap(), pass.as_bytes())
                         .map(AuthPluginData::Old)
                 }
+                AuthPlugin::MysqlClearPassword => {
+                    Some(AuthPluginData::Clear(Cow::Borrowed(pass.as_bytes())))
+                }
                 AuthPlugin::Other(_) => None,
             },
-            None => None,
+            _ => None,
         }
     }
 }
@@ -1395,12 +1480,10 @@ impl<'a> HandshakePacket<'a> {
         // Safety:
         // * capabilities are given as a valid CapabilityFlags instance
         // * the BitAnd operation can't set new bits
-        let (capabilities_1, capabilities_2) = unsafe {
-            (
-                CapabilityFlags::from_bits_unchecked(capabilities.bits() & 0x0000_FFFF),
-                CapabilityFlags::from_bits_unchecked(capabilities.bits() & 0xFFFF_0000),
-            )
-        };
+        let (capabilities_1, capabilities_2) = (
+            CapabilityFlags::from_bits_retain(capabilities.bits() & 0x0000_FFFF),
+            CapabilityFlags::from_bits_retain(capabilities.bits() & 0xFFFF_0000),
+        );
 
         let scramble_2 = scramble_2.map(RawBytes::new);
 
@@ -1884,7 +1967,7 @@ impl StmtPacket {
 
 /// Null-bitmap.
 ///
-/// http://dev.mysql.com/doc/internals/en/null-bitmap.html
+/// <http://dev.mysql.com/doc/internals/en/null-bitmap.html>
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct NullBitmap<T, U: AsRef<[u8]> = Vec<u8>>(U, PhantomData<T>);
 
@@ -2460,6 +2543,7 @@ my_bitflags! {
     u16,
 
     /// Empty flags of a `LoadEvent`.
+    #[derive(PartialEq, Eq, Hash, Debug, Clone, Copy)]
     pub struct BinlogDumpFlags: u16 {
         /// If there is no more event to send a EOF_Packet instead of blocking the connection
         const BINLOG_DUMP_NON_BLOCK = 0x01;
@@ -2575,14 +2659,14 @@ impl<'de> MyDeserialize<'de> for ComBinlogDump<'de> {
     }
 }
 
-/// Interval. Stored within [`Sid`]
+/// GnoInterval. Stored within [`Sid`]
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
-pub struct Interval {
+pub struct GnoInterval {
     start: RawInt<LeU64>,
     end: RawInt<LeU64>,
 }
 
-impl Interval {
+impl GnoInterval {
     /// Creates a new interval.
     pub fn new(start: u64, end: u64) -> Self {
         Self {
@@ -2590,16 +2674,32 @@ impl Interval {
             end: RawInt::new(end),
         }
     }
+    /// Checks if the [start, end) interval is valid and creates it.
+    pub fn check_and_new(start: u64, end: u64) -> io::Result<Self> {
+        if start >= end {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("start({}) >= end({}) in GnoInterval", start, end),
+            ));
+        }
+        if start == 0 || end == 0 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Gno can't be zero",
+            ));
+        }
+        Ok(Self::new(start, end))
+    }
 }
 
-impl MySerialize for Interval {
+impl MySerialize for GnoInterval {
     fn serialize(&self, buf: &mut Vec<u8>) {
         self.start.serialize(&mut *buf);
         self.end.serialize(&mut *buf);
     }
 }
 
-impl<'de> MyDeserialize<'de> for Interval {
+impl<'de> MyDeserialize<'de> for GnoInterval {
     const SIZE: Option<usize> = Some(16);
     type Ctx = ();
 
@@ -2611,37 +2711,38 @@ impl<'de> MyDeserialize<'de> for Interval {
     }
 }
 
-/// Length of a sid in `COM_BINLOG_DUMP_GTID` command packet.
-pub const SID_LEN: usize = 16;
+/// Length of a Uuid in `COM_BINLOG_DUMP_GTID` command packet.
+pub const UUID_LEN: usize = 16;
 
-/// SID is a part of the `COM_BINLOG_DUMP_GTID` command.
+/// SID is a part of the `COM_BINLOG_DUMP_GTID` command. It's a GtidSet whose
+/// has only one Uuid.
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct Sid<'a> {
-    sid: [u8; SID_LEN],
-    intervals: Seq<'a, Interval, LeU64>,
+    uuid: [u8; UUID_LEN],
+    intervals: Seq<'a, GnoInterval, LeU64>,
 }
 
 impl<'a> Sid<'a> {
     /// Creates a new instance.
-    pub fn new(sid: [u8; SID_LEN]) -> Self {
+    pub fn new(uuid: [u8; UUID_LEN]) -> Self {
         Self {
-            sid,
+            uuid,
             intervals: Default::default(),
         }
     }
 
-    /// Returns the `sid` field value.
-    pub fn sid(&self) -> [u8; SID_LEN] {
-        self.sid
+    /// Returns the `uuid` field value.
+    pub fn uuid(&self) -> [u8; UUID_LEN] {
+        self.uuid
     }
 
     /// Returns the `intervals` field value.
-    pub fn intervals(&self) -> &[Interval] {
+    pub fn intervals(&self) -> &[GnoInterval] {
         &self.intervals[..]
     }
 
-    /// Appends an interval to this block.
-    pub fn with_interval(mut self, interval: Interval) -> Self {
+    /// Appends an GnoInterval to this block.
+    pub fn with_interval(mut self, interval: GnoInterval) -> Self {
         let mut intervals = self.intervals.0.into_owned();
         intervals.push(interval);
         self.intervals = Seq::new(intervals);
@@ -2649,14 +2750,14 @@ impl<'a> Sid<'a> {
     }
 
     /// Sets the `intevals` value for this block.
-    pub fn with_intervals(mut self, intervals: Vec<Interval>) -> Self {
+    pub fn with_intervals(mut self, intervals: Vec<GnoInterval>) -> Self {
         self.intervals = Seq::new(intervals);
         self
     }
 
     fn len(&self) -> u64 {
         use saturating::Saturating as S;
-        let mut len = S(SID_LEN as u64); // SID
+        let mut len = S(UUID_LEN as u64); // SID
         len += S(8); // n_intervals
         len += S((self.intervals.len() * 16) as u64);
         len.0
@@ -2665,7 +2766,7 @@ impl<'a> Sid<'a> {
 
 impl MySerialize for Sid<'_> {
     fn serialize(&self, buf: &mut Vec<u8>) {
-        self.sid.serialize(&mut *buf);
+        self.uuid.serialize(&mut *buf);
         self.intervals.serialize(buf);
     }
 }
@@ -2676,8 +2777,59 @@ impl<'de> MyDeserialize<'de> for Sid<'de> {
 
     fn deserialize((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
         Ok(Self {
-            sid: buf.parse(())?,
+            uuid: buf.parse(())?,
             intervals: buf.parse(())?,
+        })
+    }
+}
+
+impl Sid<'_> {
+    fn wrap_err(msg: String) -> io::Error {
+        io::Error::new(io::ErrorKind::InvalidInput, msg)
+    }
+
+    fn parse_interval_num(to_parse: &str, full: &str) -> Result<u64, io::Error> {
+        let n: u64 = to_parse.parse().map_err(|e| {
+            Sid::wrap_err(format!(
+                "invalid GnoInterval format: {}, error: {}",
+                full, e
+            ))
+        })?;
+        Ok(n)
+    }
+}
+
+impl<'a> FromStr for Sid<'a> {
+    type Err = io::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let (uuid, intervals) = s
+            .split_once(':')
+            .ok_or_else(|| Sid::wrap_err(format!("invalid sid format: {}", s)))?;
+        let uuid = Uuid::parse_str(uuid)
+            .map_err(|e| Sid::wrap_err(format!("invalid uuid format: {}, error: {}", s, e)))?;
+        let intervals = intervals
+            .split(':')
+            .map(|interval| {
+                let nums = interval.split('-').collect::<Vec<_>>();
+                if nums.len() != 1 && nums.len() != 2 {
+                    return Err(Sid::wrap_err(format!("invalid GnoInterval format: {}", s)));
+                }
+                if nums.len() == 1 {
+                    let start = Sid::parse_interval_num(nums[0], s)?;
+                    let interval = GnoInterval::check_and_new(start, start + 1)?;
+                    Ok(interval)
+                } else {
+                    let start = Sid::parse_interval_num(nums[0], s)?;
+                    let end = Sid::parse_interval_num(nums[1], s)?;
+                    let interval = GnoInterval::check_and_new(start, end + 1)?;
+                    Ok(interval)
+                }
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(Self {
+            uuid: *uuid.as_bytes(),
+            intervals: Seq::new(intervals),
         })
     }
 }
@@ -3014,7 +3166,7 @@ mod test {
             for i in 0..n_sid_blocks {
                 let mut block = Sid::new([i as u8; 16]);
                 for j in 0..i {
-                    block = block.with_interval(Interval::new(i, j));
+                    block = block.with_interval(GnoInterval::new(i, j));
                 }
                 sids.push(block);
             }
@@ -3217,6 +3369,14 @@ mod test {
     #[test]
     fn should_parse_ok_packet() {
         const PLAIN_OK: &[u8] = b"\x00\x01\x00\x02\x00\x00\x00";
+        const RESULT_SET_TERMINATOR: &[u8] = &[
+            0xfe, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x42, 0x52, 0x65, 0x61, 0x64, 0x20, 0x31,
+            0x20, 0x72, 0x6f, 0x77, 0x73, 0x2c, 0x20, 0x31, 0x2e, 0x30, 0x30, 0x20, 0x42, 0x20,
+            0x69, 0x6e, 0x20, 0x30, 0x2e, 0x30, 0x30, 0x32, 0x20, 0x73, 0x65, 0x63, 0x2e, 0x2c,
+            0x20, 0x36, 0x31, 0x31, 0x2e, 0x33, 0x34, 0x20, 0x72, 0x6f, 0x77, 0x73, 0x2f, 0x73,
+            0x65, 0x63, 0x2e, 0x2c, 0x20, 0x36, 0x31, 0x31, 0x2e, 0x33, 0x34, 0x20, 0x42, 0x2f,
+            0x73, 0x65, 0x63, 0x2e,
+        ];
         const SESS_STATE_SYS_VAR_OK: &[u8] =
             b"\x00\x00\x00\x02\x40\x00\x00\x00\x11\x00\x0f\x0a\x61\
               \x75\x74\x6f\x63\x6f\x6d\x6d\x69\x74\x03\x4f\x46\x46";
@@ -3262,6 +3422,24 @@ mod test {
         );
         assert_eq!(ok_packet.warnings(), 0);
         assert_eq!(ok_packet.info_ref(), None);
+        assert_eq!(ok_packet.session_state_info_ref(), None);
+
+        let ok_packet: OkPacket = OkPacketDeserializer::<ResultSetTerminator>::deserialize(
+            CapabilityFlags::CLIENT_SESSION_TRACK,
+            &mut ParseBuf(RESULT_SET_TERMINATOR),
+        )
+        .unwrap()
+        .into();
+        assert_eq!(ok_packet.affected_rows(), 0);
+        assert_eq!(ok_packet.last_insert_id(), None);
+        assert_eq!(ok_packet.status_flags(), StatusFlags::empty());
+        assert_eq!(ok_packet.warnings(), 0);
+        assert_eq!(
+            ok_packet.info_str(),
+            Some(Cow::Borrowed(
+                "Read 1 rows, 1.00 B in 0.002 sec., 611.34 rows/sec., 611.34 B/sec."
+            ))
+        );
         assert_eq!(ok_packet.session_state_info_ref(), None);
 
         let ok_packet: OkPacket = OkPacketDeserializer::<CommonOkPacket>::deserialize(
@@ -3330,7 +3508,7 @@ mod test {
             SessionStateChange::IsTracked(true),
         );
 
-        let ok_packet: OkPacket = OkPacketDeserializer::<ResultSetTerminator>::deserialize(
+        let ok_packet: OkPacket = OkPacketDeserializer::<OldEofPacket>::deserialize(
             CapabilityFlags::CLIENT_SESSION_TRACK,
             &mut ParseBuf(EOF),
         )
@@ -3445,5 +3623,51 @@ mod test {
         ]
         .to_vec();
         assert_eq!(expected, actual);
+    }
+
+    #[test]
+    fn parse_str_to_sid() {
+        let input = "3E11FA47-71CA-11E1-9E33-C80AA9429562:23";
+        let sid = input.parse::<Sid>().unwrap();
+        let expected_sid = Uuid::parse_str("3E11FA47-71CA-11E1-9E33-C80AA9429562").unwrap();
+        assert_eq!(sid.uuid, *expected_sid.as_bytes());
+        assert_eq!(sid.intervals.len(), 1);
+        assert_eq!(sid.intervals[0].start.0, 23);
+        assert_eq!(sid.intervals[0].end.0, 24);
+
+        let input = "3E11FA47-71CA-11E1-9E33-C80AA9429562:1-5:10-15";
+        let sid = input.parse::<Sid>().unwrap();
+        assert_eq!(sid.uuid, *expected_sid.as_bytes());
+        assert_eq!(sid.intervals.len(), 2);
+        assert_eq!(sid.intervals[0].start.0, 1);
+        assert_eq!(sid.intervals[0].end.0, 6);
+        assert_eq!(sid.intervals[1].start.0, 10);
+        assert_eq!(sid.intervals[1].end.0, 16);
+
+        let input = "3E11FA47-71CA-11E1-9E33-C80AA9429562";
+        let e = input.parse::<Sid>().unwrap_err();
+        assert_eq!(
+            e.to_string(),
+            "invalid sid format: 3E11FA47-71CA-11E1-9E33-C80AA9429562".to_string()
+        );
+
+        let input = "3E11FA47-71CA-11E1-9E33-C80AA9429562:1-5:10-15:20-";
+        let e = input.parse::<Sid>().unwrap_err();
+        assert_eq!(e.to_string(), "invalid GnoInterval format: 3E11FA47-71CA-11E1-9E33-C80AA9429562:1-5:10-15:20-, error: cannot parse integer from empty string".to_string());
+
+        let input = "3E11FA47-71CA-11E1-9E33-C80AA9429562:1-5:1aaa";
+        let e = input.parse::<Sid>().unwrap_err();
+        assert_eq!(e.to_string(), "invalid GnoInterval format: 3E11FA47-71CA-11E1-9E33-C80AA9429562:1-5:1aaa, error: invalid digit found in string".to_string());
+
+        let input = "3E11FA47-71CA-11E1-9E33-C80AA9429562:0-3";
+        let e = input.parse::<Sid>().unwrap_err();
+        assert_eq!(e.to_string(), "Gno can't be zero".to_string());
+
+        let input = "3E11FA47-71CA-11E1-9E33-C80AA9429562:4-3";
+        let e = input.parse::<Sid>().unwrap_err();
+        assert_eq!(
+            e.to_string(),
+            "start(4) >= end(4) in GnoInterval".to_string()
+        );
     }
 }

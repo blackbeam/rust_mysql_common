@@ -22,6 +22,7 @@ my_bitflags! {
     u16,
 
     /// MySql server status flags
+    #[derive(PartialEq, Eq, Hash, Debug, Clone, Copy)]
     pub struct StatusFlags: u16 {
         /// Is raised when a multi-statement transaction has been started, either explicitly,
         /// by means of BEGIN or COMMIT AND CHAIN, or implicitly, by the first transactional
@@ -81,6 +82,7 @@ my_bitflags! {
     u32,
 
     /// Client capability flags
+    #[derive(PartialEq, Eq, Hash, Debug, Clone, Copy)]
     pub struct CapabilityFlags: u32 {
         /// Use the improved version of Old Password Authentication. Assumed to be set since 4.1.1.
         const CLIENT_LONG_PASSWORD                  = 0x0000_0001;
@@ -362,6 +364,7 @@ my_bitflags! {
     u8,
 
     /// Mysql cursor type.
+    #[derive(PartialEq, Eq, Hash, Debug, Clone, Copy)]
     pub struct CursorType: u8 {
         const CURSOR_TYPE_NO_CURSOR  = 0_u8;
         const CURSOR_TYPE_READ_ONLY  = 1_u8;
@@ -377,6 +380,7 @@ my_bitflags! {
     u8,
 
     /// MySql stmt execute params flags.
+    #[derive(PartialEq, Eq, Hash, Debug, Clone, Copy)]
     pub struct StmtExecuteParamsFlags: u8 {
         const NEW_PARAMS_BOUND  = 1_u8;
     }
@@ -389,6 +393,7 @@ my_bitflags! {
     u8,
 
     /// MySql stmt execute params flags.
+    #[derive(PartialEq, Eq, Hash, Debug, Clone, Copy)]
     pub struct StmtExecuteParamFlags: u8 {
         const UNSIGNED  = 128_u8;
     }
@@ -401,6 +406,7 @@ my_bitflags! {
     u16,
 
     /// MySql column flags
+    #[derive(PartialEq, Eq, Hash, Debug, Clone, Copy)]
     pub struct ColumnFlags: u16 {
         /// Field can't be NULL.
         const NOT_NULL_FLAG         = 1u16;
@@ -634,6 +640,7 @@ impl ColumnType {
                 | MYSQL_TYPE_NEWDECIMAL
                 | MYSQL_TYPE_FLOAT
                 | MYSQL_TYPE_DOUBLE
+                | MYSQL_TYPE_YEAR // Yes, this is also included
         )
     }
 
@@ -718,6 +725,7 @@ my_bitflags! {
     u32,
 
     /// Bitmask of flags that are usually set with `SET`.
+    #[derive(PartialEq, Eq, Hash, Debug, Clone, Copy)]
     pub struct Flags2: u32 {
         const OPTION_AUTO_IS_NULL          = 0x00004000;
         const OPTION_NOT_AUTOCOMMIT        = 0x00080000;
@@ -733,6 +741,7 @@ my_bitflags! {
     u64,
 
     /// Bitmask of flags that are usually set with `SET sql_mode`.
+    #[derive(PartialEq, Eq, Hash, Debug, Clone, Copy)]
     pub struct SqlMode: u64 {
         const MODE_REAL_AS_FLOAT              = 0x00000001;
         const MODE_PIPES_AS_CONCAT            = 0x00000002;
