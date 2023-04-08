@@ -9,6 +9,7 @@
 //! This module implements conversion from/to `Value` for `time` types.
 
 #![cfg(feature = "time")]
+#![cfg_attr(docsrs, doc(cfg(feature = "time")))]
 
 use std::{convert::TryFrom, str::from_utf8};
 

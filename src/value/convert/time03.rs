@@ -121,6 +121,7 @@ lazy_static::lazy_static! {
     };
 }
 
+#[cfg_attr(docsrs, doc(cfg(feature = "time03")))]
 impl TryFrom<Value> for ParseIr<PrimitiveDateTime> {
     type Error = FromValueError;
 
@@ -141,22 +142,26 @@ impl TryFrom<Value> for ParseIr<PrimitiveDateTime> {
     }
 }
 
+#[cfg_attr(docsrs, doc(cfg(feature = "time03")))]
 impl From<ParseIr<PrimitiveDateTime>> for PrimitiveDateTime {
     fn from(value: ParseIr<PrimitiveDateTime>) -> Self {
         value.commit()
     }
 }
 
+#[cfg_attr(docsrs, doc(cfg(feature = "time03")))]
 impl From<ParseIr<PrimitiveDateTime>> for Value {
     fn from(value: ParseIr<PrimitiveDateTime>) -> Self {
         value.rollback()
     }
 }
 
+#[cfg_attr(docsrs, doc(cfg(feature = "time03")))]
 impl FromValue for PrimitiveDateTime {
     type Intermediate = ParseIr<PrimitiveDateTime>;
 }
 
+#[cfg_attr(docsrs, doc(cfg(feature = "time03")))]
 impl TryFrom<Value> for ParseIr<Date> {
     type Error = FromValueError;
 
@@ -186,22 +191,26 @@ impl TryFrom<Value> for ParseIr<Date> {
     }
 }
 
+#[cfg_attr(docsrs, doc(cfg(feature = "time03")))]
 impl From<ParseIr<Date>> for Date {
     fn from(value: ParseIr<Date>) -> Self {
         value.commit()
     }
 }
 
+#[cfg_attr(docsrs, doc(cfg(feature = "time03")))]
 impl From<ParseIr<Date>> for Value {
     fn from(value: ParseIr<Date>) -> Self {
         value.rollback()
     }
 }
 
+#[cfg_attr(docsrs, doc(cfg(feature = "time03")))]
 impl FromValue for Date {
     type Intermediate = ParseIr<Date>;
 }
 
+#[cfg_attr(docsrs, doc(cfg(feature = "time03")))]
 impl TryFrom<Value> for ParseIr<Time> {
     type Error = FromValueError;
 
@@ -220,12 +229,14 @@ impl TryFrom<Value> for ParseIr<Time> {
     }
 }
 
+#[cfg_attr(docsrs, doc(cfg(feature = "time03")))]
 impl From<ParseIr<Time>> for Time {
     fn from(value: ParseIr<Time>) -> Self {
         value.commit()
     }
 }
 
+#[cfg_attr(docsrs, doc(cfg(feature = "time03")))]
 impl From<ParseIr<Time>> for Value {
     fn from(value: ParseIr<Time>) -> Self {
         value.rollback()
@@ -236,6 +247,7 @@ impl From<ParseIr<Time>> for Value {
 /// Note: `time03::Time` only allows for time values in the 00:00:00 - 23:59:59 range.
 /// If you're expecting `TIME` values in MySQL's `TIME` value range of -838:59:59 - 838:59:59,
 /// use time03::Duration instead.
+#[cfg_attr(docsrs, doc(cfg(feature = "time03")))]
 impl FromValue for Time {
     type Intermediate = ParseIr<Time>;
 }
@@ -287,6 +299,7 @@ fn parse_mysql_time_string_with_time(bytes: &[u8]) -> Result<Time, Parse> {
         })
 }
 
+#[cfg_attr(docsrs, doc(cfg(feature = "time03")))]
 impl TryFrom<Value> for ParseIr<time03::Duration> {
     type Error = FromValueError;
 
@@ -325,22 +338,26 @@ impl TryFrom<Value> for ParseIr<time03::Duration> {
     }
 }
 
+#[cfg_attr(docsrs, doc(cfg(feature = "time03")))]
 impl From<ParseIr<time03::Duration>> for time03::Duration {
     fn from(value: ParseIr<time03::Duration>) -> Self {
         value.commit()
     }
 }
 
+#[cfg_attr(docsrs, doc(cfg(feature = "time03")))]
 impl From<ParseIr<time03::Duration>> for Value {
     fn from(value: ParseIr<time03::Duration>) -> Self {
         value.rollback()
     }
 }
 
+#[cfg_attr(docsrs, doc(cfg(feature = "time03")))]
 impl FromValue for time03::Duration {
     type Intermediate = ParseIr<time03::Duration>;
 }
 
+#[cfg_attr(docsrs, doc(cfg(feature = "time03")))]
 impl From<PrimitiveDateTime> for Value {
     fn from(x: PrimitiveDateTime) -> Value {
         Value::Date(
@@ -355,12 +372,14 @@ impl From<PrimitiveDateTime> for Value {
     }
 }
 
+#[cfg_attr(docsrs, doc(cfg(feature = "time03")))]
 impl From<Date> for Value {
     fn from(x: Date) -> Value {
         Value::Date(x.year() as u16, x.month() as u8, x.day(), 0, 0, 0, 0)
     }
 }
 
+#[cfg_attr(docsrs, doc(cfg(feature = "time03")))]
 impl From<Time> for Value {
     fn from(x: Time) -> Value {
         Value::Time(
@@ -374,6 +393,7 @@ impl From<Time> for Value {
     }
 }
 
+#[cfg_attr(docsrs, doc(cfg(feature = "time03")))]
 impl From<time03::Duration> for Value {
     fn from(mut x: time03::Duration) -> Value {
         let negative = x < time03::Duration::ZERO;

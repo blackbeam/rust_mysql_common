@@ -139,10 +139,12 @@ pub use value::json::{Deserialized, Serialized};
 
 pub mod prelude {
     #[cfg(feature = "derive")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "derive")))]
     #[doc(inline)]
     pub use mysql_common_derive::FromValue;
 
     #[cfg(feature = "derive")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "derive")))]
     #[doc(inline)]
     pub use mysql_common_derive::FromRow;
 

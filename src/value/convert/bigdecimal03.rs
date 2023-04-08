@@ -16,6 +16,7 @@ use bigdecimal03::BigDecimal;
 
 use super::{FromValue, FromValueError, ParseIr, Value};
 
+#[cfg_attr(docsrs, doc(cfg(feature = "bigdecimal03")))]
 impl TryFrom<Value> for ParseIr<BigDecimal> {
     type Error = FromValueError;
 
@@ -40,22 +41,26 @@ impl TryFrom<Value> for ParseIr<BigDecimal> {
     }
 }
 
+#[cfg_attr(docsrs, doc(cfg(feature = "bigdecimal03")))]
 impl From<ParseIr<BigDecimal>> for BigDecimal {
     fn from(value: ParseIr<BigDecimal>) -> Self {
         value.commit()
     }
 }
 
+#[cfg_attr(docsrs, doc(cfg(feature = "bigdecimal03")))]
 impl From<ParseIr<BigDecimal>> for Value {
     fn from(value: ParseIr<BigDecimal>) -> Self {
         value.rollback()
     }
 }
 
+#[cfg_attr(docsrs, doc(cfg(feature = "bigdecimal03")))]
 impl FromValue for BigDecimal {
     type Intermediate = ParseIr<BigDecimal>;
 }
 
+#[cfg_attr(docsrs, doc(cfg(feature = "bigdecimal03")))]
 impl From<BigDecimal> for Value {
     fn from(big_decimal: BigDecimal) -> Value {
         Value::Bytes(big_decimal.to_string().into())

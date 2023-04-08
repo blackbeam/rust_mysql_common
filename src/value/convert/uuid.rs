@@ -18,12 +18,14 @@ use crate::value::Value;
 
 use super::{FromValue, FromValueError, ParseIr};
 
+#[cfg_attr(docsrs, doc(cfg(feature = "uuid")))]
 impl From<Uuid> for Value {
     fn from(uuid: Uuid) -> Value {
         Value::Bytes(uuid.as_bytes().to_vec())
     }
 }
 
+#[cfg_attr(docsrs, doc(cfg(feature = "uuid")))]
 impl TryFrom<Value> for ParseIr<Uuid> {
     type Error = FromValueError;
 
@@ -38,18 +40,21 @@ impl TryFrom<Value> for ParseIr<Uuid> {
     }
 }
 
+#[cfg_attr(docsrs, doc(cfg(feature = "uuid")))]
 impl From<ParseIr<Uuid>> for Uuid {
     fn from(value: ParseIr<Uuid>) -> Self {
         value.commit()
     }
 }
 
+#[cfg_attr(docsrs, doc(cfg(feature = "uuid")))]
 impl From<ParseIr<Uuid>> for Value {
     fn from(value: ParseIr<Uuid>) -> Self {
         value.rollback()
     }
 }
 
+#[cfg_attr(docsrs, doc(cfg(feature = "uuid")))]
 impl FromValue for Uuid {
     type Intermediate = ParseIr<Uuid>;
 }

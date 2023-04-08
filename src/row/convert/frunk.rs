@@ -22,6 +22,7 @@ use crate::{
     },
 };
 
+#[cfg_attr(docsrs, doc(cfg(feature = "frunk")))]
 impl FromRow for HNil {
     fn from_row_opt(row: Row) -> Result<Self, FromRowError>
     where
@@ -34,6 +35,7 @@ impl FromRow for HNil {
     }
 }
 
+#[cfg_attr(docsrs, doc(cfg(feature = "frunk")))]
 impl<H, T> FromRow for HCons<H, T>
 where
     H: FromValue,
