@@ -864,7 +864,7 @@ mod tests {
         #[cfg(all(feature = "time02", test))]
         fn parse_mysql_datetime_string_doesnt_crash(s in "\\PC*") {
             parse_mysql_datetime_string(s.as_bytes());
-            let _ = super::time::parse_mysql_datetime_string_with_time(s.as_bytes());
+            let _ = super::time02::parse_mysql_datetime_string_with_time(s.as_bytes());
         }
 
         #[test]
