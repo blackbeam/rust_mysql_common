@@ -20,7 +20,7 @@ use std::{
 use crate::value::Value;
 
 pub mod bigdecimal;
-pub mod bigdecimal03;
+pub mod bigdecimal02;
 pub mod bigint;
 pub mod chrono;
 pub mod decimal;

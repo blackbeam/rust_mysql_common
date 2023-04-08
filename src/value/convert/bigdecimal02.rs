@@ -1,4 +1,4 @@
-// Copyright (c) 2021 Anatoly Ikorsky
+// Copyright (c) 2017 Anatoly Ikorsky
 //
 // Licensed under the Apache License, Version 2.0
 // <LICENSE-APACHE or http://www.apache.org/licenses/LICENSE-2.0> or the MIT
@@ -6,17 +6,17 @@
 // option. All files in the project carrying such notice may not be copied,
 // modified, or distributed except according to those terms.
 
-//! This module implements conversion from/to `Value` for the `BigDecimal` type (`bigdecimal` crate version "0.3.x").
+//! This module implements conversion from/to `Value` for `BigDecimal` type.
 
-#![cfg(feature = "bigdecimal03")]
+#![cfg(feature = "bigdecimal02")]
 
 use std::convert::{TryFrom, TryInto};
 
-use bigdecimal03::BigDecimal;
+use bigdecimal02::BigDecimal;
 
 use super::{FromValue, FromValueError, ParseIr, Value};
 
-#[cfg_attr(docsrs, doc(cfg(feature = "bigdecimal03")))]
+#[cfg_attr(docsrs, doc(cfg(feature = "bigdecimal02")))]
 impl TryFrom<Value> for ParseIr<BigDecimal> {
     type Error = FromValueError;
 
@@ -41,26 +41,26 @@ impl TryFrom<Value> for ParseIr<BigDecimal> {
     }
 }
 
-#[cfg_attr(docsrs, doc(cfg(feature = "bigdecimal03")))]
+#[cfg_attr(docsrs, doc(cfg(feature = "bigdecimal02")))]
 impl From<ParseIr<BigDecimal>> for BigDecimal {
     fn from(value: ParseIr<BigDecimal>) -> Self {
         value.commit()
     }
 }
 
-#[cfg_attr(docsrs, doc(cfg(feature = "bigdecimal03")))]
+#[cfg_attr(docsrs, doc(cfg(feature = "bigdecimal02")))]
 impl From<ParseIr<BigDecimal>> for Value {
     fn from(value: ParseIr<BigDecimal>) -> Self {
         value.rollback()
     }
 }
 
-#[cfg_attr(docsrs, doc(cfg(feature = "bigdecimal03")))]
+#[cfg_attr(docsrs, doc(cfg(feature = "bigdecimal02")))]
 impl FromValue for BigDecimal {
     type Intermediate = ParseIr<BigDecimal>;
 }
 
-#[cfg_attr(docsrs, doc(cfg(feature = "bigdecimal03")))]
+#[cfg_attr(docsrs, doc(cfg(feature = "bigdecimal02")))]
 impl From<BigDecimal> for Value {
     fn from(big_decimal: BigDecimal) -> Value {
         Value::Bytes(big_decimal.to_string().into())
@@ -69,7 +69,7 @@ impl From<BigDecimal> for Value {
 
 #[cfg(test)]
 mod tests {
-    use bigdecimal03::BigDecimal;
+    use bigdecimal02::BigDecimal;
     use proptest::prelude::*;
 
     use crate::value::{convert::from_value, Value};

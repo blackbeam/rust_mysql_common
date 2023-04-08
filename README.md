@@ -69,8 +69,8 @@ Also crate provides from-row convertion for the following list of types (see `Fr
 
 | Feature        | Description                                          | Default |
 | -------------- | ---------------------------------------------------- | ------- |
-| `bigdecimal`   | Enables `bigdecimal` v0.2.x types support            | 🔴      |
-| `bigdecimal03` | Enables `bigdecimal` v0.3.x types support            | 🟢      |
+| `bigdecimal02` | Enables `bigdecimal` v0.2.x types support            | 🔴      |
+| `bigdecimal`   | Enables `bigdecimal` v0.3.x types support            | 🟢      |
 | `chrono`       | Enables `chrono` types support                       | 🔴      |
 | `rust_decimal` | Enables `rust_decimal` types support                 | 🟢      |
 | `time02`       | Enables `time` v0.2.x types support                  | 🔴      |

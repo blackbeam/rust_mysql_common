@@ -69,8 +69,8 @@
 //!
 //! | Feature        | Description                                          | Default |
 //! | -------------- | ---------------------------------------------------- | ------- |
-//! | `bigdecimal`   | Enables `bigdecimal` v0.2.x types support            | 🔴      |
-//! | `bigdecimal03` | Enables `bigdecimal` v0.3.x types support            | 🟢      |
+//! | `bigdecimal02` | Enables `bigdecimal` v0.2.x types support            | 🔴      |
+//! | `bigdecimal`   | Enables `bigdecimal` v0.3.x types support            | 🟢      |
 //! | `chrono`       | Enables `chrono` types support                       | 🔴      |
 //! | `rust_decimal` | Enables `rust_decimal` types support                 | 🟢      |
 //! | `time02`       | Enables `time` v0.2.x types support                  | 🔴      |
@@ -96,11 +96,11 @@ extern crate test;
 #[macro_use]
 pub mod bitflags_ext;
 
+#[cfg(feature = "bigdecimal02")]
+pub use bigdecimal02;
+
 #[cfg(feature = "bigdecimal")]
 pub use bigdecimal;
-
-#[cfg(feature = "bigdecimal03")]
-pub use bigdecimal03;
 
 #[cfg(feature = "chrono")]
 pub use chrono;

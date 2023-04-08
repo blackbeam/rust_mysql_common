@@ -29,8 +29,10 @@ travis-ci = { repository = "blackbeam/rust_mysql_common" }
 
 [dependencies]
 base64 = "0.21"
-bigdecimal = { version = "0.2", features = ["serde"], optional = true }
-bigdecimal03 = { package = "bigdecimal", version = "0.3", optional = true }
+bigdecimal02 = { package = "bigdecimal", version = "0.2", features = [
+    "serde",
+], optional = true }
+bigdecimal = { version = "0.3", optional = true }
 bitflags = "2"
 bitvec = "1.0"
 byteorder = "1"
@@ -78,7 +80,7 @@ debug = true
 [features]
 default = [
     "flate2/zlib",
-    "bigdecimal03",
+    "bigdecimal",
     "rust_decimal",
     "time",
     "frunk",
@@ -96,7 +98,7 @@ features = [
     "time",
     "rust_decimal",
     "chrono",
-    "bigdecimal03",
+    "bigdecimal02",
     "bigdecimal",
     "derive",
 ]
