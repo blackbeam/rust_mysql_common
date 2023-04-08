@@ -6,122 +6,19 @@
 // option. All files in the project carrying such notice may not be copied,
 // modified, or distributed except according to those terms.
 
-//! This module implements conversion from/to `Value` for `time` v0.3.x crate types.
+//! This module implements conversion from/to `Value` for `time` types.
 
-#![cfg(feature = "time03")]
+#![cfg(feature = "time02")]
 
-use std::{cmp::Ordering, convert::TryFrom, str::from_utf8};
+use std::{convert::TryFrom, str::from_utf8};
 
-use time03::{
-    error::{Parse, TryFromParsed},
-    format_description::{
-        modifier::{self, Subsecond},
-        Component, FormatItem,
-    },
-    Date, PrimitiveDateTime, Time,
-};
+use time02::{Date, ParseError, PrimitiveDateTime, Time};
 
 use crate::value::Value;
 
 use super::{parse_mysql_time_string, FromValue, FromValueError, ParseIr};
 
-lazy_static::lazy_static! {
-    static ref FULL_YEAR: modifier::Year = {
-        let mut year_modifier = modifier::Year::default();
-        year_modifier.padding = modifier::Padding::Zero;
-        year_modifier.repr = modifier::YearRepr::Full;
-        year_modifier.iso_week_based = false;
-        year_modifier.sign_is_mandatory = false;
-
-        year_modifier
-    };
-
-    static ref ZERO_PADDED_MONTH: modifier::Month = {
-        let mut month_modifier = modifier::Month::default();
-        month_modifier.padding = modifier::Padding::Zero;
-        month_modifier.repr = modifier::MonthRepr::Numerical;
-        month_modifier.case_sensitive = true;
-
-        month_modifier
-    };
-
-    static ref ZERO_PADDED_DAY: modifier::Day = {
-        let mut day_modifier = modifier::Day::default();
-        day_modifier.padding = modifier::Padding::Zero;
-
-        day_modifier
-    };
-
-    static ref ZERO_PADDED_HOUR: modifier::Hour = {
-        let mut hour_modifier = modifier::Hour::default();
-        hour_modifier.padding = modifier::Padding::Zero;
-        hour_modifier.is_12_hour_clock = false;
-
-        hour_modifier
-    };
-
-    static ref ZERO_PADDED_MINUTE: modifier::Minute = {
-        let mut minute_modifier = modifier::Minute::default();
-        minute_modifier.padding = modifier::Padding::Zero;
-
-        minute_modifier
-    };
-
-    static ref ZERO_PADDED_SECOND: modifier::Second = {
-        let mut second_modifier = modifier::Second::default();
-        second_modifier.padding = modifier::Padding::Zero;
-
-        second_modifier
-    };
-
-    static ref DATE_FORMAT: Vec<FormatItem<'static>> = {
-        vec![
-            FormatItem::Component(Component::Year(*FULL_YEAR)),
-            FormatItem::Literal(b"-"),
-            FormatItem::Component(Component::Month(*ZERO_PADDED_MONTH)),
-            FormatItem::Literal(b"-"),
-            FormatItem::Component(Component::Day(*ZERO_PADDED_DAY)),
-        ]
-    };
-
-    static ref TIME_FORMAT: Vec<FormatItem<'static>> = {
-        vec![
-            FormatItem::Component(Component::Hour(*ZERO_PADDED_HOUR)),
-            FormatItem::Literal(b":"),
-            FormatItem::Component(Component::Minute(*ZERO_PADDED_MINUTE)),
-            FormatItem::Literal(b":"),
-            FormatItem::Component(Component::Second(*ZERO_PADDED_SECOND)),
-        ]
-    };
-
-    static ref TIME_FORMAT_MICRO: Vec<FormatItem<'static>> = {
-        vec![
-            FormatItem::Component(Component::Hour(*ZERO_PADDED_HOUR)),
-            FormatItem::Literal(b":"),
-            FormatItem::Component(Component::Minute(*ZERO_PADDED_MINUTE)),
-            FormatItem::Literal(b":"),
-            FormatItem::Component(Component::Second(*ZERO_PADDED_SECOND)),
-            FormatItem::Literal(b"."),
-            FormatItem::Component(Component::Subsecond(Subsecond::default())),
-        ]
-    };
-
-    static ref DATE_TIME_FORMAT: Vec<FormatItem<'static>> = {
-        let mut format = DATE_FORMAT.clone();
-        format.push(FormatItem::Literal(b" "));
-        format.extend_from_slice(&*TIME_FORMAT);
-        format
-    };
-
-    static ref DATE_TIME_FORMAT_MICRO: Vec<FormatItem<'static>> = {
-        let mut format = DATE_FORMAT.clone();
-        format.push(FormatItem::Literal(b" "));
-        format.extend_from_slice(&*TIME_FORMAT_MICRO);
-        format
-    };
-}
-
-#[cfg_attr(docsrs, doc(cfg(feature = "time03")))]
+#[cfg_attr(docsrs, doc(cfg(feature = "time02")))]
 impl TryFrom<Value> for ParseIr<PrimitiveDateTime> {
     type Error = FromValueError;
 
@@ -137,50 +34,46 @@ impl TryFrom<Value> for ParseIr<PrimitiveDateTime> {
                 Ok(x) => Ok(ParseIr(x, v)),
                 Err(_) => Err(FromValueError(v)),
             },
-            v => Err(FromValueError(v)),
+            _ => Err(FromValueError(v)),
         }
     }
 }
 
-#[cfg_attr(docsrs, doc(cfg(feature = "time03")))]
+#[cfg_attr(docsrs, doc(cfg(feature = "time02")))]
 impl From<ParseIr<PrimitiveDateTime>> for PrimitiveDateTime {
     fn from(value: ParseIr<PrimitiveDateTime>) -> Self {
         value.commit()
     }
 }
 
-#[cfg_attr(docsrs, doc(cfg(feature = "time03")))]
+#[cfg_attr(docsrs, doc(cfg(feature = "time02")))]
 impl From<ParseIr<PrimitiveDateTime>> for Value {
     fn from(value: ParseIr<PrimitiveDateTime>) -> Self {
         value.rollback()
     }
 }
 
-#[cfg_attr(docsrs, doc(cfg(feature = "time03")))]
+#[cfg_attr(docsrs, doc(cfg(feature = "time02")))]
 impl FromValue for PrimitiveDateTime {
     type Intermediate = ParseIr<PrimitiveDateTime>;
 }
 
-#[cfg_attr(docsrs, doc(cfg(feature = "time03")))]
+#[cfg_attr(docsrs, doc(cfg(feature = "time02")))]
 impl TryFrom<Value> for ParseIr<Date> {
     type Error = FromValueError;
 
     fn try_from(v: Value) -> Result<Self, Self::Error> {
         match v {
             Value::Date(year, month, day, _, _, _, _) => {
-                let mon = match time03::Month::try_from(month) {
-                    Ok(month) => month,
-                    Err(_) => return Err(FromValueError(v)),
-                };
-                match Date::from_calendar_date(year as i32, mon, day) {
+                match Date::try_from_ymd(year as i32, month, day) {
                     Ok(x) => Ok(ParseIr(x, v)),
                     Err(_) => Err(FromValueError(v)),
                 }
             }
             Value::Bytes(ref bytes) => {
-                match from_utf8(&*bytes)
+                match from_utf8(bytes)
                     .ok()
-                    .and_then(|s| Date::parse(s, &*DATE_FORMAT).ok())
+                    .and_then(|s| time02::parse(s, "%Y-%m-%d").ok())
                 {
                     Some(x) => Ok(ParseIr(x, v)),
                     None => Err(FromValueError(v)),
@@ -191,32 +84,32 @@ impl TryFrom<Value> for ParseIr<Date> {
     }
 }
 
-#[cfg_attr(docsrs, doc(cfg(feature = "time03")))]
+#[cfg_attr(docsrs, doc(cfg(feature = "time02")))]
 impl From<ParseIr<Date>> for Date {
     fn from(value: ParseIr<Date>) -> Self {
         value.commit()
     }
 }
 
-#[cfg_attr(docsrs, doc(cfg(feature = "time03")))]
+#[cfg_attr(docsrs, doc(cfg(feature = "time02")))]
 impl From<ParseIr<Date>> for Value {
     fn from(value: ParseIr<Date>) -> Self {
         value.rollback()
     }
 }
 
-#[cfg_attr(docsrs, doc(cfg(feature = "time03")))]
+#[cfg_attr(docsrs, doc(cfg(feature = "time02")))]
 impl FromValue for Date {
     type Intermediate = ParseIr<Date>;
 }
 
-#[cfg_attr(docsrs, doc(cfg(feature = "time03")))]
+#[cfg_attr(docsrs, doc(cfg(feature = "time02")))]
 impl TryFrom<Value> for ParseIr<Time> {
     type Error = FromValueError;
 
     fn try_from(v: Value) -> Result<Self, Self::Error> {
         match v {
-            Value::Time(false, 0, h, m, s, u) => match Time::from_hms_micro(h, m, s, u) {
+            Value::Time(false, 0, h, m, s, u) => match Time::try_from_hms_micro(h, m, s, u) {
                 Ok(x) => Ok(ParseIr(x, v)),
                 Err(_) => Err(FromValueError(v)),
             },
@@ -229,25 +122,25 @@ impl TryFrom<Value> for ParseIr<Time> {
     }
 }
 
-#[cfg_attr(docsrs, doc(cfg(feature = "time03")))]
+#[cfg_attr(docsrs, doc(cfg(feature = "time02")))]
 impl From<ParseIr<Time>> for Time {
     fn from(value: ParseIr<Time>) -> Self {
         value.commit()
     }
 }
 
-#[cfg_attr(docsrs, doc(cfg(feature = "time03")))]
+#[cfg_attr(docsrs, doc(cfg(feature = "time02")))]
 impl From<ParseIr<Time>> for Value {
     fn from(value: ParseIr<Time>) -> Self {
         value.rollback()
     }
 }
 
-/// Converts a MySQL `TIME` value to a `time03::Time`.
-/// Note: `time03::Time` only allows for time values in the 00:00:00 - 23:59:59 range.
+/// Converts a MySQL `TIME` value to a `time02::Time`.
+/// Note: `time02::Time` only allows for time values in the 00:00:00 - 23:59:59 range.
 /// If you're expecting `TIME` values in MySQL's `TIME` value range of -838:59:59 - 838:59:59,
-/// use time03::Duration instead.
-#[cfg_attr(docsrs, doc(cfg(feature = "time03")))]
+/// use `time02::Duration` instead.
+#[cfg_attr(docsrs, doc(cfg(feature = "time02")))]
 impl FromValue for Time {
     type Intermediate = ParseIr<Time>;
 }
@@ -261,9 +154,8 @@ fn create_primitive_date_time(
     second: u8,
     micros: u32,
 ) -> Option<PrimitiveDateTime> {
-    let mon = time03::Month::try_from(month).ok()?;
-    if let Ok(date) = Date::from_calendar_date(year as i32, mon, day) {
-        if let Ok(time) = Time::from_hms_micro(hour, minute, second, micros) {
+    if let Ok(date) = Date::try_from_ymd(year as i32, month, day) {
+        if let Ok(time) = Time::try_from_hms_micro(hour, minute, second, micros) {
             return Some(PrimitiveDateTime::new(date, time));
         }
     }
@@ -273,44 +165,53 @@ fn create_primitive_date_time(
 
 pub(crate) fn parse_mysql_datetime_string_with_time(
     bytes: &[u8],
-) -> Result<PrimitiveDateTime, Parse> {
+) -> Result<PrimitiveDateTime, ParseError> {
     from_utf8(&*bytes)
-        .map_err(|_| Parse::TryFromParsed(TryFromParsed::InsufficientInformation))
+        .map_err(|_| ParseError::InsufficientInformation)
         .and_then(|s| {
             if s.len() > 19 {
-                PrimitiveDateTime::parse(s, &*DATE_TIME_FORMAT_MICRO)
+                // pad with zeroes to nanosecond precision due to
+                // `time` v2 formatting specifier requirement
+                let tmp = format!("{:0<29}", s);
+                time02::parse(tmp, "%Y-%m-%d %H:%M:%S.%N")
             } else if s.len() == 19 {
-                PrimitiveDateTime::parse(&s[..19], &*DATE_TIME_FORMAT)
+                time02::parse(s, "%Y-%m-%d %H:%M:%S")
             } else if s.len() >= 10 {
-                PrimitiveDateTime::parse(s, &*DATE_FORMAT)
+                time02::parse(s, "%Y-%m-%d")
             } else {
-                Err(Parse::TryFromParsed(TryFromParsed::InsufficientInformation))
+                Err(ParseError::InsufficientInformation)
             }
         })
 }
 
-fn parse_mysql_time_string_with_time(bytes: &[u8]) -> Result<Time, Parse> {
+fn parse_mysql_time_string_with_time(bytes: &[u8]) -> Result<Time, ParseError> {
     from_utf8(&*bytes)
-        .map_err(|_| Parse::TryFromParsed(TryFromParsed::InsufficientInformation))
-        .and_then(|s| match s.len().cmp(&8) {
-            Ordering::Less => Err(Parse::TryFromParsed(TryFromParsed::InsufficientInformation)),
-            Ordering::Equal => Time::parse(s, &*TIME_FORMAT),
-            Ordering::Greater => Time::parse(s, &*TIME_FORMAT_MICRO),
+        .map_err(|_| ParseError::InsufficientInformation)
+        .and_then(|s| {
+            if s.len() > 8 {
+                // pad with zeroes to nanosecond precision due to
+                // `time` v2 formatting specifier requirement
+                let tmp = format!("{:0<18}", s);
+                time02::parse(tmp, "%H:%M:%S.%N")
+            } else if s.len() == 8 {
+                time02::parse(s, "%H:%M:%S")
+            } else {
+                Err(ParseError::InsufficientInformation)
+            }
         })
 }
 
-#[cfg_attr(docsrs, doc(cfg(feature = "time03")))]
-impl TryFrom<Value> for ParseIr<time03::Duration> {
+impl TryFrom<Value> for ParseIr<time02::Duration> {
     type Error = FromValueError;
 
     fn try_from(v: Value) -> Result<Self, Self::Error> {
         match v {
             Value::Time(is_neg, days, hours, minutes, seconds, microseconds) => {
-                let duration = time03::Duration::days(days.into())
-                    + time03::Duration::hours(hours.into())
-                    + time03::Duration::minutes(minutes.into())
-                    + time03::Duration::seconds(seconds.into())
-                    + time03::Duration::microseconds(microseconds.into());
+                let duration = time02::Duration::days(days.into())
+                    + time02::Duration::hours(hours.into())
+                    + time02::Duration::minutes(minutes.into())
+                    + time02::Duration::seconds(seconds.into())
+                    + time02::Duration::microseconds(microseconds.into());
                 Ok(ParseIr(if is_neg { -duration } else { duration }, v))
             }
             Value::Bytes(ref val_bytes) => {
@@ -319,10 +220,10 @@ impl TryFrom<Value> for ParseIr<time03::Duration> {
                 // as it may contain an hour value that's outside of a day's normal 0-23 hour range.
                 let duration = match parse_mysql_time_string(val_bytes) {
                     Some((is_neg, hours, minutes, seconds, microseconds)) => {
-                        let duration = time03::Duration::hours(hours.into())
-                            + time03::Duration::minutes(minutes.into())
-                            + time03::Duration::seconds(seconds.into())
-                            + time03::Duration::microseconds(microseconds.into());
+                        let duration = time02::Duration::hours(hours.into())
+                            + time02::Duration::minutes(minutes.into())
+                            + time02::Duration::seconds(seconds.into())
+                            + time02::Duration::microseconds(microseconds.into());
                         if is_neg {
                             -duration
                         } else {
@@ -338,31 +239,27 @@ impl TryFrom<Value> for ParseIr<time03::Duration> {
     }
 }
 
-#[cfg_attr(docsrs, doc(cfg(feature = "time03")))]
-impl From<ParseIr<time03::Duration>> for time03::Duration {
-    fn from(value: ParseIr<time03::Duration>) -> Self {
+impl From<ParseIr<time02::Duration>> for time02::Duration {
+    fn from(value: ParseIr<time02::Duration>) -> Self {
         value.commit()
     }
 }
 
-#[cfg_attr(docsrs, doc(cfg(feature = "time03")))]
-impl From<ParseIr<time03::Duration>> for Value {
-    fn from(value: ParseIr<time03::Duration>) -> Self {
+impl From<ParseIr<time02::Duration>> for Value {
+    fn from(value: ParseIr<time02::Duration>) -> Self {
         value.rollback()
     }
 }
 
-#[cfg_attr(docsrs, doc(cfg(feature = "time03")))]
-impl FromValue for time03::Duration {
-    type Intermediate = ParseIr<time03::Duration>;
+impl FromValue for time02::Duration {
+    type Intermediate = ParseIr<time02::Duration>;
 }
 
-#[cfg_attr(docsrs, doc(cfg(feature = "time03")))]
 impl From<PrimitiveDateTime> for Value {
     fn from(x: PrimitiveDateTime) -> Value {
         Value::Date(
             x.year() as u16,
-            x.month() as u8,
+            x.month(),
             x.day(),
             x.hour(),
             x.minute(),
@@ -372,14 +269,12 @@ impl From<PrimitiveDateTime> for Value {
     }
 }
 
-#[cfg_attr(docsrs, doc(cfg(feature = "time03")))]
 impl From<Date> for Value {
     fn from(x: Date) -> Value {
-        Value::Date(x.year() as u16, x.month() as u8, x.day(), 0, 0, 0, 0)
+        Value::Date(x.year() as u16, x.month(), x.day(), 0, 0, 0, 0)
     }
 }
 
-#[cfg_attr(docsrs, doc(cfg(feature = "time03")))]
 impl From<Time> for Value {
     fn from(x: Time) -> Value {
         Value::Time(
@@ -393,23 +288,22 @@ impl From<Time> for Value {
     }
 }
 
-#[cfg_attr(docsrs, doc(cfg(feature = "time03")))]
-impl From<time03::Duration> for Value {
-    fn from(mut x: time03::Duration) -> Value {
-        let negative = x < time03::Duration::ZERO;
+impl From<time02::Duration> for Value {
+    fn from(mut x: time02::Duration) -> Value {
+        let negative = x < time02::Duration::zero();
 
         if negative {
             x = -x;
         }
 
         let days = x.whole_days() as u32;
-        x = x - time03::Duration::days(x.whole_days());
+        x = x - time02::Duration::days(x.whole_days());
         let hours = x.whole_hours() as u8;
-        x = x - time03::Duration::hours(x.whole_hours());
+        x = x - time02::Duration::hours(x.whole_hours());
         let minutes = x.whole_minutes() as u8;
-        x = x - time03::Duration::minutes(x.whole_minutes());
+        x = x - time02::Duration::minutes(x.whole_minutes());
         let seconds = x.whole_seconds() as u8;
-        x = x - time03::Duration::seconds(x.whole_seconds());
+        x = x - time02::Duration::seconds(x.whole_seconds());
         let microseconds = x.whole_microseconds() as u32;
 
         Value::Time(negative, days, hours, minutes, seconds, microseconds)
@@ -418,27 +312,30 @@ impl From<time03::Duration> for Value {
 
 #[cfg(test)]
 mod tests {
-    use proptest::prelude::*;
-    use time03::error::ParseFromDescription;
+    use crate::value::convert::parse_mysql_datetime_string;
 
     use super::*;
+    use proptest::prelude::*;
 
     proptest! {
         #[test]
         fn parse_mysql_time_string_doesnt_crash(s in r"\PC*") {
+            parse_mysql_time_string(s.as_bytes());
             let _ = parse_mysql_time_string_with_time(s.as_bytes());
         }
 
         #[test]
         fn parse_mysql_datetime_string_doesnt_crash(s in r"\PC*") {
+            parse_mysql_datetime_string(s.as_bytes());
             let _ = parse_mysql_datetime_string_with_time(s.as_bytes());
         }
 
         #[test]
         fn parse_mysql_time_string_parses_correctly(
+            is_neg: bool,
             h in 0u32..60,
-            i in 0u32..60,
-            s in 0u32..60,
+            i in 0u8..60,
+            s in 0u8..60,
             have_us in 0..2,
             us in 0u32..1000000,
         ) {
@@ -451,6 +348,14 @@ mod tests {
                     "".into()
                 }
             );
+            let time_string_neg = format!(
+                "{}{}",
+                if is_neg { "-" } else { "" },
+                time_string,
+            );
+
+            let time = parse_mysql_time_string(time_string_neg.as_bytes()).unwrap();
+            assert_eq!(time, (is_neg, h, i, s, if have_us == 1 { us } else { 0 }));
 
             match parse_mysql_time_string_with_time(time_string.as_bytes()) {
                 Ok(time) => {
@@ -462,8 +367,8 @@ mod tests {
                     assert_eq!(
                         (
                             time.hour() as u32,
-                            time.minute() as u32,
-                            time.second() as u32,
+                            time.minute() as u8,
+                            time.second() as u8,
                             time.microsecond() as u32,
                         ),
                         (h, i, s, if have_us == 1 { us } else { 0 }));
@@ -475,15 +380,15 @@ mod tests {
                     // Any commented out checks are simply to avoid having the compiler show
                     // 'comparison is useless due to type limits' warnings.
                     match err {
-                        Parse::ParseFromDescription(ParseFromDescription::InvalidComponent("second")) => assert!(/*s < 0 || */s > 59),
-                        Parse::ParseFromDescription(ParseFromDescription::InvalidComponent("minute")) => assert!(/*i < 0 || */i > 59),
+                        ParseError::InvalidSecond => assert!(/*s < 0 || */s > 59),
+                        ParseError::InvalidMinute => assert!(/*i < 0 || */i > 59),
                         // For InvalidHour, only check if the randomized hour value is within
                         // 0-23 instead of MySQL `TIME`'s full range of -838-838,
                         // since we don't generate values that low or high,
-                        // and should be parsed with time::Duration instead.
-                        Parse::ParseFromDescription(ParseFromDescription::InvalidComponent("hour")) => assert!(/*h < 0 || */h > 23),
-                        Parse::TryFromParsed(TryFromParsed::ComponentRange(_))  |
-                        Parse::TryFromParsed(TryFromParsed::InsufficientInformation) => {
+                        // and should be parsed with time02::Duration instead.
+                        ParseError::InvalidHour => assert!(/*h < 0 || */h > 23),
+                        ParseError::ComponentOutOfRange(_) |
+                        ParseError::InsufficientInformation => {
                             // We may receive an ComponentOutOfRange or InsufficientInformation
                             // error for a few reasons, such as the format string being incorrect,
                             // the format of the time string being incorrect,
@@ -499,11 +404,11 @@ mod tests {
                             // we call `try_from_ymd` and `try_from_hms_micro`
                             // for each value separately.
 
-                            if Time::from_hms_micro(h as u8, 0, 0, 0).is_err() {
+                            if Time::try_from_hms_micro(h as u8, 0, 0, 0).is_err() {
                                 assert!(/*h < 0 || */h > 23);
-                            } else if Time::from_hms_micro(0, i as u8, 0, 0).is_err() {
+                            } else if Time::try_from_hms_micro(0, i as u8, 0, 0).is_err() {
                                 assert!(/*i < 0 || */i > 59);
-                            } else if Time::from_hms_micro(0, 0, s as u8, 0).is_err() {
+                            } else if Time::try_from_hms_micro(0, 0, s as u8, 0).is_err() {
                                 assert!(/*i < 0 || */i > 59);
                             }
 
@@ -518,7 +423,7 @@ mod tests {
                             // Panic for any other error as well, seeing as the others either
                             // would never happen, or the time string format must be incorrect,
                             // neither of which should ever happen.
-                            panic!("Failed to parse time `{}` due to an unknown reason. {}", time_string, err);
+                            panic!("Failed to parse time due to an unknown reason. {}", err);
                         }
                     }
                 }
@@ -528,7 +433,7 @@ mod tests {
         #[test]
         fn parse_mysql_datetime_string_parses_correctly(
             y in 0u32..10000,
-            m in 0u32..12,
+            m in 1u32..13,
             d in 1u32..32,
             h in 0u32..60,
             i in 0u32..60,
@@ -545,6 +450,9 @@ mod tests {
                     "".into()
                 }
             );
+
+            let datetime = parse_mysql_datetime_string(time_string.as_bytes()).unwrap();
+            assert_eq!(datetime, (y, m, d, h, i, s, if have_us == 1 { us } else { 0 }));
 
             match parse_mysql_datetime_string_with_time(time_string.as_bytes()) {
                 Ok(datetime) => {
@@ -572,20 +480,20 @@ mod tests {
                     // Any commented out checks are simply to avoid having the compiler show
                     // 'comparison is useless due to type limits' warnings.
                     match err {
-                        Parse::ParseFromDescription(ParseFromDescription::InvalidComponent("second")) => assert!(/*s < 0 || */s > 59),
-                        Parse::ParseFromDescription(ParseFromDescription::InvalidComponent("minute")) => assert!(/*i < 0 || */i > 59),
+                        ParseError::InvalidSecond => assert!(/*s < 0 || */s > 59),
+                        ParseError::InvalidMinute => assert!(/*i < 0 || */i > 59),
                         // For InvalidHour, only check if the randomized hour value is within
                         // 0-23 instead of MySQL `TIME`'s full range of -838-838,
                         // since we don't generate values that low or high,
-                        // and should be parsed with time::Duration instead.
-                        Parse::ParseFromDescription(ParseFromDescription::InvalidComponent("hour")) => assert!(/*h < 0 || */h > 23),
-                        Parse::ParseFromDescription(ParseFromDescription::InvalidComponent("dayofmonth")) => assert!(!(1..=31).contains(&d)),
-                        Parse::ParseFromDescription(ParseFromDescription::InvalidComponent("month")) => assert!(m < 1000 || m <= 12),
+                        // and should be parsed with time02::Duration instead.
+                        ParseError::InvalidHour => assert!(/*h < 0 || */h > 23),
+                        ParseError::InvalidDayOfMonth => assert!(!(1..=31).contains(&d)),
+                        ParseError::InvalidMonth => assert!(m < 1000 || m <= 12),
                         // For InvalidYear, ensure that the year isn't also 0,
                         // which is a valid value with non-strict-mode MySQL.
-                        Parse::ParseFromDescription(ParseFromDescription::InvalidComponent("year")) => assert!(y != 0 && !(1000..=9999).contains(&y)),
-                        Parse::TryFromParsed(TryFromParsed::ComponentRange(_))  |
-                        Parse::TryFromParsed(TryFromParsed::InsufficientInformation) => {
+                        ParseError::InvalidYear => assert!(y != 0 && !(1000..=9999).contains(&y)),
+                        ParseError::ComponentOutOfRange(_) |
+                        ParseError::InsufficientInformation => {
                             // We may receive an ComponentOutOfRange or InsufficientInformation
                             // error for a few reasons, such as the format string being incorrect,
                             // the format of the time string being incorrect,
@@ -601,17 +509,17 @@ mod tests {
                             // we call `try_from_ymd` and `try_from_hms_micro`
                             // for each value separately.
 
-                            if Date::from_calendar_date(y as i32, time03::Month::January, 1).is_err() {
+                            if Date::try_from_ymd(y as i32, 1, 1).is_err() {
                                 assert!(y != 0 && !(1000..=9999).contains(&y));
-                            } else if time03::Month::try_from(m as u8).is_err() {
+                            } else if Date::try_from_ymd(0, m as u8, 1).is_err() {
                                 assert!(m < 1000 || m <= 12);
-                            } else if Date::from_calendar_date(0, time03::Month::January, d as u8).is_err() {
+                            } else if Date::try_from_ymd(0, 1, d as u8).is_err() {
                                 assert!(!(1..=31).contains(&d));
-                            } else if Time::from_hms_micro(h as u8, 0, 0, 0).is_err() {
+                            } else if Time::try_from_hms_micro(h as u8, 0, 0, 0).is_err() {
                                 assert!(/*h < 0 || */h > 23);
-                            } else if Time::from_hms_micro(0, i as u8, 0, 0).is_err() {
+                            } else if Time::try_from_hms_micro(0, i as u8, 0, 0).is_err() {
                                 assert!(/*i < 0 || */i > 59);
-                            } else if Time::from_hms_micro(0, 0, s as u8, 0).is_err() {
+                            } else if Time::try_from_hms_micro(0, 0, s as u8, 0).is_err() {
                                 assert!(/*i < 0 || */i > 59);
                             }
 
@@ -626,7 +534,7 @@ mod tests {
                             // Panic for any other error as well, seeing as the others either
                             // would never happen, or the time string format must be incorrect,
                             // neither of which should ever happen.
-                            panic!("Failed to parse time `{}` due to an unknown reason. {}", time_string, err);
+                            panic!("Failed to parse time due to an unknown reason. {}", err);
                         }
                     }
                 }

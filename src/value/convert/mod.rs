@@ -25,7 +25,7 @@ pub mod bigint;
 pub mod chrono;
 pub mod decimal;
 pub mod time;
-pub mod time03;
+pub mod time02;
 pub mod uuid;
 
 lazy_static::lazy_static! {
@@ -43,7 +43,7 @@ lazy_static::lazy_static! {
 }
 
 /// Returns (year, month, day, hour, minute, second, micros)
-#[cfg(any(feature = "chrono", all(feature = "time", test)))]
+#[cfg(any(feature = "chrono", all(feature = "time02", test)))]
 fn parse_mysql_datetime_string(bytes: &[u8]) -> Option<(u32, u32, u32, u32, u32, u32, u32)> {
     let len = bytes.len();
 
@@ -853,7 +853,7 @@ mod tests {
         }
 
         #[test]
-        #[cfg(all(feature = "time", test))]
+        #[cfg(all(feature = "time02", test))]
         fn parse_mysql_datetime_string_parses_valid_time(
             s in r"[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]{1,6})?"
         ) {
@@ -861,7 +861,7 @@ mod tests {
         }
 
         #[test]
-        #[cfg(all(feature = "time", test))]
+        #[cfg(all(feature = "time02", test))]
         fn parse_mysql_datetime_string_doesnt_crash(s in "\\PC*") {
             parse_mysql_datetime_string(s.as_bytes());
             let _ = super::time::parse_mysql_datetime_string_with_time(s.as_bytes());

@@ -73,8 +73,8 @@
 //! | `bigdecimal03` | Enables `bigdecimal` v0.3.x types support            | 🟢      |
 //! | `chrono`       | Enables `chrono` types support                       | 🔴      |
 //! | `rust_decimal` | Enables `rust_decimal` types support                 | 🟢      |
-//! | `time`         | Enables `time` v0.2.x types support                  | 🔴      |
-//! | `time03`       | Enables `time` v0.3.x types support                  | 🟢      |
+//! | `time02`       | Enables `time` v0.2.x types support                  | 🔴      |
+//! | `time`         | Enables `time` v0.3.x types support                  | 🟢      |
 //! | `uuid`         | Enables `Uuid` type support                          | 🟢      |
 //! | `frunk`        | Enables `FromRow` for `frunk::Hlist!` types          | 🟢      |
 //! | `derive`       | Enables [`FromValue` and `FromRow` derive macros][2] | 🟢      |
@@ -111,11 +111,11 @@ pub use frunk;
 #[cfg(feature = "rust_decimal")]
 pub use rust_decimal;
 
+#[cfg(feature = "time02")]
+pub use time02;
+
 #[cfg(feature = "time")]
 pub use time;
-
-#[cfg(feature = "time03")]
-pub use time03;
 
 #[cfg(feature = "uuid")]
 pub use uuid;

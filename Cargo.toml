@@ -50,10 +50,10 @@ sha1 = "0.10"
 sha2 = "0.10"
 smallvec = { version = "1.6.1", features = ["union", "write"] }
 thiserror = "1.0"
-time = { version = "0.2", default-features = false, features = [
+time02 = { package = "time", version = "0.2", default-features = false, features = [
     "std",
 ], optional = true }
-time03 = { package = "time", version = "0.3", default-features = false, features = [
+time = { version = "0.3", default-features = false, features = [
     "parsing",
 ], optional = true }
 uuid = { version = "1" }
@@ -80,7 +80,7 @@ default = [
     "flate2/zlib",
     "bigdecimal03",
     "rust_decimal",
-    "time03",
+    "time",
     "frunk",
     "derive",
 ]
@@ -92,8 +92,8 @@ nightly = ["test"]
 rustdoc-args = ["--cfg", "docsrs"]
 no-default-features = true
 features = [
+    "time02",
     "time",
-    "time03",
     "rust_decimal",
     "chrono",
     "bigdecimal03",
