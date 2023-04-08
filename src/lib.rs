@@ -69,15 +69,14 @@
 //!
 //! | Feature        | Description                                          | Default |
 //! | -------------- | ---------------------------------------------------- | ------- |
-//! | `bigdecimal`   | Enables `bigdecimal` v0.2.x types support            | 🔴      |
-//! | `bigdecimal03` | Enables `bigdecimal` v0.3.x types support            | 🟢      |
+//! | `bigdecimal02` | Enables `bigdecimal` v0.2.x types support            | 🔴      |
+//! | `bigdecimal`   | Enables `bigdecimal` v0.3.x types support            | 🟢      |
 //! | `chrono`       | Enables `chrono` types support                       | 🔴      |
 //! | `rust_decimal` | Enables `rust_decimal` types support                 | 🟢      |
-//! | `time`         | Enables `time` v0.2.x types support                  | 🔴      |
-//! | `time03`       | Enables `time` v0.3.x types support                  | 🟢      |
-//! | `uuid`         | Enables `Uuid` type support                          | 🟢      |
+//! | `time02`       | Enables `time` v0.2.x types support                  | 🔴      |
+//! | `time`         | Enables `time` v0.3.x types support                  | 🟢      |
 //! | `frunk`        | Enables `FromRow` for `frunk::Hlist!` types          | 🟢      |
-//! | `derive`       | Enables [`FromValue` and `FromRow` derive macros][2] | 🔴      |
+//! | `derive`       | Enables [`FromValue` and `FromRow` derive macros][2] | 🟢      |
 //!
 //! [1]: https://dev.mysql.com/doc/internals/en/binary-protocol-value.html
 //! [2]: https://docs.rs/mysql-common-derive
@@ -96,11 +95,11 @@ extern crate test;
 #[macro_use]
 pub mod bitflags_ext;
 
+#[cfg(feature = "bigdecimal02")]
+pub use bigdecimal02;
+
 #[cfg(feature = "bigdecimal")]
 pub use bigdecimal;
-
-#[cfg(feature = "bigdecimal03")]
-pub use bigdecimal03;
 
 #[cfg(feature = "chrono")]
 pub use chrono;
@@ -111,13 +110,12 @@ pub use frunk;
 #[cfg(feature = "rust_decimal")]
 pub use rust_decimal;
 
+#[cfg(feature = "time02")]
+pub use time02;
+
 #[cfg(feature = "time")]
 pub use time;
 
-#[cfg(feature = "time03")]
-pub use time03;
-
-#[cfg(feature = "uuid")]
 pub use uuid;
 
 #[cfg(feature = "derive")]
@@ -139,10 +137,12 @@ pub use value::json::{Deserialized, Serialized};
 
 pub mod prelude {
     #[cfg(feature = "derive")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "derive")))]
     #[doc(inline)]
     pub use mysql_common_derive::FromValue;
 
     #[cfg(feature = "derive")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "derive")))]
     #[doc(inline)]
     pub use mysql_common_derive::FromRow;
 

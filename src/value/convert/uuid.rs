@@ -8,8 +8,6 @@
 
 //! This module implements conversion from/to `Value` for `Uuid`.
 
-#![cfg(feature = "uuid")]
-
 use std::convert::TryFrom;
 
 use uuid::Uuid;

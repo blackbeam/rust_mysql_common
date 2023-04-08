@@ -20,14 +20,17 @@ use super::{
     parse_mysql_datetime_string, parse_mysql_time_string, FromValue, FromValueError, ParseIr,
 };
 
+#[cfg_attr(docsrs, doc(cfg(feature = "chrono")))]
 impl FromValue for NaiveDate {
     type Intermediate = ParseIr<NaiveDate>;
 }
 
+#[cfg_attr(docsrs, doc(cfg(feature = "chrono")))]
 impl FromValue for NaiveDateTime {
     type Intermediate = ParseIr<NaiveDateTime>;
 }
 
+#[cfg_attr(docsrs, doc(cfg(feature = "chrono")))]
 impl TryFrom<Value> for ParseIr<NaiveDateTime> {
     type Error = FromValueError;
 
@@ -67,6 +70,7 @@ impl TryFrom<Value> for ParseIr<NaiveDateTime> {
     }
 }
 
+#[cfg_attr(docsrs, doc(cfg(feature = "chrono")))]
 impl TryFrom<Value> for ParseIr<NaiveDate> {
     type Error = FromValueError;
 
@@ -100,6 +104,7 @@ impl TryFrom<Value> for ParseIr<NaiveDate> {
     }
 }
 
+#[cfg_attr(docsrs, doc(cfg(feature = "chrono")))]
 impl TryFrom<Value> for ParseIr<NaiveTime> {
     type Error = FromValueError;
 
@@ -130,42 +135,49 @@ impl TryFrom<Value> for ParseIr<NaiveTime> {
     }
 }
 
+#[cfg_attr(docsrs, doc(cfg(feature = "chrono")))]
 impl From<ParseIr<NaiveDateTime>> for NaiveDateTime {
     fn from(value: ParseIr<NaiveDateTime>) -> Self {
         value.commit()
     }
 }
 
+#[cfg_attr(docsrs, doc(cfg(feature = "chrono")))]
 impl From<ParseIr<NaiveDate>> for NaiveDate {
     fn from(value: ParseIr<NaiveDate>) -> Self {
         value.commit()
     }
 }
 
+#[cfg_attr(docsrs, doc(cfg(feature = "chrono")))]
 impl From<ParseIr<NaiveTime>> for NaiveTime {
     fn from(value: ParseIr<NaiveTime>) -> Self {
         value.commit()
     }
 }
 
+#[cfg_attr(docsrs, doc(cfg(feature = "chrono")))]
 impl From<ParseIr<NaiveDateTime>> for Value {
     fn from(value: ParseIr<NaiveDateTime>) -> Self {
         value.rollback()
     }
 }
 
+#[cfg_attr(docsrs, doc(cfg(feature = "chrono")))]
 impl From<ParseIr<NaiveDate>> for Value {
     fn from(value: ParseIr<NaiveDate>) -> Self {
         value.rollback()
     }
 }
 
+#[cfg_attr(docsrs, doc(cfg(feature = "chrono")))]
 impl From<ParseIr<NaiveTime>> for Value {
     fn from(value: ParseIr<NaiveTime>) -> Self {
         value.rollback()
     }
 }
 
+#[cfg_attr(docsrs, doc(cfg(feature = "chrono")))]
 impl From<NaiveDateTime> for Value {
     fn from(x: NaiveDateTime) -> Value {
         if 1000 > x.year() || x.year() > 9999 {
@@ -183,6 +195,7 @@ impl From<NaiveDateTime> for Value {
     }
 }
 
+#[cfg_attr(docsrs, doc(cfg(feature = "chrono")))]
 impl From<NaiveDate> for Value {
     fn from(x: NaiveDate) -> Value {
         if 1000 > x.year() || x.year() > 9999 {
@@ -192,6 +205,7 @@ impl From<NaiveDate> for Value {
     }
 }
 
+#[cfg_attr(docsrs, doc(cfg(feature = "chrono")))]
 impl From<NaiveTime> for Value {
     fn from(x: NaiveTime) -> Value {
         Value::Time(

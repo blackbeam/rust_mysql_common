@@ -132,10 +132,30 @@ pub fn impl_from_value_for_enum(
         }
     }
 
+    if !item_attrs.allow_sparse_enum {
+        variants.sort_by_key(|x| x.discriminant.clone());
+        let mut prev_discriminant = BigInt::default();
+        for variant in variants.iter() {
+            let is_next = (variant.discriminant.clone() - BigInt::from(1_u8)) == prev_discriminant;
+            let is_invalid =
+                variant.discriminant == prev_discriminant && prev_discriminant == BigInt::default();
+            if !is_next && !is_invalid {
+                crate::warn::print_warning(
+                format!("Sparse enum variant {}::{}. Consider annotating with #[mysql(is_integer)] or #[mysql(is_string)].", ident, variant.ident),
+                format!("#[mysql(is_integer)]\nenum {} {{", ident),
+                "use #[mysql(allow_sparse_enum)] to suppress this warning",
+            )
+            .unwrap();
+            }
+            prev_discriminant = variant.discriminant.clone();
+        }
+    }
+
     if min_discriminant >= BigInt::default()
         && max_discriminant <= BigInt::from(u8::MAX)
         && !*item_attrs.is_integer
         && !*item_attrs.is_string
+        && !item_attrs.allow_suboptimal_repr
     {
         if !matches!(repr.0, EnumRepr::U8(_)) {
             crate::warn::print_warning(
@@ -149,15 +169,14 @@ pub fn impl_from_value_for_enum(
         && max_discriminant <= BigInt::from(u16::MAX)
         && !*item_attrs.is_integer
         && !*item_attrs.is_string
+        && !matches!(repr.0, EnumRepr::U8(_))
     {
-        if !matches!(repr.0, EnumRepr::U8(_)) {
-            crate::warn::print_warning(
-                "enum representation is suboptimal. Consider the following annotation:",
-                format!("#[repr(u16)]\nenum {} {{", ident),
-                "use #[mysql(allow_suboptimal_repr)] to suppress this warning",
-            )
-            .unwrap();
-        }
+        crate::warn::print_warning(
+            "enum representation is suboptimal. Consider the following annotation:",
+            format!("#[repr(u16)]\nenum {} {{", ident),
+            "use #[mysql(allow_suboptimal_repr)] to suppress this warning",
+        )
+        .unwrap();
     }
 
     let derived = Enum {
@@ -365,13 +384,13 @@ mod tests {
     fn derive_enum() {
         let code = r#"
             #[derive(FromValue)]
-            #[mysql(rename_all = "kebab-case", crate_name = "mysql")]
+            #[mysql(rename_all = "kebab-case", crate_name = "mysql", allow_sparse_enum, allow_suboptimal_repr)]
             #[repr(u32)]
             enum Size {
                 #[mysql(explicit_invalid)]
                 Invalid,
                 XSmall = 1,
-                Small,
+                Small = 3,
                 Medium,
                 Large,
                 #[mysql(rename = "XL")]

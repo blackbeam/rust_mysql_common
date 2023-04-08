@@ -19,6 +19,7 @@ use std::{
 
 use super::{FromValue, FromValueError, ParseIr, Value};
 
+#[cfg_attr(docsrs, doc(cfg(feature = "rust_decimal")))]
 impl TryFrom<Value> for ParseIr<Decimal> {
     type Error = FromValueError;
 
@@ -38,22 +39,26 @@ impl TryFrom<Value> for ParseIr<Decimal> {
     }
 }
 
+#[cfg_attr(docsrs, doc(cfg(feature = "rust_decimal")))]
 impl From<ParseIr<Decimal>> for Decimal {
     fn from(value: ParseIr<Decimal>) -> Self {
         value.commit()
     }
 }
 
+#[cfg_attr(docsrs, doc(cfg(feature = "rust_decimal")))]
 impl From<ParseIr<Decimal>> for Value {
     fn from(value: ParseIr<Decimal>) -> Self {
         value.rollback()
     }
 }
 
+#[cfg_attr(docsrs, doc(cfg(feature = "rust_decimal")))]
 impl FromValue for Decimal {
     type Intermediate = ParseIr<Decimal>;
 }
 
+#[cfg_attr(docsrs, doc(cfg(feature = "rust_decimal")))]
 impl From<Decimal> for Value {
     fn from(decimal: Decimal) -> Value {
         Value::Bytes(decimal.to_string().into())

@@ -1,4 +1,4 @@
-// Copyright (c) 2017 Anatoly Ikorsky
+// Copyright (c) 2021 Anatoly Ikorsky
 //
 // Licensed under the Apache License, Version 2.0
 // <LICENSE-APACHE or http://www.apache.org/licenses/LICENSE-2.0> or the MIT
@@ -6,7 +6,7 @@
 // option. All files in the project carrying such notice may not be copied,
 // modified, or distributed except according to those terms.
 
-//! This module implements conversion from/to `Value` for `BigDecimal` type.
+//! This module implements conversion from/to `Value` for the `BigDecimal` type (`bigdecimal` crate version "0.3.x").
 
 #![cfg(feature = "bigdecimal")]
 
@@ -16,6 +16,7 @@ use bigdecimal::BigDecimal;
 
 use super::{FromValue, FromValueError, ParseIr, Value};
 
+#[cfg_attr(docsrs, doc(cfg(feature = "bigdecimal")))]
 impl TryFrom<Value> for ParseIr<BigDecimal> {
     type Error = FromValueError;
 
@@ -40,22 +41,26 @@ impl TryFrom<Value> for ParseIr<BigDecimal> {
     }
 }
 
+#[cfg_attr(docsrs, doc(cfg(feature = "bigdecimal")))]
 impl From<ParseIr<BigDecimal>> for BigDecimal {
     fn from(value: ParseIr<BigDecimal>) -> Self {
         value.commit()
     }
 }
 
+#[cfg_attr(docsrs, doc(cfg(feature = "bigdecimal")))]
 impl From<ParseIr<BigDecimal>> for Value {
     fn from(value: ParseIr<BigDecimal>) -> Self {
         value.rollback()
     }
 }
 
+#[cfg_attr(docsrs, doc(cfg(feature = "bigdecimal")))]
 impl FromValue for BigDecimal {
     type Intermediate = ParseIr<BigDecimal>;
 }
 
+#[cfg_attr(docsrs, doc(cfg(feature = "bigdecimal")))]
 impl From<BigDecimal> for Value {
     fn from(big_decimal: BigDecimal) -> Value {
         Value::Bytes(big_decimal.to_string().into())

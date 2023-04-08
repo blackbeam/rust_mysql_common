@@ -17,9 +17,9 @@ mod from_value;
 ///
 /// Supported derivations:
 ///
-/// *   for enum – you should carefully read the corresponding section of MySql documentation
+/// *   for enum – you should carefully read the [corresponding section of MySql documentation][2].
 /// *   for newtypes (see [New Type Idiom][1]) – given that the wrapped type itself satisfies
-///     `FromValue`
+///     `FromValue`.
 ///
 /// ## Enums
 ///
@@ -35,6 +35,7 @@ mod from_value;
 ///    textual representation.
 /// *  `#[mysql(is_string)]` – tells derive macro that the value is a string rather than MySql
 ///    ENUM. Macro won't warn if variants are sparse or greater than u16 and will not try to parse
+///    integer representation.
 ///
 /// ### Example
 ///
@@ -81,6 +82,34 @@ mod from_value;
 /// ```no_run
 /// # use mysql_common::{row::Row, row::convert::from_row, prelude::FromValue, value::Value, value::convert::{from_value, FromValueError}};
 ///
+/// /// Trivial example
+/// #[derive(FromValue)]
+/// struct Inch(i32);
+///
+/// /// Example of a {serialize|deserialize}_with.
+/// #[derive(FromValue)]
+/// #[mysql(deserialize_with = "neg_de", serialize_with = "neg_ser")]
+/// struct Neg(i64);
+///
+/// /// Wrapped generic. Bounds are inferred.
+/// #[derive(FromValue)]
+/// struct Foo<T>(Option<T>);
+///
+/// /// Example of additional bounds.
+/// #[derive(FromValue)]
+/// #[mysql(bound = "'b: 'a, T: 'a, U: From<String>, V: From<u64>")]
+/// struct Bar<'a, 'b, const N: usize, T, U, V>(ComplexTypeToWrap<'a, 'b, N, T, U, V>);
+///
+/// fn assert_from_row_works<'a, 'b, const N: usize, T, U, V>(x: Row) -> (Inch, Neg, Foo<u8>, Bar<'a, 'b, N, T, U, V>)
+/// where 'b: 'a, T: 'a, U: From<String>, V: From<u64>,
+/// {
+///     from_row(x)
+/// }
+///
+///
+/// // test boilerplate..
+///
+///
 /// /// Dummy complex type with additional bounds on FromValue impl.
 /// struct ComplexTypeToWrap<'a, 'b, const N: usize, T, U, V>([(&'a T, &'b U, V); N]);
 ///
@@ -124,30 +153,11 @@ mod from_value;
 ///     Value::Int(-x)
 /// }
 ///
-/// #[derive(FromValue)]
-/// #[mysql(deserialize_with = "neg_de", serialize_with = "neg_ser")]
-/// struct Neg(i64);
-///
-/// #[derive(FromValue)]
-/// struct Inch(i32);
-///
-/// #[derive(FromValue)]
-/// struct Foo<T>(Option<T>);
-///
-/// #[derive(FromValue)]
-/// #[mysql(bound = "'b: 'a, T: 'a, U: From<String>, V: From<u64>")]
-/// struct Bar<'a, 'b, const N: usize, T, U, V>(ComplexTypeToWrap<'a, 'b, N, T, U, V>);
-///
-/// fn assert_from_row_works<'a, 'b, const N: usize, T, U, V>(x: Row) -> (Inch, Neg, Foo<u8>, Bar<'a, 'b, N, T, U, V>)
-/// where 'b: 'a, T: 'a, U: From<String>, V: From<u64>,
-/// {
-///     from_row(x)
-/// }
-///
 /// # fn main() {}
 /// ```
 ///
 /// [1]: https://doc.rust-lang.org/rust-by-example/generics/new_types.html
+/// [2]: https://dev.mysql.com/doc/refman/8.0/en/enum.html
 #[proc_macro_derive(FromValue, attributes(mysql))]
 #[proc_macro_error::proc_macro_error]
 pub fn from_value(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
@@ -232,102 +242,15 @@ pub fn from_value(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 /// }
 ///
 /// # fn main() {
-/// let foo = from_row::<Foo>(get_row());
-/// assert_eq!(foo, Foo { id: 42, definition: Bar::Right, child: None });
 /// assert_eq!(Foo::TABLE_NAME, "Foos");
 /// assert_eq!(Foo::ID_FIELD, "id");
 /// assert_eq!(Foo::DEFINITION_FIELD, "def");
 /// assert_eq!(Foo::CHILD_FIELD, "child");
+///
+/// let foo = from_row::<Foo>(get_row());
+/// assert_eq!(foo, Foo { id: 42, definition: Bar::Right, child: None });
 /// # }
 /// ```
-///
-/// ## Newtypes
-///
-/// It is expected, that wrapper value satisfies `FromValue` or `deserialize_with` is given.
-/// Also note, that to support `FromRow` the wrapped value must satisfy `Into<Value>` or
-/// `serialize_with` must be given.
-///
-/// ### Container attributes:
-///
-/// *  `#[mysql(crate_name = "some_name")]` – overrides an attemt to guess a crate to import types from
-/// *  `#[mysql(bound = "Foo: Bar, Baz: Quux")]` – use the following additional bounds
-/// *  `#[mysql(deserialize_with = "some::path")]` – use the following function to deserialize
-///    the wrapped value. Expected signature is `fn (Value) -> Result<Wrapped, FromValueError>`.
-/// *  `#[mysql(serialize_with = "some::path")]` – use the following function to serialize
-///    the wrapped value. Expected signature is `fn (Wrapped) -> Value`.
-///
-/// ### Example
-///
-/// ```no_run
-/// # use mysql_common::{row::Row, row::convert::from_row, prelude::FromValue, value::Value, value::convert::{from_value, FromValueError}};
-///
-/// /// Dummy complex type with additional bounds on FromValue impl.
-/// struct ComplexTypeToWrap<'a, 'b, const N: usize, T, U, V>([(&'a T, &'b U, V); N]);
-///
-/// struct FakeIr;
-///
-/// impl TryFrom<Value> for FakeIr {
-///     // ...
-/// #    type Error = FromValueError;
-/// #    fn try_from(v: Value) -> Result<Self, Self::Error> {
-/// #        unimplemented!();
-/// #    }
-/// }
-///
-/// impl<'a, 'b: 'a, const N: usize, T: 'a, U: From<String>, V: From<u64>> From<FakeIr> for ComplexTypeToWrap<'a, 'b, N, T, U, V> {
-///     // ...
-/// #    fn from(x: FakeIr) -> Self {
-/// #        unimplemented!();
-/// #    }
-/// }
-///
-/// impl From<FakeIr> for Value {
-///     // ...
-/// #    fn from(x: FakeIr) -> Self {
-/// #        unimplemented!();
-/// #    }
-/// }
-///
-/// impl<'a, 'b: 'a, const N: usize, T: 'a, U: From<String>, V: From<u64>> FromValue for ComplexTypeToWrap<'a, 'b, N, T, U, V> {
-///     type Intermediate = FakeIr;
-/// }
-///
-/// fn neg_de(v: Value) -> Result<i64, FromValueError> {
-///     match v {
-///         Value::Int(x) => Ok(-x),
-///         Value::UInt(x) => Ok(-(x as i64)),
-///         x => Err(FromValueError(x)),
-///     }
-/// }
-///
-/// fn neg_ser(x: i64) -> Value {
-///     Value::Int(-x)
-/// }
-///
-/// #[derive(FromValue)]
-/// #[mysql(deserialize_with = "neg_de", serialize_with = "neg_ser")]
-/// struct Neg(i64);
-///
-/// #[derive(FromValue)]
-/// struct Inch(i32);
-///
-/// #[derive(FromValue)]
-/// struct Foo<T>(Option<T>);
-///
-/// #[derive(FromValue)]
-/// #[mysql(bound = "'b: 'a, T: 'a, U: From<String>, V: From<u64>")]
-/// struct Bar<'a, 'b, const N: usize, T, U, V>(ComplexTypeToWrap<'a, 'b, N, T, U, V>);
-///
-/// fn assert_from_row_works<'a, 'b, const N: usize, T, U, V>(x: Row) -> (Inch, Neg, Foo<u8>, Bar<'a, 'b, N, T, U, V>)
-/// where 'b: 'a, T: 'a, U: From<String>, V: From<u64>,
-/// {
-///     from_row(x)
-/// }
-///
-/// # fn main() {}
-/// ```
-///
-/// [1]: https://doc.rust-lang.org/rust-by-example/generics/new_types.html
 #[proc_macro_derive(FromRow, attributes(mysql))]
 #[proc_macro_error::proc_macro_error]
 pub fn from_row(input: proc_macro::TokenStream) -> proc_macro::TokenStream {

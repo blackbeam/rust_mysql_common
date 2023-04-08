@@ -12,6 +12,10 @@ pub struct Mysql {
     #[darling(default)]
     pub allow_invalid_discriminants: bool,
     #[darling(default)]
+    pub allow_sparse_enum: bool,
+    #[darling(default)]
+    pub allow_suboptimal_repr: bool,
+    #[darling(default)]
     pub is_integer: SpannedValue<bool>,
     #[darling(default)]
     pub is_string: SpannedValue<bool>,
