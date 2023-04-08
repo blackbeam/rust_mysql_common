@@ -77,7 +77,7 @@ Also crate provides from-row convertion for the following list of types (see `Fr
 | `time03`       | Enables `time` v0.3.x types support                  | 🟢      |
 | `uuid`         | Enables `Uuid` type support                          | 🟢      |
 | `frunk`        | Enables `FromRow` for `frunk::Hlist!` types          | 🟢      |
-| `derive`       | Enables [`FromValue` and `FromRow` derive macros][2] | 🔴      |
+| `derive`       | Enables [`FromValue` and `FromRow` derive macros][2] | 🟢      |
 
 [1]: https://dev.mysql.com/doc/internals/en/binary-protocol-value.html
 [2]: https://docs.rs/mysql-common-derive

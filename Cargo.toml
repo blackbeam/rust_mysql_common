@@ -76,7 +76,14 @@ subprocess = "0.2"
 debug = true
 
 [features]
-default = ["flate2/zlib", "bigdecimal03", "rust_decimal", "time03", "frunk"]
+default = [
+    "flate2/zlib",
+    "bigdecimal03",
+    "rust_decimal",
+    "time03",
+    "frunk",
+    "derive",
+]
 test = ["derive"]
 derive = ["mysql-common-derive"]
 nightly = ["test"]
