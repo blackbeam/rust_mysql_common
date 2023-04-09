@@ -99,6 +99,7 @@ nightly = ["test"]
 rustdoc-args = ["--cfg", "docsrs"]
 no-default-features = true
 features = [
+    "flate2/zlib",
     "time02",
     "time",
     "rust_decimal",
