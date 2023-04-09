@@ -5,7 +5,6 @@ use attrs::{
     variant,
 };
 use darling::FromMeta;
-use heck::AsSnakeCase;
 use num_bigint::BigInt;
 use proc_macro2::{Span, TokenStream};
 use proc_macro_error::abort;
@@ -213,10 +212,7 @@ impl ToTokens for Enum {
         };
 
         let ir_name = syn::Ident::new(&format!("{container_name}Ir"), Span::call_site());
-        let ir_mod_name = syn::Ident::new(
-            &format!("{}_ir", AsSnakeCase(container_name.to_string())),
-            Span::call_site(),
-        );
+        let parsed_name = syn::Ident::new(&format!("{container_name}IrParsed"), Span::call_site());
 
         let branches = variants.iter().map(
             |EnumVariant {
@@ -238,22 +234,22 @@ impl ToTokens for Enum {
                 if *item_attrs.is_integer {
                     quote::quote!(
                         #crat::Value::Int(#n) | #crat::Value::UInt(#n) => {
-                            Ok(#ir_name(Parsed::Ready(#container_name::#ident)))
+                            Ok(#ir_name(#parsed_name::Ready(#container_name::#ident)))
                         }
                     )
                 } else if *item_attrs.is_string {
                     quote::quote!(
-                        Value::Bytes(ref x) if x == #s => {
-                            Ok(#ir_name(Parsed::Parsed(#container_name::#ident, v)))
+                        #crat::Value::Bytes(ref x) if x == #s => {
+                            Ok(#ir_name(#parsed_name::Parsed(#container_name::#ident, v)))
                         }
                     )
                 } else {
                     quote::quote!(
-                        Value::Bytes(ref x) if x == #s => {
-                            Ok(#ir_name(Parsed::Parsed(#container_name::#ident, v)))
+                        #crat::Value::Bytes(ref x) if x == #s => {
+                            Ok(#ir_name(#parsed_name::Parsed(#container_name::#ident, v)))
                         }
                         #crat::Value::Int(#n) | #crat::Value::UInt(#n) => {
-                            Ok(#ir_name(Parsed::Ready(#container_name::#ident)))
+                            Ok(#ir_name(#parsed_name::Ready(#container_name::#ident)))
                         }
                     )
                 }
@@ -262,7 +258,7 @@ impl ToTokens for Enum {
 
         let to_value = if *item_attrs.is_string {
             quote::quote!(
-                impl From<#container_name> for #crat::Value {
+                impl std::convert::From<#container_name> for #crat::Value {
                     fn from(x: #container_name) -> Self {
                         #crat::Value::Int(x as #repr as i64)
                     }
@@ -270,9 +266,9 @@ impl ToTokens for Enum {
             )
         } else if *item_attrs.is_integer {
             quote::quote!(
-                impl From<#container_name> for #crat::Value {
+                impl std::convert::From<#container_name> for #crat::Value {
                     fn from(x: #container_name) -> Self {
-                        match i64::try_from(x as #repr) {
+                        match <i64 as std::convert::TryFrom>::try_from(x as #repr) {
                             Ok(x) => #crat::Value::Int(x),
                             _ => #crat::Value::UInt(x as #repr as u64),
                         }
@@ -281,7 +277,7 @@ impl ToTokens for Enum {
             )
         } else {
             quote::quote!(
-                impl From<#container_name> for #crat::Value {
+                impl std::convert::From<#container_name> for #crat::Value {
                     fn from(x: #container_name) -> Self {
                         #crat::Value::Int(x as #repr as i64)
                     }
@@ -290,62 +286,53 @@ impl ToTokens for Enum {
         };
 
         let new_tokens = quote::quote!(
-            mod #ir_mod_name {
-                use std::convert::TryFrom;
-                use super::#container_name;
-                use #crat::Value;
-                use #crat::FromValueError;
+            pub struct #ir_name(#parsed_name);
 
-                pub struct #ir_name(Parsed);
+            enum #parsed_name {
+                /// Type instance is ready without parsing.
+                Ready(#container_name),
+                /// Type instance is successfully parsed from this value.
+                Parsed(#container_name, #crat::Value),
+            }
 
-                enum Parsed {
-                    /// Type instance is ready without parsing.
-                    Ready(#container_name),
-                    /// Type instance is successfully parsed from this value.
-                    Parsed(#container_name, Value),
-                }
-
-                impl Parsed {
-                    fn commit(self) -> #container_name {
-                        match self {
-                            Parsed::Ready(t) | Parsed::Parsed(t, _) => t,
-                        }
-                    }
-
-                    fn rollback(self) -> Value
-                    {
-                        match self {
-                            Parsed::Ready(t) => t.into(),
-                            Parsed::Parsed(_, v) => v,
-                        }
+            impl #parsed_name {
+                fn commit(self) -> #container_name {
+                    match self {
+                        Self::Ready(t) | Self::Parsed(t, _) => t,
                     }
                 }
 
-                impl TryFrom<Value> for #ir_name {
-                    type Error = FromValueError;
-
-                    fn try_from(v: Value) -> Result<Self, Self::Error> {
-                        match v {
-                            #( #branches )*
-                            v => Err(FromValueError(v)),
-                        }
-                    }
-                }
-
-                impl From<#ir_name> for #container_name {
-                    fn from(value: #ir_name) -> Self {
-                        value.0.commit()
-                    }
-                }
-
-                impl From<#ir_name> for #crat::Value {
-                    fn from(value: #ir_name) -> Self {
-                        value.0.rollback()
+                fn rollback(self) -> #crat::Value
+                {
+                    match self {
+                        Self::Ready(t) => t.into(),
+                        Self::Parsed(_, v) => v,
                     }
                 }
             }
 
-            pub use #ir_mod_name::#ir_name;
+            impl std::convert::TryFrom<#crat::Value> for #ir_name {
+                type Error = #crat::FromValueError;
+
+                fn try_from(v: #crat::Value) -> Result<Self, Self::Error> {
+                    match v {
+                        #( #branches )*
+                        v => Err(#crat::FromValueError(v)),
+                    }
+                }
+            }
+
+            impl std::convert::From<#ir_name> for #container_name {
+                fn from(value: #ir_name) -> Self {
+                    value.0.commit()
+                }
+            }
+
+            impl std::convert::From<#ir_name> for #crat::Value {
+                fn from(value: #ir_name) -> Self {
+                    value.0.rollback()
+                }
+            }
 
             impl #crat::prelude::FromValue for #container_name {
                 type Intermediate = #ir_name;

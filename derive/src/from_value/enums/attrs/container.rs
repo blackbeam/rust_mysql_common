@@ -21,6 +21,7 @@ pub struct Mysql {
     pub is_string: SpannedValue<bool>,
 }
 
+#[derive(Debug)]
 pub enum Crate {
     NotFound,
     Multiple,
