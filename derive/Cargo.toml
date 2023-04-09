@@ -1,6 +1,7 @@
 [package]
 name = "mysql-common-derive"
 edition = "2021"
+exclude = ["README.tpl"]
 
 # * Invoke `cargo readme > README.md` if relevant!
 version = "0.30.0"

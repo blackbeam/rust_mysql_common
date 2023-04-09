@@ -22,6 +22,8 @@ exclude = [
     "/test-data",
     "/wrapper.cc",
     "/wrapper.hh",
+    "README.tpl",
+    ".github",
 ]
 
 [badges]
@@ -37,7 +39,10 @@ bitflags = "2"
 bitvec = "1.0"
 byteorder = "1"
 bytes = "1.0"
-chrono = { version = "0.4.20", default-features = false, features = ["clock", "serde"], optional = true }
+chrono = { version = "0.4.20", default-features = false, features = [
+    "clock",
+    "serde",
+], optional = true }
 crc32fast = "1.2"
 flate2 = { version = "1.0", default-features = false }
 frunk = { version = "0.4", optional = true }
