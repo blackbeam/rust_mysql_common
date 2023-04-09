@@ -289,6 +289,7 @@ mod tests {
     fn derive_from_row_named_struct() {
         let code = r#"
             #[derive(FromRow)]
+            #[mysql(crate_name = "mysql_common")]
             struct Foo {
                 id: u64,
                 #[mysql(rename = "def", json)]

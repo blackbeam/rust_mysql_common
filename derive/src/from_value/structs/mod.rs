@@ -355,6 +355,7 @@ mod tests {
     fn derive_struct() {
         let code = r#"
             #[derive(FromValue)]
+            #[mysql(crate_name = "mysql_common")]
             struct A(i32);
         "#;
         let input = syn::parse_str::<syn::DeriveInput>(code).unwrap();
@@ -363,6 +364,7 @@ mod tests {
 
         let code = r#"
             #[derive(FromValue)]
+            #[mysql(crate_name = "mysql_common")]
             struct A<T>(T);
         "#;
         let input = syn::parse_str::<syn::DeriveInput>(code).unwrap();
