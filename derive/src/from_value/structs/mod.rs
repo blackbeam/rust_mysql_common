@@ -295,13 +295,7 @@ impl ToTokens for NewType<'_> {
             )
         } else {
             quote::quote!(
-                mod #ir_mod_name {
-                    use #crat::prelude::FromValue;
-
-                    pub struct #ir_name<T: FromValue>(pub T::Intermediate);
-                }
-
-                pub use #ir_mod_name::#ir_name;
+                pub struct #ir_name<T: #crat::prelude::FromValue>(pub T::Intermediate);
 
                 impl<#impl_generics> std::convert::TryFrom<#crat::Value> for #ir_name<#field_type>
                 where
