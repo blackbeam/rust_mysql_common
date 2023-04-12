@@ -284,6 +284,8 @@ assert_eq!(foo, Foo { id: 42, definition: Bar::Right, child: None });
 
 [1]: https://dev.mysql.com/doc/internals/en/binary-protocol-value.html
 [2]: #derive-macros
+[3]: https://doc.rust-lang.org/rust-by-example/generics/new_types.html
+[4]: https://dev.mysql.com/doc/refman/8.0/en/enum.html
 
 ## License
 
