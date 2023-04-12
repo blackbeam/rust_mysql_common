@@ -1636,6 +1636,223 @@ impl<'a> HandshakePacket<'a> {
     }
 }
 
+define_header!(
+    ComChangeUserHeader,
+    InvalidComChangeUserHeader("Invalid COM_CHANGE_USER header"),
+    0x11
+);
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ComChangeUser<'a> {
+    __header: ComChangeUserHeader,
+    user: RawBytes<'a, NullBytes>,
+    // Only CLIENT_SECURE_CONNECTION capable servers are supported
+    auth_plugin_data: RawBytes<'a, U8Bytes>,
+    database: RawBytes<'a, NullBytes>,
+    more_data: Option<ComChangeUserMoreData<'a>>,
+}
+
+impl<'a> ComChangeUser<'a> {
+    pub fn new() -> Self {
+        Self {
+            __header: ComChangeUserHeader::new(),
+            user: Default::default(),
+            auth_plugin_data: Default::default(),
+            database: Default::default(),
+            more_data: None,
+        }
+    }
+
+    pub fn with_user(mut self, user: Option<impl Into<Cow<'a, [u8]>>>) -> Self {
+        self.user = user.map(RawBytes::new).unwrap_or_default();
+        self
+    }
+
+    pub fn with_database(mut self, database: Option<impl Into<Cow<'a, [u8]>>>) -> Self {
+        self.database = database.map(RawBytes::new).unwrap_or_default();
+        self
+    }
+
+    pub fn with_auth_plugin_data(
+        mut self,
+        auth_plugin_data: Option<impl Into<Cow<'a, [u8]>>>,
+    ) -> Self {
+        self.auth_plugin_data = auth_plugin_data.map(RawBytes::new).unwrap_or_default();
+        self
+    }
+
+    pub fn with_more_data(mut self, more_data: Option<ComChangeUserMoreData<'a>>) -> Self {
+        self.more_data = more_data;
+        self
+    }
+
+    pub fn into_owned(self) -> ComChangeUser<'static> {
+        ComChangeUser {
+            __header: self.__header,
+            user: self.user.into_owned(),
+            auth_plugin_data: self.auth_plugin_data.into_owned(),
+            database: self.database.into_owned(),
+            more_data: self.more_data.map(|x| x.into_owned()),
+        }
+    }
+}
+
+impl<'de> MyDeserialize<'de> for ComChangeUser<'de> {
+    const SIZE: Option<usize> = None;
+
+    type Ctx = CapabilityFlags;
+
+    fn deserialize(flags: Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+        Ok(Self {
+            __header: buf.parse(())?,
+            user: buf.parse(())?,
+            auth_plugin_data: buf.parse(())?,
+            database: buf.parse(())?,
+            more_data: if !buf.is_empty() {
+                Some(buf.parse(flags)?)
+            } else {
+                None
+            },
+        })
+    }
+}
+
+impl MySerialize for ComChangeUser<'_> {
+    fn serialize(&self, buf: &mut Vec<u8>) {
+        self.__header.serialize(&mut *buf);
+        self.user.serialize(&mut *buf);
+        self.auth_plugin_data.serialize(&mut *buf);
+        self.database.serialize(&mut *buf);
+        if let Some(ref more_data) = self.more_data {
+            more_data.serialize(&mut *buf);
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ComChangeUserMoreData<'a> {
+    character_set: RawInt<LeU16>,
+    auth_plugin: Option<AuthPlugin<'a>>,
+    connect_attributes: Option<HashMap<RawBytes<'a, LenEnc>, RawBytes<'a, LenEnc>>>,
+}
+
+impl<'a> ComChangeUserMoreData<'a> {
+    pub fn new(character_set: u16) -> Self {
+        Self {
+            character_set: RawInt::new(character_set),
+            auth_plugin: None,
+            connect_attributes: None,
+        }
+    }
+
+    pub fn with_auth_plugin(mut self, auth_plugin: Option<AuthPlugin<'a>>) -> Self {
+        self.auth_plugin = auth_plugin;
+        self
+    }
+
+    pub fn with_connect_attributes(
+        mut self,
+        connect_attributes: Option<HashMap<String, String>>,
+    ) -> Self {
+        self.connect_attributes = connect_attributes.map(|attrs| {
+            attrs
+                .into_iter()
+                .map(|(k, v)| (RawBytes::new(k.into_bytes()), RawBytes::new(v.into_bytes())))
+                .collect()
+        });
+        self
+    }
+
+    pub fn into_owned(self) -> ComChangeUserMoreData<'static> {
+        ComChangeUserMoreData {
+            character_set: self.character_set,
+            auth_plugin: self.auth_plugin.map(|x| x.into_owned()),
+            connect_attributes: self.connect_attributes.map(|x| {
+                x.into_iter()
+                    .map(|(k, v)| (k.into_owned(), v.into_owned()))
+                    .collect()
+            }),
+        }
+    }
+}
+
+// Helper that deserializes connect attributes.
+fn deserialize_connect_attrs<'de>(
+    buf: &mut ParseBuf<'de>,
+) -> io::Result<HashMap<RawBytes<'de, LenEnc>, RawBytes<'de, LenEnc>>> {
+    let data_len = buf.parse::<RawInt<LenEnc>>(())?;
+    let mut data: ParseBuf = buf.parse(data_len.0 as usize)?;
+    let mut attrs = HashMap::new();
+    while !data.is_empty() {
+        let key = data.parse::<RawBytes<LenEnc>>(())?;
+        let value = data.parse::<RawBytes<LenEnc>>(())?;
+        attrs.insert(key, value);
+    }
+    Ok(attrs)
+}
+
+// Helper that serializes connect attributes.
+fn serialize_connect_attrs<'a>(
+    connect_attributes: &HashMap<RawBytes<'a, LenEnc>, RawBytes<'a, LenEnc>>,
+    buf: &mut Vec<u8>,
+) {
+    let len = connect_attributes
+        .iter()
+        .map(|(k, v)| lenenc_str_len(k.as_bytes()) + lenenc_str_len(v.as_bytes()))
+        .sum::<u64>();
+    buf.put_lenenc_int(len);
+
+    for (name, value) in connect_attributes {
+        name.serialize(&mut *buf);
+        value.serialize(&mut *buf);
+    }
+}
+
+impl<'de> MyDeserialize<'de> for ComChangeUserMoreData<'de> {
+    const SIZE: Option<usize> = None;
+    type Ctx = CapabilityFlags;
+
+    fn deserialize(flags: Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+        // always assume CLIENT_PROTOCOL_41
+        let character_set = buf.parse(())?;
+        let mut auth_plugin = None;
+        let mut connect_attributes = None;
+
+        if flags.contains(CapabilityFlags::CLIENT_PLUGIN_AUTH) {
+            // plugin name is null-terminated here
+            match buf.parse::<RawBytes<NullBytes>>(())?.0 {
+                Cow::Borrowed(bytes) => {
+                    let mut auth_plugin_buf = ParseBuf(bytes);
+                    auth_plugin = Some(auth_plugin_buf.parse(())?);
+                }
+                _ => unreachable!(),
+            }
+        };
+
+        if flags.contains(CapabilityFlags::CLIENT_CONNECT_ATTRS) {
+            connect_attributes = Some(deserialize_connect_attrs(&mut *buf)?);
+        };
+
+        Ok(Self {
+            character_set,
+            auth_plugin,
+            connect_attributes,
+        })
+    }
+}
+
+impl<'a> MySerialize for ComChangeUserMoreData<'a> {
+    fn serialize(&self, buf: &mut Vec<u8>) {
+        self.character_set.serialize(&mut *buf);
+        if let Some(ref auth_plugin) = self.auth_plugin {
+            auth_plugin.serialize(&mut *buf);
+        }
+        if let Some(ref connect_attributes) = self.connect_attributes {
+            serialize_connect_attrs(connect_attributes, buf);
+        }
+    }
+}
+
 /// Actual serialization of this field depends on capability flags values.
 type ScrambleBuf<'a> =
     Either<RawBytes<'a, LenEnc>, Either<RawBytes<'a, U8Bytes>, RawBytes<'a, NullBytes>>>;
@@ -1789,15 +2006,7 @@ impl<'de> MyDeserialize<'de> for HandshakeResponse<'de> {
 
         let mut connect_attributes = None;
         if client_flags.0 & CapabilityFlags::CLIENT_CONNECT_ATTRS.bits() > 0 {
-            let data_len = buf.parse::<RawInt<LenEnc>>(())?;
-            let mut data: ParseBuf = buf.parse(data_len.0 as usize)?;
-            let mut attrs = HashMap::new();
-            while !data.is_empty() {
-                let key = data.parse::<RawBytes<LenEnc>>(())?;
-                let value = data.parse::<RawBytes<LenEnc>>(())?;
-                attrs.insert(key, value);
-            }
-            connect_attributes = Some(attrs);
+            connect_attributes = Some(deserialize_connect_attrs(&mut *buf)?);
         }
 
         Ok(Self {
