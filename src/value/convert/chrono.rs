@@ -26,6 +26,11 @@ impl FromValue for NaiveDate {
 }
 
 #[cfg_attr(docsrs, doc(cfg(feature = "chrono")))]
+impl FromValue for NaiveTime {
+    type Intermediate = ParseIr<NaiveTime>;
+}
+
+#[cfg_attr(docsrs, doc(cfg(feature = "chrono")))]
 impl FromValue for NaiveDateTime {
     type Intermediate = ParseIr<NaiveDateTime>;
 }
