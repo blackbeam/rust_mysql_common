@@ -8,11 +8,11 @@
 
 //! This module implements conversion from/to `Value` for `time` v0.3.x crate types.
 
-#![cfg(feature = "time03")]
+#![cfg(feature = "time")]
 
 use std::{cmp::Ordering, convert::TryFrom, str::from_utf8};
 
-use time03::{
+use time::{
     error::{Parse, TryFromParsed},
     format_description::{
         modifier::{self, Subsecond},
@@ -121,7 +121,7 @@ lazy_static::lazy_static! {
     };
 }
 
-#[cfg_attr(docsrs, doc(cfg(feature = "time03")))]
+#[cfg_attr(docsrs, doc(cfg(feature = "time")))]
 impl TryFrom<Value> for ParseIr<PrimitiveDateTime> {
     type Error = FromValueError;
 
@@ -142,33 +142,33 @@ impl TryFrom<Value> for ParseIr<PrimitiveDateTime> {
     }
 }
 
-#[cfg_attr(docsrs, doc(cfg(feature = "time03")))]
+#[cfg_attr(docsrs, doc(cfg(feature = "time")))]
 impl From<ParseIr<PrimitiveDateTime>> for PrimitiveDateTime {
     fn from(value: ParseIr<PrimitiveDateTime>) -> Self {
         value.commit()
     }
 }
 
-#[cfg_attr(docsrs, doc(cfg(feature = "time03")))]
+#[cfg_attr(docsrs, doc(cfg(feature = "time")))]
 impl From<ParseIr<PrimitiveDateTime>> for Value {
     fn from(value: ParseIr<PrimitiveDateTime>) -> Self {
         value.rollback()
     }
 }
 
-#[cfg_attr(docsrs, doc(cfg(feature = "time03")))]
+#[cfg_attr(docsrs, doc(cfg(feature = "time")))]
 impl FromValue for PrimitiveDateTime {
     type Intermediate = ParseIr<PrimitiveDateTime>;
 }
 
-#[cfg_attr(docsrs, doc(cfg(feature = "time03")))]
+#[cfg_attr(docsrs, doc(cfg(feature = "time")))]
 impl TryFrom<Value> for ParseIr<Date> {
     type Error = FromValueError;
 
     fn try_from(v: Value) -> Result<Self, Self::Error> {
         match v {
             Value::Date(year, month, day, _, _, _, _) => {
-                let mon = match time03::Month::try_from(month) {
+                let mon = match time::Month::try_from(month) {
                     Ok(month) => month,
                     Err(_) => return Err(FromValueError(v)),
                 };
@@ -191,26 +191,26 @@ impl TryFrom<Value> for ParseIr<Date> {
     }
 }
 
-#[cfg_attr(docsrs, doc(cfg(feature = "time03")))]
+#[cfg_attr(docsrs, doc(cfg(feature = "time")))]
 impl From<ParseIr<Date>> for Date {
     fn from(value: ParseIr<Date>) -> Self {
         value.commit()
     }
 }
 
-#[cfg_attr(docsrs, doc(cfg(feature = "time03")))]
+#[cfg_attr(docsrs, doc(cfg(feature = "time")))]
 impl From<ParseIr<Date>> for Value {
     fn from(value: ParseIr<Date>) -> Self {
         value.rollback()
     }
 }
 
-#[cfg_attr(docsrs, doc(cfg(feature = "time03")))]
+#[cfg_attr(docsrs, doc(cfg(feature = "time")))]
 impl FromValue for Date {
     type Intermediate = ParseIr<Date>;
 }
 
-#[cfg_attr(docsrs, doc(cfg(feature = "time03")))]
+#[cfg_attr(docsrs, doc(cfg(feature = "time")))]
 impl TryFrom<Value> for ParseIr<Time> {
     type Error = FromValueError;
 
@@ -229,25 +229,25 @@ impl TryFrom<Value> for ParseIr<Time> {
     }
 }
 
-#[cfg_attr(docsrs, doc(cfg(feature = "time03")))]
+#[cfg_attr(docsrs, doc(cfg(feature = "time")))]
 impl From<ParseIr<Time>> for Time {
     fn from(value: ParseIr<Time>) -> Self {
         value.commit()
     }
 }
 
-#[cfg_attr(docsrs, doc(cfg(feature = "time03")))]
+#[cfg_attr(docsrs, doc(cfg(feature = "time")))]
 impl From<ParseIr<Time>> for Value {
     fn from(value: ParseIr<Time>) -> Self {
         value.rollback()
     }
 }
 
-/// Converts a MySQL `TIME` value to a `time03::Time`.
-/// Note: `time03::Time` only allows for time values in the 00:00:00 - 23:59:59 range.
+/// Converts a MySQL `TIME` value to a `time::Time`.
+/// Note: `time::Time` only allows for time values in the 00:00:00 - 23:59:59 range.
 /// If you're expecting `TIME` values in MySQL's `TIME` value range of -838:59:59 - 838:59:59,
-/// use time03::Duration instead.
-#[cfg_attr(docsrs, doc(cfg(feature = "time03")))]
+/// use time::Duration instead.
+#[cfg_attr(docsrs, doc(cfg(feature = "time")))]
 impl FromValue for Time {
     type Intermediate = ParseIr<Time>;
 }
@@ -261,7 +261,7 @@ fn create_primitive_date_time(
     second: u8,
     micros: u32,
 ) -> Option<PrimitiveDateTime> {
-    let mon = time03::Month::try_from(month).ok()?;
+    let mon = time::Month::try_from(month).ok()?;
     if let Ok(date) = Date::from_calendar_date(year as i32, mon, day) {
         if let Ok(time) = Time::from_hms_micro(hour, minute, second, micros) {
             return Some(PrimitiveDateTime::new(date, time));
@@ -299,18 +299,18 @@ fn parse_mysql_time_string_with_time(bytes: &[u8]) -> Result<Time, Parse> {
         })
 }
 
-#[cfg_attr(docsrs, doc(cfg(feature = "time03")))]
-impl TryFrom<Value> for ParseIr<time03::Duration> {
+#[cfg_attr(docsrs, doc(cfg(feature = "time")))]
+impl TryFrom<Value> for ParseIr<time::Duration> {
     type Error = FromValueError;
 
     fn try_from(v: Value) -> Result<Self, Self::Error> {
         match v {
             Value::Time(is_neg, days, hours, minutes, seconds, microseconds) => {
-                let duration = time03::Duration::days(days.into())
-                    + time03::Duration::hours(hours.into())
-                    + time03::Duration::minutes(minutes.into())
-                    + time03::Duration::seconds(seconds.into())
-                    + time03::Duration::microseconds(microseconds.into());
+                let duration = time::Duration::days(days.into())
+                    + time::Duration::hours(hours.into())
+                    + time::Duration::minutes(minutes.into())
+                    + time::Duration::seconds(seconds.into())
+                    + time::Duration::microseconds(microseconds.into());
                 Ok(ParseIr(if is_neg { -duration } else { duration }, v))
             }
             Value::Bytes(ref val_bytes) => {
@@ -319,10 +319,10 @@ impl TryFrom<Value> for ParseIr<time03::Duration> {
                 // as it may contain an hour value that's outside of a day's normal 0-23 hour range.
                 let duration = match parse_mysql_time_string(val_bytes) {
                     Some((is_neg, hours, minutes, seconds, microseconds)) => {
-                        let duration = time03::Duration::hours(hours.into())
-                            + time03::Duration::minutes(minutes.into())
-                            + time03::Duration::seconds(seconds.into())
-                            + time03::Duration::microseconds(microseconds.into());
+                        let duration = time::Duration::hours(hours.into())
+                            + time::Duration::minutes(minutes.into())
+                            + time::Duration::seconds(seconds.into())
+                            + time::Duration::microseconds(microseconds.into());
                         if is_neg {
                             -duration
                         } else {
@@ -338,26 +338,26 @@ impl TryFrom<Value> for ParseIr<time03::Duration> {
     }
 }
 
-#[cfg_attr(docsrs, doc(cfg(feature = "time03")))]
-impl From<ParseIr<time03::Duration>> for time03::Duration {
-    fn from(value: ParseIr<time03::Duration>) -> Self {
+#[cfg_attr(docsrs, doc(cfg(feature = "time")))]
+impl From<ParseIr<time::Duration>> for time::Duration {
+    fn from(value: ParseIr<time::Duration>) -> Self {
         value.commit()
     }
 }
 
-#[cfg_attr(docsrs, doc(cfg(feature = "time03")))]
-impl From<ParseIr<time03::Duration>> for Value {
-    fn from(value: ParseIr<time03::Duration>) -> Self {
+#[cfg_attr(docsrs, doc(cfg(feature = "time")))]
+impl From<ParseIr<time::Duration>> for Value {
+    fn from(value: ParseIr<time::Duration>) -> Self {
         value.rollback()
     }
 }
 
-#[cfg_attr(docsrs, doc(cfg(feature = "time03")))]
-impl FromValue for time03::Duration {
-    type Intermediate = ParseIr<time03::Duration>;
+#[cfg_attr(docsrs, doc(cfg(feature = "time")))]
+impl FromValue for time::Duration {
+    type Intermediate = ParseIr<time::Duration>;
 }
 
-#[cfg_attr(docsrs, doc(cfg(feature = "time03")))]
+#[cfg_attr(docsrs, doc(cfg(feature = "time")))]
 impl From<PrimitiveDateTime> for Value {
     fn from(x: PrimitiveDateTime) -> Value {
         Value::Date(
@@ -372,14 +372,14 @@ impl From<PrimitiveDateTime> for Value {
     }
 }
 
-#[cfg_attr(docsrs, doc(cfg(feature = "time03")))]
+#[cfg_attr(docsrs, doc(cfg(feature = "time")))]
 impl From<Date> for Value {
     fn from(x: Date) -> Value {
         Value::Date(x.year() as u16, x.month() as u8, x.day(), 0, 0, 0, 0)
     }
 }
 
-#[cfg_attr(docsrs, doc(cfg(feature = "time03")))]
+#[cfg_attr(docsrs, doc(cfg(feature = "time")))]
 impl From<Time> for Value {
     fn from(x: Time) -> Value {
         Value::Time(
@@ -393,23 +393,23 @@ impl From<Time> for Value {
     }
 }
 
-#[cfg_attr(docsrs, doc(cfg(feature = "time03")))]
-impl From<time03::Duration> for Value {
-    fn from(mut x: time03::Duration) -> Value {
-        let negative = x < time03::Duration::ZERO;
+#[cfg_attr(docsrs, doc(cfg(feature = "time")))]
+impl From<time::Duration> for Value {
+    fn from(mut x: time::Duration) -> Value {
+        let negative = x < time::Duration::ZERO;
 
         if negative {
             x = -x;
         }
 
         let days = x.whole_days() as u32;
-        x = x - time03::Duration::days(x.whole_days());
+        x = x - time::Duration::days(x.whole_days());
         let hours = x.whole_hours() as u8;
-        x = x - time03::Duration::hours(x.whole_hours());
+        x = x - time::Duration::hours(x.whole_hours());
         let minutes = x.whole_minutes() as u8;
-        x = x - time03::Duration::minutes(x.whole_minutes());
+        x = x - time::Duration::minutes(x.whole_minutes());
         let seconds = x.whole_seconds() as u8;
-        x = x - time03::Duration::seconds(x.whole_seconds());
+        x = x - time::Duration::seconds(x.whole_seconds());
         let microseconds = x.whole_microseconds() as u32;
 
         Value::Time(negative, days, hours, minutes, seconds, microseconds)
@@ -419,7 +419,7 @@ impl From<time03::Duration> for Value {
 #[cfg(test)]
 mod tests {
     use proptest::prelude::*;
-    use time03::error::ParseFromDescription;
+    use time::error::ParseFromDescription;
 
     use super::*;
 
@@ -601,11 +601,11 @@ mod tests {
                             // we call `try_from_ymd` and `try_from_hms_micro`
                             // for each value separately.
 
-                            if Date::from_calendar_date(y as i32, time03::Month::January, 1).is_err() {
+                            if Date::from_calendar_date(y as i32, time::Month::January, 1).is_err() {
                                 assert!(y != 0 && !(1000..=9999).contains(&y));
-                            } else if time03::Month::try_from(m as u8).is_err() {
+                            } else if time::Month::try_from(m as u8).is_err() {
                                 assert!(m < 1000 || m <= 12);
-                            } else if Date::from_calendar_date(0, time03::Month::January, d as u8).is_err() {
+                            } else if Date::from_calendar_date(0, time::Month::January, d as u8).is_err() {
                                 assert!(!(1..=31).contains(&d));
                             } else if Time::from_hms_micro(h as u8, 0, 0, 0).is_err() {
                                 assert!(/*h < 0 || */h > 23);
