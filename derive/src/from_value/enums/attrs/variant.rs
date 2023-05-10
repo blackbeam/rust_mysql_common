@@ -1,6 +1,7 @@
-use darling::FromMeta;
+use darling::FromAttributes;
 
-#[derive(Default, FromMeta)]
+#[derive(Debug, Default, FromAttributes)]
+#[darling(attributes(mysql))]
 pub struct Mysql {
     #[darling(default)]
     pub rename: Option<String>,

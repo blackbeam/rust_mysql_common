@@ -1,6 +1,7 @@
-use darling::FromMeta;
+use darling::FromAttributes;
 
-#[derive(Debug, Default, FromMeta)]
+#[derive(Debug, Default, FromAttributes)]
+#[darling(attributes(mysql))]
 pub struct Mysql {
     #[darling(default)]
     pub json: bool,

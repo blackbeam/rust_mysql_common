@@ -1,4 +1,4 @@
-use darling::FromMeta;
+use darling::FromAttributes;
 use proc_macro2::{Span, TokenStream};
 use proc_macro_error::abort;
 use quote::{ToTokens, TokenStreamExt};
@@ -28,20 +28,7 @@ pub fn impl_from_row_for_struct(
         }
     };
 
-    let meta = attrs
-        .into_iter()
-        .filter_map(|attr| attr.parse_meta().ok())
-        .collect::<Vec<_>>();
-
-    let item_attrs = meta
-        .iter()
-        .find_map(|x| match x {
-            syn::Meta::List(y) if y.path.is_ident("mysql") => Some(x),
-            _ => None,
-        })
-        .map(|x| <attrs::container::Mysql as FromMeta>::from_meta(x))
-        .transpose()?
-        .unwrap_or_default();
+    let item_attrs = <attrs::container::Mysql as FromAttributes>::from_attributes(attrs)?;
 
     let derived = GenericStruct {
         ident,
@@ -111,23 +98,7 @@ impl ToTokens for GenericStruct<'_> {
         let fields_attrs = fields
             .named
             .iter()
-            .map(|f| {
-                let meta = f
-                    .attrs
-                    .iter()
-                    .filter_map(|attr| attr.parse_meta().ok())
-                    .collect::<Vec<_>>();
-
-                Ok(meta
-                    .iter()
-                    .find_map(|x| match x {
-                        syn::Meta::List(y) if y.path.is_ident("mysql") => Some(x),
-                        _ => None,
-                    })
-                    .map(|x| <attrs::field::Mysql as FromMeta>::from_meta(x))
-                    .transpose()?
-                    .unwrap_or_default())
-            })
+            .map(|f| <attrs::field::Mysql as FromAttributes>::from_attributes(&*f.attrs))
             .collect::<Result<Vec<_>, _>>()
             .map_err(|e: darling::Error| abort!(crate::Error::from(e)))
             .unwrap();

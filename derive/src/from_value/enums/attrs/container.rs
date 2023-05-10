@@ -1,9 +1,10 @@
-use darling::{util::SpannedValue, FromMeta};
+use darling::{util::SpannedValue, FromAttributes, FromMeta};
 use proc_macro2::{Span, TokenStream};
 use proc_macro_crate::{crate_name, FoundCrate};
 use quote::TokenStreamExt;
 
-#[derive(Default, FromMeta)]
+#[derive(Debug, Default, FromAttributes)]
+#[darling(attributes(mysql))]
 pub struct Mysql {
     #[darling(default)]
     pub crate_name: Crate,
@@ -53,6 +54,7 @@ impl FromMeta for Crate {
     }
 }
 
+#[derive(Debug)]
 pub enum RenameAll {
     Lowercase,
     Uppercase,
@@ -193,11 +195,11 @@ impl Default for EnumRepr {
 }
 
 impl FromMeta for EnumRepr {
-    fn from_list(items: &[syn::NestedMeta]) -> darling::Result<Self> {
+    fn from_list(items: &[darling::ast::NestedMeta]) -> darling::Result<Self> {
         Ok(items
             .into_iter()
             .filter_map(|x| match x {
-                syn::NestedMeta::Meta(syn::Meta::Path(path)) => Some(path),
+                darling::ast::NestedMeta::Meta(syn::Meta::Path(path)) => Some(path),
                 _ => None,
             })
             .filter_map(|x| x.get_ident())

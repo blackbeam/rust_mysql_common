@@ -36,10 +36,7 @@ pub fn impl_from_value_for_struct(
         }
     };
 
-    let meta = attrs
-        .into_iter()
-        .filter_map(|attr| attr.parse_meta().ok())
-        .collect::<Vec<_>>();
+    let meta = attrs.into_iter().map(|attr| &attr.meta).collect::<Vec<_>>();
 
     let item_attrs = meta
         .iter()

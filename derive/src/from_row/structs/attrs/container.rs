@@ -1,11 +1,12 @@
-use darling::{util::SpannedValue, FromMeta};
+use darling::{util::SpannedValue, FromAttributes};
 
 use crate::from_value::{
     enums::attrs::container::{Crate, RenameAll},
     structs::attrs::container::Bound,
 };
 
-#[derive(Default, FromMeta)]
+#[derive(Default, FromAttributes)]
+#[darling(attributes(mysql))]
 pub struct Mysql {
     #[darling(default)]
     pub crate_name: Crate,
