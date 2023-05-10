@@ -554,3 +554,40 @@ fn params_macro_test() {
 fn params_macro_should_panic_on_named_param_redefinition() {
     params! {"a" => 1, "b" => 2, "a" => 3};
 }
+
+#[test]
+fn issue_88() {
+    use crate::{prelude::FromValue, Value};
+    #[derive(FromValue, Debug, Eq, PartialEq)]
+    #[mysql(is_integer)]
+    #[repr(u8)]
+    enum SomeType {
+        A,
+        B = 42,
+        C,
+    }
+
+    let value = Value::Int(42);
+    assert_eq!(SomeType::B, SomeType::from_value(value));
+
+    let value = Value::Int(0);
+    assert_eq!(SomeType::A, SomeType::from_value(value));
+}
+
+#[test]
+fn from_value_is_string() {
+    use crate::{prelude::FromValue, Value};
+    #[derive(FromValue, Debug, Eq, PartialEq)]
+    #[mysql(is_string, rename_all = "snake_case")]
+    enum SomeType {
+        FirstVariant = 0,
+        SecondVariant = 2,
+        ThirdVariant = 3,
+    }
+
+    let value = Value::Bytes(b"first_variant".to_vec());
+    assert_eq!(SomeType::FirstVariant, SomeType::from_value(value));
+
+    let value = Value::Bytes(b"third_variant".to_vec());
+    assert_eq!(SomeType::ThirdVariant, SomeType::from_value(value));
+}

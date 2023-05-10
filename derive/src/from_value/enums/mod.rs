@@ -4,7 +4,7 @@ use attrs::{
     container::{self, EnumRepr},
     variant,
 };
-use darling::FromMeta;
+use darling::{FromAttributes, FromMeta};
 use num_bigint::BigInt;
 use proc_macro2::{Span, TokenStream};
 use proc_macro_error::abort;
@@ -20,10 +20,8 @@ pub fn impl_from_value_for_enum(
     _generics: &syn::Generics,
     data_enum: &syn::DataEnum,
 ) -> crate::Result<TokenStream> {
-    let meta = attrs
-        .into_iter()
-        .filter_map(|attr| attr.parse_meta().ok())
-        .collect::<Vec<_>>();
+    let item_attrs = <container::Mysql as FromAttributes>::from_attributes(attrs).expect("foo");
+    let meta = attrs.into_iter().map(|attr| &attr.meta).collect::<Vec<_>>();
 
     let repr = meta
         .iter()
@@ -41,16 +39,6 @@ pub fn impl_from_value_for_enum(
     ) {
         abort!(crate::Error::UnsupportedRepresentation(repr.0.span()));
     }
-
-    let item_attrs = meta
-        .iter()
-        .find_map(|x| match x {
-            syn::Meta::List(y) if y.path.is_ident("mysql") => Some(x),
-            _ => None,
-        })
-        .map(|x| <container::Mysql as FromMeta>::from_meta(x))
-        .transpose()?
-        .unwrap_or_default();
 
     if *item_attrs.is_integer && *item_attrs.is_string {
         abort!(crate::Error::ConflictingsAttributes(
@@ -70,21 +58,8 @@ pub fn impl_from_value_for_enum(
             abort!(crate::Error::NonUnitVariant(variant.span()));
         }
 
-        let meta = variant
-            .attrs
-            .iter()
-            .filter_map(|attr| attr.parse_meta().ok())
-            .collect::<Vec<_>>();
-
-        let mut variant_attrs = meta
-            .iter()
-            .find_map(|x| match x {
-                syn::Meta::List(y) if y.path.is_ident("mysql") => Some(x),
-                _ => None,
-            })
-            .map(|x| <variant::Mysql as FromMeta>::from_meta(x))
-            .transpose()?
-            .unwrap_or_default();
+        let mut variant_attrs =
+            <variant::Mysql as FromAttributes>::from_attributes(&variant.attrs).expect("bar");
 
         let discriminant = variant
             .discriminant
@@ -115,7 +90,10 @@ pub fn impl_from_value_for_enum(
                 )
                 .unwrap();
             }
-        } else if discriminant == BigInt::default() {
+        } else if discriminant == BigInt::default()
+            && !*item_attrs.is_integer
+            && !*item_attrs.is_string
+        {
             if variant_attrs.explicit_invalid {
                 variant_attrs.rename = Some("".into());
             } else {
@@ -131,7 +109,7 @@ pub fn impl_from_value_for_enum(
         }
     }
 
-    if !item_attrs.allow_sparse_enum {
+    if !item_attrs.allow_sparse_enum && !*item_attrs.is_integer && !*item_attrs.is_string {
         variants.sort_by_key(|x| x.discriminant.clone());
         let mut prev_discriminant = BigInt::default();
         for variant in variants.iter() {
@@ -268,9 +246,10 @@ impl ToTokens for Enum {
             quote::quote!(
                 impl std::convert::From<#container_name> for #crat::Value {
                     fn from(x: #container_name) -> Self {
-                        match <i64 as std::convert::TryFrom>::try_from(x as #repr) {
+                        let repr = x as #repr;
+                        match <i64 as std::convert::TryFrom<#repr>>::try_from(repr) {
                             Ok(x) => #crat::Value::Int(x),
-                            _ => #crat::Value::UInt(x as #repr as u64),
+                            _ => #crat::Value::UInt(repr as u64),
                         }
                     }
                 }
