@@ -1849,6 +1849,10 @@ impl<'a> MySerialize for ComChangeUserMoreData<'a> {
         }
         if let Some(ref connect_attributes) = self.connect_attributes {
             serialize_connect_attrs(connect_attributes, buf);
+        } else {
+            // We'll always act like CLIENT_CONNECT_ATTRS is set,
+            // this is to avoid looking into the actual connection flags.
+            serialize_connect_attrs(&Default::default(), buf);
         }
     }
 }
