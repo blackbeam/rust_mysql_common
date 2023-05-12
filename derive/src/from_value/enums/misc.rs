@@ -1,3 +1,5 @@
+use std::ops::Neg;
+
 use num_bigint::BigInt;
 use syn::spanned::Spanned;
 
@@ -12,6 +14,13 @@ pub fn get_discriminant(def: &syn::Expr) -> Result<BigInt, crate::Error> {
             ..
         }) => Ok(x.base10_parse().unwrap()),
         syn::Expr::Group(syn::ExprGroup { ref expr, .. }) => get_discriminant(expr),
+        syn::Expr::Unary(x) => {
+            let val = get_discriminant(&x.expr)?;
+            match x.op {
+                syn::UnOp::Neg(_) => Ok(val.neg()),
+                _ => Err(crate::Error::UnsupportedDiscriminant(def.span())),
+            }
+        }
         expr => Err(crate::Error::UnsupportedDiscriminant(expr.span())),
     }
 }

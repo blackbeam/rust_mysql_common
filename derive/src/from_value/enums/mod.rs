@@ -77,83 +77,86 @@ pub fn impl_from_value_for_enum(
 
         next_discriminant = &discriminant + BigInt::from(1u8);
 
-        if discriminant < BigInt::default() || discriminant > BigInt::from(u16::MAX) {
-            if !item_attrs.allow_invalid_discriminants
-                && !variant_attrs.allow_invalid_discriminants
-                && !*item_attrs.is_integer
-                && !*item_attrs.is_string
+        if !*item_attrs.is_string && !*item_attrs.is_integer {
+            if !item_attrs.allow_invalid_discriminants && !variant_attrs.allow_invalid_discriminants
             {
-                crate::warn::print_warning(
-                    "negative discriminants for MySql enums are discouraging",
-                    format!("#[mysql(allow_invalid_discriminants)]\nenum {} {{", ident),
-                    "use the following annotation to suppress this warning",
-                )
-                .unwrap();
+                if discriminant < BigInt::default() {
+                    crate::warn::print_warning(
+                        "negative discriminants for MySql enums are discouraging",
+                        format!("#[mysql(allow_invalid_discriminants)]\nenum {} {{", ident),
+                        "use the following annotation to suppress this warning",
+                    )
+                    .unwrap();
+                } else if discriminant > BigInt::from(u16::MAX) {
+                    crate::warn::print_warning(
+                        "MySql only supports up to 65535 distinct elements in an enum",
+                        format!("#[mysql(allow_invalid_discriminants)]\nenum {} {{", ident),
+                        "use the following annotation to suppress this warning",
+                    )
+                    .unwrap();
+                }
             }
-        } else if discriminant == BigInt::default()
-            && !*item_attrs.is_integer
-            && !*item_attrs.is_string
-        {
-            if variant_attrs.explicit_invalid {
-                variant_attrs.rename = Some("".into());
-            } else {
-                abort!(crate::Error::ExplicitInvalid(variant.span()))
+            if discriminant == BigInt::default() {
+                if variant_attrs.explicit_invalid {
+                    variant_attrs.rename = Some("".into());
+                } else {
+                    abort!(crate::Error::ExplicitInvalid(variant.span()))
+                }
             }
-        } else {
-            variants.push(EnumVariant {
-                my_attrs: variant_attrs,
-                ident: variant.ident.clone(),
-                name: variant.ident.to_string(),
-                discriminant,
-            })
         }
+
+        variants.push(EnumVariant {
+            my_attrs: variant_attrs,
+            ident: variant.ident.clone(),
+            name: variant.ident.to_string(),
+            discriminant,
+        });
     }
 
-    if !item_attrs.allow_sparse_enum && !*item_attrs.is_integer && !*item_attrs.is_string {
-        variants.sort_by_key(|x| x.discriminant.clone());
-        let mut prev_discriminant = BigInt::default();
-        for variant in variants.iter() {
-            let is_next = (variant.discriminant.clone() - BigInt::from(1_u8)) == prev_discriminant;
-            let is_invalid =
-                variant.discriminant == prev_discriminant && prev_discriminant == BigInt::default();
-            if !is_next && !is_invalid {
-                crate::warn::print_warning(
+    if !*item_attrs.is_integer && !*item_attrs.is_string {
+        if !item_attrs.allow_sparse_enum {
+            variants.sort_by_key(|x| x.discriminant.clone());
+            let mut prev_discriminant = BigInt::default();
+            for variant in variants.iter() {
+                let is_next =
+                    (variant.discriminant.clone() - BigInt::from(1_u8)) == prev_discriminant;
+                let is_invalid = variant.discriminant == prev_discriminant
+                    && prev_discriminant == BigInt::default();
+                if !is_next && !is_invalid {
+                    crate::warn::print_warning(
                 format!("Sparse enum variant {}::{}. Consider annotating with #[mysql(is_integer)] or #[mysql(is_string)].", ident, variant.ident),
                 format!("#[mysql(is_integer)]\nenum {} {{", ident),
                 "use #[mysql(allow_sparse_enum)] to suppress this warning",
             )
             .unwrap();
+                }
+                prev_discriminant = variant.discriminant.clone();
             }
-            prev_discriminant = variant.discriminant.clone();
         }
-    }
 
-    if min_discriminant >= BigInt::default()
-        && max_discriminant <= BigInt::from(u8::MAX)
-        && !*item_attrs.is_integer
-        && !*item_attrs.is_string
-        && !item_attrs.allow_suboptimal_repr
-    {
-        if !matches!(repr.0, EnumRepr::U8(_)) {
+        if min_discriminant >= BigInt::default()
+            && max_discriminant <= BigInt::from(u8::MAX)
+            && !item_attrs.allow_suboptimal_repr
+        {
+            if !matches!(repr.0, EnumRepr::U8(_)) {
+                crate::warn::print_warning(
+                    "enum representation is suboptimal. Consider the following annotation:",
+                    format!("#[repr(u8)]\nenum {} {{", ident),
+                    "use #[mysql(allow_suboptimal_repr)] to suppress this warning",
+                )
+                .unwrap();
+            }
+        } else if min_discriminant >= BigInt::default()
+            && max_discriminant <= BigInt::from(u16::MAX)
+            && !matches!(repr.0, EnumRepr::U8(_))
+        {
             crate::warn::print_warning(
                 "enum representation is suboptimal. Consider the following annotation:",
-                format!("#[repr(u8)]\nenum {} {{", ident),
+                format!("#[repr(u16)]\nenum {} {{", ident),
                 "use #[mysql(allow_suboptimal_repr)] to suppress this warning",
             )
             .unwrap();
         }
-    } else if min_discriminant >= BigInt::default()
-        && max_discriminant <= BigInt::from(u16::MAX)
-        && !*item_attrs.is_integer
-        && !*item_attrs.is_string
-        && !matches!(repr.0, EnumRepr::U8(_))
-    {
-        crate::warn::print_warning(
-            "enum representation is suboptimal. Consider the following annotation:",
-            format!("#[repr(u16)]\nenum {} {{", ident),
-            "use #[mysql(allow_suboptimal_repr)] to suppress this warning",
-        )
-        .unwrap();
     }
 
     let derived = Enum {
@@ -163,7 +166,8 @@ pub fn impl_from_value_for_enum(
         repr: repr.0,
     };
 
-    Ok(quote::quote! { #derived })
+    let generated = quote::quote! { #derived };
+    Ok(generated)
 }
 
 struct Enum {
@@ -210,11 +214,19 @@ impl ToTokens for Enum {
                 let n = syn::LitInt::new(&discriminant.to_string(), Span::call_site());
 
                 if *item_attrs.is_integer {
-                    quote::quote!(
-                        #crat::Value::Int(#n) | #crat::Value::UInt(#n) => {
-                            Ok(#ir_name(#parsed_name::Ready(#container_name::#ident)))
-                        }
-                    )
+                    if discriminant < &BigInt::default() {
+                        quote::quote!(
+                            #crat::Value::Int(#n) => {
+                                Ok(#ir_name(#parsed_name::Ready(#container_name::#ident)))
+                            }
+                        )
+                    } else {
+                        quote::quote!(
+                            #crat::Value::Int(#n) | #crat::Value::UInt(#n) => {
+                                Ok(#ir_name(#parsed_name::Ready(#container_name::#ident)))
+                            }
+                        )
+                    }
                 } else if *item_attrs.is_string {
                     quote::quote!(
                         #crat::Value::Bytes(ref x) if x == #s => {
@@ -222,23 +234,56 @@ impl ToTokens for Enum {
                         }
                     )
                 } else {
-                    quote::quote!(
-                        #crat::Value::Bytes(ref x) if x == #s => {
-                            Ok(#ir_name(#parsed_name::Parsed(#container_name::#ident, v)))
-                        }
-                        #crat::Value::Int(#n) | #crat::Value::UInt(#n) => {
-                            Ok(#ir_name(#parsed_name::Ready(#container_name::#ident)))
-                        }
-                    )
+                    if discriminant < &BigInt::default() {
+                        quote::quote!(
+                            #crat::Value::Bytes(ref x) if x == #s => {
+                                Ok(#ir_name(#parsed_name::Parsed(#container_name::#ident, v)))
+                            }
+                            #crat::Value::Int(#n) => {
+                                Ok(#ir_name(#parsed_name::Ready(#container_name::#ident)))
+                            }
+                        )
+                    } else {
+                        quote::quote!(
+                            #crat::Value::Bytes(ref x) if x == #s => {
+                                Ok(#ir_name(#parsed_name::Parsed(#container_name::#ident, v)))
+                            }
+                            #crat::Value::Int(#n) | #crat::Value::UInt(#n) => {
+                                Ok(#ir_name(#parsed_name::Ready(#container_name::#ident)))
+                            }
+                        )
+                    }
                 }
             },
         );
 
         let to_value = if *item_attrs.is_string {
+            let branches = variants.iter().map(
+                |EnumVariant {
+                     my_attrs,
+                     name,
+                     ident,
+                     ..
+                 }| {
+                    let mut name = name.clone();
+                    if let Some(ref rename) = item_attrs.rename_all {
+                        name = rename.rename(&name);
+                    }
+                    if let Some(ref new_name) = my_attrs.rename {
+                        name = new_name.clone();
+                    }
+                    let s = syn::LitByteStr::new(name.as_bytes(), Span::call_site());
+                    quote::quote!(
+                        #container_name::#ident => #crat::Value::Bytes(#s.to_vec())
+                    )
+                },
+            );
             quote::quote!(
                 impl std::convert::From<#container_name> for #crat::Value {
                     fn from(x: #container_name) -> Self {
-                        #crat::Value::Int(x as #repr as i64)
+                        match x {
+                            #( #branches ),*
+                        }
                     }
                 }
             )

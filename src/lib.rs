@@ -579,15 +579,63 @@ fn from_value_is_string() {
     use crate::{prelude::FromValue, Value};
     #[derive(FromValue, Debug, Eq, PartialEq)]
     #[mysql(is_string, rename_all = "snake_case")]
-    enum SomeType {
+    enum SomeTypeIsString {
         FirstVariant = 0,
         SecondVariant = 2,
         ThirdVariant = 3,
     }
 
     let value = Value::Bytes(b"first_variant".to_vec());
-    assert_eq!(SomeType::FirstVariant, SomeType::from_value(value));
+    assert_eq!(
+        SomeTypeIsString::FirstVariant,
+        SomeTypeIsString::from_value(value)
+    );
 
     let value = Value::Bytes(b"third_variant".to_vec());
-    assert_eq!(SomeType::ThirdVariant, SomeType::from_value(value));
+    assert_eq!(
+        SomeTypeIsString::ThirdVariant,
+        SomeTypeIsString::from_value(value)
+    );
+
+    assert_eq!(
+        Value::from(SomeTypeIsString::FirstVariant),
+        Value::Bytes(b"first_variant".to_vec())
+    );
+    assert_eq!(
+        Value::from(SomeTypeIsString::SecondVariant),
+        Value::Bytes(b"second_variant".to_vec())
+    );
+    assert_eq!(
+        Value::from(SomeTypeIsString::ThirdVariant),
+        Value::Bytes(b"third_variant".to_vec())
+    );
+}
+
+#[test]
+fn from_value_is_integer() {
+    use crate::{prelude::FromValue, Value};
+    #[derive(FromValue, Debug, Eq, PartialEq)]
+    #[mysql(is_integer, rename_all = "snake_case")]
+    #[repr(i8)]
+    enum SomeTypeIsInteger {
+        FirstVariant = -1_i8,
+        SecondVariant = 2,
+        ThirdVariant = 3,
+    }
+
+    let value = Value::Int(-1);
+    assert_eq!(
+        SomeTypeIsInteger::FirstVariant,
+        SomeTypeIsInteger::from_value(value)
+    );
+
+    let value = Value::Int(3);
+    assert_eq!(
+        SomeTypeIsInteger::ThirdVariant,
+        SomeTypeIsInteger::from_value(value)
+    );
+
+    assert_eq!(Value::from(SomeTypeIsInteger::FirstVariant), Value::Int(-1));
+    assert_eq!(Value::from(SomeTypeIsInteger::SecondVariant), Value::Int(2));
+    assert_eq!(Value::from(SomeTypeIsInteger::ThirdVariant), Value::Int(3));
 }
