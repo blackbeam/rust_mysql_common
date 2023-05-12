@@ -235,10 +235,32 @@ impl ToTokens for Enum {
         );
 
         let to_value = if *item_attrs.is_string {
+            let branches = variants.iter().map(
+                |EnumVariant {
+                     my_attrs,
+                     name,
+                     ident,
+                     ..
+                 }| {
+                    let mut name = name.clone();
+                    if let Some(ref rename) = item_attrs.rename_all {
+                        name = rename.rename(&name);
+                    }
+                    if let Some(ref new_name) = my_attrs.rename {
+                        name = new_name.clone();
+                    }
+                    let s = syn::LitByteStr::new(name.as_bytes(), Span::call_site());
+                    quote::quote!(
+                        #container_name::#ident => #crat::Value::Bytes(#s.to_vec())
+                    )
+                },
+            );
             quote::quote!(
                 impl std::convert::From<#container_name> for #crat::Value {
                     fn from(x: #container_name) -> Self {
-                        #crat::Value::Int(x as #repr as i64)
+                        match x {
+                            #( #branches ),*
+                        }
                     }
                 }
             )
