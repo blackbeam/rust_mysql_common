@@ -6,7 +6,7 @@
 // option. All files in the project carrying such notice may not be copied,
 // modified, or distributed except according to those terms.
 
-use bitflags::BitFlags;
+use bitflags::Flags;
 use num_traits::{Bounded, PrimInt};
 
 use std::{fmt, io, marker::PhantomData, mem::size_of};
@@ -23,9 +23,9 @@ use super::{int::IntRepr, RawInt};
 /// Deserialization of this type won't lead to an error if value contains unknown flags.
 #[derive(Clone, Default, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
 #[repr(transparent)]
-pub struct RawFlags<T: BitFlags, U>(pub T::Bits, PhantomData<U>);
+pub struct RawFlags<T: Flags, U>(pub T::Bits, PhantomData<U>);
 
-impl<T: BitFlags, U> RawFlags<T, U> {
+impl<T: Flags, U> RawFlags<T, U> {
     /// Create new flags.
     pub fn new(value: T::Bits) -> Self {
         Self(value, PhantomData)
@@ -39,7 +39,7 @@ impl<T: BitFlags, U> RawFlags<T, U> {
 
 impl<T: fmt::Debug, U> fmt::Debug for RawFlags<T, U>
 where
-    T: BitFlags,
+    T: Flags,
     T::Bits: fmt::Binary + Bounded + PrimInt,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -57,7 +57,7 @@ where
     }
 }
 
-impl<'de, T: BitFlags, U> MyDeserialize<'de> for RawFlags<T, U>
+impl<'de, T: Flags, U> MyDeserialize<'de> for RawFlags<T, U>
 where
     U: IntRepr<Primitive = T::Bits>,
 {
@@ -70,7 +70,7 @@ where
     }
 }
 
-impl<T: BitFlags, U> MySerialize for RawFlags<T, U>
+impl<T: Flags, U> MySerialize for RawFlags<T, U>
 where
     U: IntRepr<Primitive = T::Bits>,
 {
