@@ -18,6 +18,14 @@ enum ParserState {
     InStringLiteral(u8, u8),
     MaybeInNamedParam,
     InNamedParam,
+    InSharpComment,
+    MaybeInDoubleDashComment1,
+    MaybeInDoubleDashComment2,
+    InDoubleDashComment,
+    MaybeInCComment1,
+    MaybeInCComment2,
+    InCComment,
+    MaybeExitCComment,
 }
 
 use self::ParserState::*;
@@ -40,6 +48,9 @@ pub fn parse_named_params(
         match state {
             TopLevel => match c {
                 b':' => state = MaybeInNamedParam,
+                b'/' => state = MaybeInCComment1,
+                b'-' => state = MaybeInDoubleDashComment1,
+                b'#' => state = InSharpComment,
                 b'\'' => state = InStringLiteral(b'\'', b'\''),
                 b'"' => state = InStringLiteral(b'"', b'"'),
                 b'?' => have_positional = true,
@@ -64,6 +75,41 @@ pub fn parse_named_params(
                     cur_param += 1;
                     rematch = true;
                 }
+            },
+            InSharpComment => match c {
+                b'\n' => state = TopLevel,
+                _ => (),
+            },
+            MaybeInDoubleDashComment1 => match c {
+                b'-' => state = MaybeInDoubleDashComment2,
+                _ => state = TopLevel,
+            },
+            MaybeInDoubleDashComment2 => {
+                if c.is_ascii_whitespace() && *c != b'\n' {
+                    state = InDoubleDashComment
+                } else {
+                    state = TopLevel
+                }
+            }
+            InDoubleDashComment => match c {
+                b'\n' => state = TopLevel,
+                _ => (),
+            },
+            MaybeInCComment1 => match c {
+                b'*' => state = MaybeInCComment2,
+                _ => state = TopLevel,
+            },
+            MaybeInCComment2 => match c {
+                b'!' | b'+' => state = TopLevel, // extensions and optimizer hints
+                _ => state = InCComment,
+            },
+            InCComment => match c {
+                b'*' => state = MaybeExitCComment,
+                _ => (),
+            },
+            MaybeExitCComment => match c {
+                b'/' => state = TopLevel,
+                _ => state = InCComment,
             },
         }
         if rematch {
@@ -166,6 +212,33 @@ mod test {
             (
                 Some(vec![b"param".to_vec()]),
                 "SELECT 1 FROM été WHERE thing = ?;".as_bytes().into(),
+            ),
+            result
+        );
+    }
+
+    #[test]
+    fn comments_with_question_marks() {
+        let result = parse_named_params(
+            "SELECT 1 FROM my_table WHERE thing = :param;/* question\n  mark '?' in multiline\n\
+            comment? */\n# ??- sharp comment -??\n-- dash-dash?\n/*! extention param :param2 */\n\
+            /*+ optimizer hint :param3 */; select :foo; # another comment?"
+                .as_bytes(),
+        )
+        .unwrap();
+        assert_eq!(
+            (
+                Some(vec![
+                    b"param".to_vec(),
+                    b"param2".to_vec(),
+                    b"param3".to_vec(),
+                    b"foo".to_vec()
+                ]),
+                "SELECT 1 FROM my_table WHERE thing = ?;/* question\n  mark '?' in multiline\n\
+                comment? */\n# ??- sharp comment -??\n-- dash-dash?\n/*! extention param ? */\n\
+                /*+ optimizer hint ? */; select ?; # another comment?"
+                    .as_bytes()
+                    .into(),
             ),
             result
         );
