@@ -79,7 +79,7 @@ impl<T> Pkcs1OaepPadding<T> {
     ///
     /// It will use SHA-1 as a hash function.
     fn mgf1(seed: &[u8], len: usize) -> Vec<u8> {
-        if len > 2usize.pow(32) * Self::HASH_LEN {
+        if len as u64 > 2u64.pow(32) * Self::HASH_LEN as u64 {
             panic!("mask too long");
         }
 
