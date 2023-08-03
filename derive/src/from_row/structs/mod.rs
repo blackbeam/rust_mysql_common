@@ -2,6 +2,7 @@ use darling::FromAttributes;
 use proc_macro2::{Span, TokenStream};
 use proc_macro_error::abort;
 use quote::{ToTokens, TokenStreamExt};
+use syn::ext::IdentExt;
 use syn::spanned::Spanned;
 
 use crate::from_value::enums::attrs::container::Crate;
@@ -108,7 +109,7 @@ impl ToTokens for GenericStruct<'_> {
             .iter()
             .zip(&fields_attrs)
             .map(|(f, attrs)| {
-                let mut name = f.ident.as_ref().unwrap().to_string();
+                let mut name = f.ident.as_ref().unwrap().unraw().to_string();
 
                 if let Some(ref r) = item_attrs.rename_all {
                     name = r.rename(&name);
@@ -129,7 +130,7 @@ impl ToTokens for GenericStruct<'_> {
             .collect::<Vec<_>>();
 
         let filed_name_constant = fields.named.iter().zip(&fields_names).map(|(f, name)| {
-            let ident = f.ident.as_ref().unwrap();
+            let ident = f.ident.as_ref().unwrap().unraw();
             let lit = syn::LitStr::new(&*name, f.span());
             let const_name = syn::Ident::new(
                 &format!("{}_FIELD", heck::AsShoutySnakeCase(ident.to_string())),
@@ -266,6 +267,20 @@ mod tests {
                 #[mysql(rename = "def", json)]
                 definition: serde_json::Value,
                 child: Option<u64>,
+            }
+        "#;
+        let input = syn::parse_str::<syn::DeriveInput>(code).unwrap();
+        let derived = super::super::impl_from_row(&input).unwrap();
+        eprintln!("{}", derived);
+    }
+
+    #[test]
+    fn derive_struct_with_raw_identifiers() {
+        let code = r#"
+            #[derive(FromRow)]
+            #[mysql(crate_name = "mysql_common")]
+            struct Foo {
+                r#type: u64,
             }
         "#;
         let input = syn::parse_str::<syn::DeriveInput>(code).unwrap();
