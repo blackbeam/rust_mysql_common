@@ -35,7 +35,7 @@ bigdecimal02 = { package = "bigdecimal", version = "0.2", features = [
     "serde",
 ], optional = true }
 bigdecimal = { version = "0.3", optional = true }
-bitflags = "2"
+bitflags = "2.3"
 bitvec = "1.0"
 byteorder = "1"
 bytes = "1.0"
