@@ -134,7 +134,7 @@ impl<'a> BinlogRequest<'a> {
             Either::Right(cmd)
         } else {
             let cmd = ComBinlogDump::new(self.server_id)
-                .with_pos(self.pos as u32)
+                .with_pos(self.pos)
                 .with_filename(&*self.filename)
                 .with_flags(self.flags & BinlogDumpFlags::BINLOG_DUMP_NON_BLOCK);
             Either::Left(cmd)

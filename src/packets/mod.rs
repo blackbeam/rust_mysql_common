@@ -2776,7 +2776,7 @@ define_header!(
 pub struct ComBinlogDump<'a> {
     header: ComBinlogDumpHeader,
     /// Position in the binlog-file to start the stream with (`0` by default).
-    pos: RawInt<LeU32>,
+    pos: RawInt<LeU64>,
     /// Command flags (empty by default).
     ///
     /// Only `BINLOG_DUMP_NON_BLOCK` is supported for this command.
@@ -2803,7 +2803,7 @@ impl<'a> ComBinlogDump<'a> {
     }
 
     /// Defines position for this instance.
-    pub fn with_pos(mut self, pos: u32) -> Self {
+    pub fn with_pos(mut self, pos: u64) -> Self {
         self.pos = RawInt::new(pos);
         self
     }
@@ -2821,7 +2821,7 @@ impl<'a> ComBinlogDump<'a> {
     }
 
     /// Returns parsed `pos` field with unknown bits truncated.
-    pub fn pos(&self) -> u32 {
+    pub fn pos(&self) -> u64 {
         *self.pos
     }
 
@@ -2861,7 +2861,7 @@ impl<'de> MyDeserialize<'de> for ComBinlogDump<'de> {
     type Ctx = ();
 
     fn deserialize((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
-        let mut sbuf: ParseBuf = buf.parse(11)?;
+        let mut sbuf: ParseBuf = buf.parse(15)?;
         Ok(Self {
             header: sbuf.parse_unchecked(())?,
             pos: sbuf.parse_unchecked(())?,
@@ -3319,7 +3319,7 @@ mod test {
         fn com_binlog_dump_roundtrip(
             server_id: u32,
             filename: Vec<u8>,
-            pos: u32,
+            pos: u64,
             flags: u16,
         ) {
             let cmd = ComBinlogDump::new(server_id)
