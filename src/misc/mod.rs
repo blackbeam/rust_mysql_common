@@ -41,7 +41,7 @@ pub(crate) fn unexpected_buf_eof() -> io::Error {
 /// It'll return `(0, 0, 0)` in case of error.
 pub fn split_version<T: AsRef<[u8]>>(version_str: T) -> (u8, u8, u8) {
     let bytes = version_str.as_ref();
-    split_version_inner(bytes).unwrap_or((0,0,0))
+    split_version_inner(bytes).unwrap_or((0, 0, 0))
 }
 
 // Split into its own function for two reasons:

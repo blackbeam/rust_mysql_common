@@ -6,8 +6,8 @@
 // option. All files in the project carrying such notice may not be copied,
 // modified, or distributed except according to those terms.
 
-use bytes::BufMut;
 use btoi::btoi;
+use bytes::BufMut;
 use regex::bytes::Regex;
 use smallvec::SmallVec;
 use uuid::Uuid;
