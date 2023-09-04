@@ -76,5 +76,7 @@ mod tests {
         assert_eq!((0, 0, 0), split_version("100.200.300foo"));
         assert_eq!((0, 0, 0), split_version("100.200foo"));
         assert_eq!((0, 0, 0), split_version("1,2.3"));
+        assert_eq!((0, 0, 0), split_version("1"));
+        assert_eq!((0, 0, 0), split_version("1.2"));
     }
 }
