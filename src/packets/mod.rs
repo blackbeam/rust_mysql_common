@@ -7,7 +7,7 @@
 // modified, or distributed except according to those terms.
 
 use bytes::BufMut;
-use lexical::parse;
+use btoi::btoi;
 use regex::bytes::Regex;
 use smallvec::SmallVec;
 use uuid::Uuid;
@@ -1552,9 +1552,9 @@ impl<'a> HandshakePacket<'a> {
             .map(|captures| {
                 // Should not panic because validated with regex
                 (
-                    parse::<u16, _>(captures.get(1).unwrap().as_bytes()).unwrap(),
-                    parse::<u16, _>(captures.get(2).unwrap().as_bytes()).unwrap(),
-                    parse::<u16, _>(captures.get(3).unwrap().as_bytes()).unwrap(),
+                    btoi::<u16>(captures.get(1).unwrap().as_bytes()).unwrap(),
+                    btoi::<u16>(captures.get(2).unwrap().as_bytes()).unwrap(),
+                    btoi::<u16>(captures.get(3).unwrap().as_bytes()).unwrap(),
                 )
             })
     }
@@ -1566,9 +1566,9 @@ impl<'a> HandshakePacket<'a> {
             .map(|captures| {
                 // Should not panic because validated with regex
                 (
-                    parse::<u16, _>(captures.get(1).unwrap().as_bytes()).unwrap(),
-                    parse::<u16, _>(captures.get(2).unwrap().as_bytes()).unwrap(),
-                    parse::<u16, _>(captures.get(3).unwrap().as_bytes()).unwrap(),
+                    btoi::<u16>(captures.get(1).unwrap().as_bytes()).unwrap(),
+                    btoi::<u16>(captures.get(2).unwrap().as_bytes()).unwrap(),
+                    btoi::<u16>(captures.get(3).unwrap().as_bytes()).unwrap(),
                 )
             })
     }

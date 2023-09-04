@@ -6,6 +6,7 @@
 // option. All files in the project carrying such notice may not be copied,
 // modified, or distributed except according to those terms.
 
+use btoi::btoi;
 use lexical::parse;
 use num_traits::ToPrimitive;
 use regex::bytes::Regex;
@@ -185,7 +186,7 @@ macro_rules! impl_from_value_num {
                     Value::UInt(x) => $ty::try_from(x)
                         .map(ParseIrOpt::Ready)
                         .map_err(|_| FromValueError(Value::UInt(x))),
-                    Value::Bytes(bytes) => match parse(&*bytes) {
+                    Value::Bytes(bytes) => match btoi(&*bytes) {
                         Ok(x) => Ok(ParseIrOpt::Parsed(x, Value::Bytes(bytes))),
                         _ => Err(FromValueError(Value::Bytes(bytes))),
                     },
