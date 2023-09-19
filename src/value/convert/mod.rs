@@ -6,8 +6,7 @@
 // option. All files in the project carrying such notice may not be copied,
 // modified, or distributed except according to those terms.
 
-use btoi::btoi;
-use lexical::parse;
+use btoi::{btoi, btou};
 use num_traits::ToPrimitive;
 use regex::bytes::Regex;
 
@@ -15,6 +14,7 @@ use std::{
     any::type_name,
     borrow::Cow,
     convert::{TryFrom, TryInto},
+    str::from_utf8,
     time::Duration,
 };
 
@@ -90,12 +90,12 @@ fn parse_mysql_datetime_string(bytes: &[u8]) -> Option<(u32, u32, u32, u32, u32,
     };
 
     Some((
-        parse(&bytes[year]).unwrap(),
-        parse(&bytes[month]).unwrap(),
-        parse(&bytes[day]).unwrap(),
-        hour.map(|pos| parse(&bytes[pos]).unwrap()).unwrap_or(0),
-        minute.map(|pos| parse(&bytes[pos]).unwrap()).unwrap_or(0),
-        second.map(|pos| parse(&bytes[pos]).unwrap()).unwrap_or(0),
+        btou(&bytes[year]).unwrap(),
+        btou(&bytes[month]).unwrap(),
+        btou(&bytes[day]).unwrap(),
+        hour.map(|pos| btou(&bytes[pos]).unwrap()).unwrap_or(0),
+        minute.map(|pos| btou(&bytes[pos]).unwrap()).unwrap_or(0),
+        second.map(|pos| btou(&bytes[pos]).unwrap()).unwrap_or(0),
         micros.map(|pos| parse_micros(&bytes[pos])).unwrap_or(0),
     ))
 }
@@ -265,8 +265,11 @@ impl TryFrom<Value> for ParseIrOpt<f32> {
     fn try_from(v: Value) -> Result<Self, Self::Error> {
         match v {
             Value::Float(x) => Ok(ParseIrOpt::Ready(x)),
-            Value::Bytes(bytes) => match parse(&*bytes) {
-                Ok(x) => Ok(ParseIrOpt::Parsed(x, Value::Bytes(bytes))),
+            Value::Bytes(bytes) => match from_utf8(&bytes) {
+                Ok(f) => match f.parse::<f32>() {
+                    Ok(x) => Ok(ParseIrOpt::Parsed(x, Value::Bytes(bytes))),
+                    _ => Err(FromValueError(Value::Bytes(bytes))),
+                },
                 _ => Err(FromValueError(Value::Bytes(bytes))),
             },
             v => Err(FromValueError(v)),
@@ -297,8 +300,11 @@ impl TryFrom<Value> for ParseIrOpt<f64> {
         match v {
             Value::Double(x) => Ok(ParseIrOpt::Ready(x)),
             Value::Float(x) => Ok(ParseIrOpt::Ready(x.into())),
-            Value::Bytes(bytes) => match parse(&*bytes) {
-                Ok(x) => Ok(ParseIrOpt::Parsed(x, Value::Bytes(bytes))),
+            Value::Bytes(bytes) => match from_utf8(&bytes) {
+                Ok(f) => match f.parse::<f64>() {
+                    Ok(x) => Ok(ParseIrOpt::Parsed(x, Value::Bytes(bytes))),
+                    _ => Err(FromValueError(Value::Bytes(bytes))),
+                },
                 _ => Err(FromValueError(Value::Bytes(bytes))),
             },
             v => Err(FromValueError(v)),
@@ -538,7 +544,7 @@ impl<const N: usize> FromValue for [u8; N] {
 }
 
 fn parse_micros(micros_bytes: &[u8]) -> u32 {
-    let mut micros = parse(micros_bytes).unwrap();
+    let mut micros = btou(micros_bytes).unwrap();
 
     let mut pad_zero_cnt = 0;
     for b in micros_bytes.iter() {
@@ -598,9 +604,9 @@ fn parse_mysql_time_string(mut bytes: &[u8]) -> Option<(bool, u32, u8, u8, u32)>
 
     Some((
         is_neg,
-        parse(&bytes[hour_pos]).unwrap(),
-        parse(&bytes[min_pos]).unwrap(),
-        parse(&bytes[sec_pos]).unwrap(),
+        btou(&bytes[hour_pos]).unwrap(),
+        btou(&bytes[min_pos]).unwrap(),
+        btou(&bytes[sec_pos]).unwrap(),
         micros_pos.map(|pos| parse_micros(&bytes[pos])).unwrap_or(0),
     ))
 }
