@@ -41,26 +41,28 @@ pub(crate) fn unexpected_buf_eof() -> io::Error {
 /// It'll return `(0, 0, 0)` in case of error.
 pub fn split_version<T: AsRef<[u8]>>(version_str: T) -> (u8, u8, u8) {
     let bytes = version_str.as_ref();
-    let mut offset = 0;
-    let mut nums = [0_u8; 3];
-    for i in 0..=2 {
-        match lexical::parse_partial::<u8, _>(&bytes[offset..]) {
-            Ok((x, count))
-                if count > 0
-                    && (i != 0
-                        || (bytes.len() > offset + count && bytes[offset + count] == b'.')) =>
-            {
-                offset += count + 1;
-                nums[i] = x;
-            }
-            _ => {
-                nums = [0_u8; 3];
-                break;
-            }
-        }
-    }
+    split_version_inner(bytes).unwrap_or((0, 0, 0))
+}
 
-    (nums[0], nums[1], nums[2])
+// Split into its own function for two reasons:
+// 1. Generic function will be instantiated for every type, increasing code size
+// 2. It allows using Option and ? operator without breaking public API
+fn split_version_inner(input: &[u8]) -> Option<(u8, u8, u8)> {
+    let mut nums = [0_u8; 3];
+    let mut iter = input.split(|c| *c == b'.');
+    for (i, chunk) in (&mut iter).take(2).enumerate() {
+        nums[i] = btoi::btoi(chunk).ok()?;
+    }
+    // allow junk at the end of the final part of the version
+    let chunk_with_junk = iter.next()?;
+    let end_of_digits = chunk_with_junk.iter().position(|c| *c < b'0' || *c > b'9');
+    let chunk = match end_of_digits {
+        Some(pos) => &chunk_with_junk[..pos],
+        None => chunk_with_junk,
+    };
+    nums[2] = btoi::btoi(chunk).ok()?;
+
+    Some((nums[0], nums[1], nums[2]))
 }
 
 #[cfg(test)]
@@ -74,5 +76,7 @@ mod tests {
         assert_eq!((0, 0, 0), split_version("100.200.300foo"));
         assert_eq!((0, 0, 0), split_version("100.200foo"));
         assert_eq!((0, 0, 0), split_version("1,2.3"));
+        assert_eq!((0, 0, 0), split_version("1"));
+        assert_eq!((0, 0, 0), split_version("1.2"));
     }
 }
