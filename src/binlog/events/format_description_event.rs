@@ -123,6 +123,8 @@ impl<'a> FormatDescriptionEvent<'a> {
     pub const VIEW_CHANGE_HEADER_LEN: usize = 52;
     /// Length of a xa prepare event post-header.
     pub const XA_PREPARE_HEADER_LEN: usize = 0;
+    /// Length of a transaction payload event post-header.
+    pub const TRANSACTION_PAYLOAD_HEADER_LEN: usize = 0;
 
     /// Creates new instance.
     pub fn new(binlog_version: BinlogVersion) -> Self {
@@ -271,6 +273,7 @@ impl<'a> FormatDescriptionEvent<'a> {
                 EventType::VIEW_CHANGE_EVENT => Self::VIEW_CHANGE_HEADER_LEN,
                 EventType::XA_PREPARE_LOG_EVENT => Self::XA_PREPARE_HEADER_LEN,
                 EventType::PARTIAL_UPDATE_ROWS_EVENT => Self::ROWS_HEADER_LEN_V2,
+                EventType::TRANSACTION_PAYLOAD_EVENT => Self::TRANSACTION_PAYLOAD_HEADER_LEN,
                 EventType::ENUM_END_EVENT => 0,
             } as u8)
     }

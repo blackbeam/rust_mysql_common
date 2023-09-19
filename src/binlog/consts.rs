@@ -6,7 +6,7 @@
 // option. All files in the project carrying such notice may not be copied,
 // modified, or distributed except according to those terms.
 
-use std::convert::TryFrom;
+use std::convert::{TryFrom, TryInto};
 
 /// Depending on the MySQL Version that created the binlog the format is slightly different.
 #[repr(u16)]
@@ -116,6 +116,7 @@ pub enum EventType {
     /// Extension of UPDATE_ROWS_EVENT, allowing partial values according
     /// to binlog_row_value_options.
     PARTIAL_UPDATE_ROWS_EVENT = 0x27,
+    TRANSACTION_PAYLOAD_EVENT = 0x28,
     /// Total number of known events.
     ENUM_END_EVENT,
 }
@@ -176,6 +177,7 @@ impl TryFrom<u8> for EventType {
             0x25 => Ok(Self::VIEW_CHANGE_EVENT),
             0x26 => Ok(Self::XA_PREPARE_LOG_EVENT),
             0x27 => Ok(Self::PARTIAL_UPDATE_ROWS_EVENT),
+            0x28 => Ok(Self::TRANSACTION_PAYLOAD_EVENT),
             x => Err(UnknownEventType(x)),
         }
     }
@@ -780,5 +782,111 @@ my_bitflags! {
     #[derive(PartialEq, Eq, Hash, Debug, Clone, Copy)]
     pub struct UserVarFlags: u8 {
         const UNSIGNED = 0x01;
+    }
+}
+
+/// The on-the-wire fields for Transaction_payload
+#[allow(non_camel_case_types)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(u8)]
+pub enum TransactionPayloadFields {
+    // Marks the end of the payload header.
+    OTW_PAYLOAD_HEADER_END_MARK = 0,
+
+    // The payload field
+    OTW_PAYLOAD_SIZE_FIELD = 1,
+
+    // The compression type field
+    OTW_PAYLOAD_COMPRESSION_TYPE_FIELD = 2,
+
+    // The uncompressed size field
+    OTW_PAYLOAD_UNCOMPRESSED_SIZE_FIELD = 3,
+    // Other fields are appended here.
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, thiserror::Error)]
+#[error("Unknown TransactionPayloadFields operation {}", _0)]
+#[repr(transparent)]
+pub struct UnknownTransactionPayloadFields(pub u8);
+
+impl TryFrom<u8> for TransactionPayloadFields {
+    type Error = UnknownTransactionPayloadFields;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(Self::OTW_PAYLOAD_HEADER_END_MARK),
+            1 => Ok(Self::OTW_PAYLOAD_SIZE_FIELD),
+            2 => Ok(Self::OTW_PAYLOAD_COMPRESSION_TYPE_FIELD),
+            3 => Ok(Self::OTW_PAYLOAD_UNCOMPRESSED_SIZE_FIELD),
+            x => Err(UnknownTransactionPayloadFields(x)),
+        }
+    }
+}
+
+impl From<TransactionPayloadFields> for u8 {
+    fn from(x: TransactionPayloadFields) -> Self {
+        x as u8
+    }
+}
+
+impl From<TransactionPayloadFields> for u64 {
+    fn from(x: TransactionPayloadFields) -> Self {
+        x as u64
+    }
+}
+
+impl TryFrom<u64> for TransactionPayloadFields {
+    type Error = UnknownTransactionPayloadFields;
+
+    fn try_from(value: u64) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(Self::OTW_PAYLOAD_HEADER_END_MARK),
+            1 => Ok(Self::OTW_PAYLOAD_SIZE_FIELD),
+            2 => Ok(Self::OTW_PAYLOAD_COMPRESSION_TYPE_FIELD),
+            3 => Ok(Self::OTW_PAYLOAD_UNCOMPRESSED_SIZE_FIELD),
+            x => Err(UnknownTransactionPayloadFields(x.try_into().unwrap())),
+        }
+    }
+}
+/// The supported compression algorithms for Transaction_payload
+#[allow(non_camel_case_types)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(u8)]
+pub enum TransactionPayloadCompressionType {
+    // ZSTD compression.
+    ZSTD = 0,
+
+    // No compression.
+    NONE = 255,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, thiserror::Error)]
+#[error("Unknown TransactionPayloadCompressionType {}", _0)]
+#[repr(transparent)]
+pub struct UnknownTransactionPayloadCompressionType(pub u8);
+
+impl TryFrom<u8> for TransactionPayloadCompressionType {
+    type Error = UnknownTransactionPayloadCompressionType;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(Self::ZSTD),
+            255 => Ok(Self::NONE),
+            x => Err(UnknownTransactionPayloadCompressionType(x)),
+        }
+    }
+}
+
+impl TryFrom<u64> for TransactionPayloadCompressionType {
+    type Error = UnknownTransactionPayloadCompressionType;
+
+    fn try_from(value: u64) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(Self::ZSTD),
+            255 => Ok(Self::NONE),
+            x => Err(UnknownTransactionPayloadCompressionType(
+                x.try_into().unwrap(),
+            )),
+        }
     }
 }

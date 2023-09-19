@@ -70,6 +70,7 @@ serde_json = "1"
 
 mysql-common-derive = { path = "derive", version = "0.30.2", optional = true }
 btoi = "0.4.3"
+zstd = "0.12.4"
 
 [dev-dependencies]
 proptest = "1.0"
@@ -84,14 +85,7 @@ subprocess = "0.2"
 debug = true
 
 [features]
-default = [
-    "flate2/zlib",
-    "bigdecimal",
-    "rust_decimal",
-    "time",
-    "frunk",
-    "derive",
-]
+default = ["flate2/zlib", "bigdecimal", "rust_decimal", "time", "frunk", "derive"]
 test = ["derive"]
 derive = ["mysql-common-derive"]
 nightly = ["test"]

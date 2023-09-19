@@ -13,6 +13,16 @@ use std::{cmp::min, io};
 use crate::proto::MyDeserialize;
 
 pub trait BufMutExt: BufMut {
+    /// The length of space required to store the resulting length-encoded integer for
+    /// the given number.
+    fn lenenc_int_len(n: u64) -> usize {
+        match n {
+            0..=250 => 1,
+            251..=65_535 => 3,
+            65_536..=16_777_215 => 4,
+            _ => 9,
+        }
+    }
     /// Writes an unsigned integer to self as MySql length-encoded integer.
     fn put_lenenc_int(&mut self, n: u64) {
         if n < 251 {
