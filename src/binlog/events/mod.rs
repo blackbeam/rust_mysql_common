@@ -34,6 +34,7 @@ pub use self::{
     rows_event::{RowsEvent, RowsEventRows},
     rows_query_event::RowsQueryEvent,
     table_map_event::*,
+    transaction_payload_event::TransactionPayloadEvent,
     update_rows_event::UpdateRowsEvent,
     update_rows_event_v1::UpdateRowsEventV1,
     user_var_event::UserVarEvent,
@@ -75,6 +76,7 @@ mod rotate_event;
 mod rows_event;
 mod rows_query_event;
 mod table_map_event;
+mod transaction_payload_event;
 mod update_rows_event;
 mod update_rows_event_v1;
 mod user_var_event;
@@ -324,6 +326,7 @@ impl Event {
             PARTIAL_UPDATE_ROWS_EVENT => {
                 EventData::RowsEvent(RowsEventData::PartialUpdateRowsEvent(self.read_event()?))
             }
+            TRANSACTION_PAYLOAD_EVENT => EventData::TransactionPayloadEvent(self.read_event()?),
         };
 
         Ok(Some(event_data))
@@ -590,6 +593,7 @@ pub enum EventData<'a> {
     /// Not yet implemented.
     XaPrepareLogEvent(Cow<'a, [u8]>),
     RowsEvent(RowsEventData<'a>),
+    TransactionPayloadEvent(TransactionPayloadEvent<'a>),
 }
 
 impl<'a> EventData<'a> {
@@ -641,6 +645,9 @@ impl<'a> EventData<'a> {
                 EventData::XaPrepareLogEvent(Cow::Owned(ev.into_owned()))
             }
             Self::RowsEvent(ev) => EventData::RowsEvent(ev.into_owned()),
+            Self::TransactionPayloadEvent(ev) => {
+                EventData::TransactionPayloadEvent(ev.into_owned())
+            }
         }
     }
 }
@@ -682,6 +689,7 @@ impl MySerialize for EventData<'_> {
             EventData::ViewChangeEvent(ev) => buf.put_slice(&*ev),
             EventData::XaPrepareLogEvent(ev) => buf.put_slice(&*ev),
             EventData::RowsEvent(ev) => ev.serialize(buf),
+            EventData::TransactionPayloadEvent(ev) => ev.serialize(buf),
         }
     }
 }

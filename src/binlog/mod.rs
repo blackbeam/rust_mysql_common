@@ -247,7 +247,7 @@ mod tests {
     };
 
     use crate::{
-        binlog::{events::RowsEventData, value::BinlogValue},
+        binlog::{events::RowsEventData, value::BinlogValue, EventStreamReader},
         constants::ColumnFlags,
         proto::MySerialize,
         value::Value,
@@ -862,6 +862,35 @@ mod tests {
                     assert_eq!(output, &file_data[ev_pos..ev_end]);
                 }
 
+                if file_path.file_name().unwrap() == "transaction_compression.000001" {
+                    if let Some(EventData::TransactionPayloadEvent(data)) = ev.read_data().unwrap()
+                    {
+                        let buff = data.payload_raw_decompressed();
+                        let mut read_pos = 0;
+                        let mut reader_no_checksum =
+                            EventStreamReader::new(BinlogVersion::Version4);
+                        let binlog_ev = reader_no_checksum.read(&buff[read_pos..])?;
+                        read_pos += binlog_ev.header().event_size() as usize;
+                        assert_eq!(binlog_ev.header().event_type(), Ok(EventType::QUERY_EVENT));
+
+                        let binlog_ev = reader_no_checksum.read(&buff[read_pos..])?;
+                        read_pos += binlog_ev.header().event_size() as usize;
+                        assert_eq!(
+                            binlog_ev.header().event_type(),
+                            Ok(EventType::TABLE_MAP_EVENT)
+                        );
+
+                        let binlog_ev = reader_no_checksum.read(&buff[read_pos..])?;
+                        read_pos += binlog_ev.header().event_size() as usize;
+                        assert_eq!(
+                            binlog_ev.header().event_type(),
+                            Ok(EventType::WRITE_ROWS_EVENT)
+                        );
+
+                        let binlog_ev = reader_no_checksum.read(&buff[read_pos..])?;
+                        assert_eq!(binlog_ev.header().event_type(), Ok(EventType::XID_EVENT));
+                    }
+                }
                 output = Vec::new();
                 event.serialize(&mut output);
 
