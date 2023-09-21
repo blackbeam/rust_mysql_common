@@ -205,19 +205,19 @@ impl<'de> MyDeserialize<'de> for TransactionPayloadEvent<'de> {
 impl MySerialize for TransactionPayloadEvent<'_> {
     fn serialize(&self, buf: &mut Vec<u8>) {
         buf.put_lenenc_int(TransactionPayloadFields::OTW_PAYLOAD_COMPRESSION_TYPE_FIELD as u64);
-        buf.put_lenenc_int(Vec::<u8>::lenenc_int_len(self.algorithm as u64) as u64);
+        buf.put_lenenc_int(crate::misc::lenenc_int_len(self.algorithm as u64) as u64);
         buf.put_lenenc_int(self.algorithm as u64);
 
         if self.algorithm != TransactionPayloadCompressionType::NONE {
             buf.put_lenenc_int(
                 TransactionPayloadFields::OTW_PAYLOAD_UNCOMPRESSED_SIZE_FIELD as u64,
             );
-            buf.put_lenenc_int(Vec::<u8>::lenenc_int_len(self.uncompressed_size.0) as u64);
+            buf.put_lenenc_int(crate::misc::lenenc_int_len(self.uncompressed_size.0) as u64);
             buf.put_lenenc_int(self.uncompressed_size.0);
         }
 
         buf.put_lenenc_int(TransactionPayloadFields::OTW_PAYLOAD_SIZE_FIELD as u64);
-        buf.put_lenenc_int(Vec::<u8>::lenenc_int_len(self.payload_size.0) as u64);
+        buf.put_lenenc_int(crate::misc::lenenc_int_len(self.payload_size.0) as u64);
         buf.put_lenenc_int(self.payload_size.0);
 
         buf.put_lenenc_int(TransactionPayloadFields::OTW_PAYLOAD_HEADER_END_MARK as u64);
