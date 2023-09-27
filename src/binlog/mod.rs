@@ -124,6 +124,11 @@ impl EventStreamReader {
         &self.fde
     }
 
+    /// Disable/Enable checksum without changing the original algorithm
+    pub fn set_checksum_enabled(&mut self, enabled: bool) {
+        self.fde.footer_mut().set_checksum_enabled(enabled);
+    }
+
     /// Returns the table map event for the given table id.
     ///
     /// Should be availeble if rows event with this table id encountered in the stream.
@@ -178,6 +183,11 @@ impl<T: Read> BinlogFile<T> {
     /// Returns a reference to the binlog stream reader.
     pub fn reader(&self) -> &EventStreamReader {
         &self.reader
+    }
+
+    /// Returns a mutable reference to the binlog stream reader.
+    pub fn reader_mut(&mut self) -> &mut EventStreamReader {
+        &mut self.reader
     }
 }
 
@@ -247,7 +257,7 @@ mod tests {
     };
 
     use crate::{
-        binlog::{events::RowsEventData, value::BinlogValue, EventStreamReader},
+        binlog::{events::RowsEventData, value::BinlogValue},
         constants::ColumnFlags,
         proto::MySerialize,
         value::Value,
@@ -867,28 +877,28 @@ mod tests {
                     {
                         let buff = data.payload_raw_decompressed();
                         let mut read_pos = 0;
-                        let mut reader_no_checksum =
-                            EventStreamReader::new(BinlogVersion::Version4);
-                        let binlog_ev = reader_no_checksum.read(&buff[read_pos..])?;
+                        binlog_file.reader_mut().set_checksum_enabled(false);
+                        let binlog_ev = binlog_file.reader_mut().read(&buff[read_pos..])?;
                         read_pos += binlog_ev.header().event_size() as usize;
                         assert_eq!(binlog_ev.header().event_type(), Ok(EventType::QUERY_EVENT));
 
-                        let binlog_ev = reader_no_checksum.read(&buff[read_pos..])?;
+                        let binlog_ev = binlog_file.reader_mut().read(&buff[read_pos..])?;
                         read_pos += binlog_ev.header().event_size() as usize;
                         assert_eq!(
                             binlog_ev.header().event_type(),
                             Ok(EventType::TABLE_MAP_EVENT)
                         );
 
-                        let binlog_ev = reader_no_checksum.read(&buff[read_pos..])?;
+                        let binlog_ev = binlog_file.reader_mut().read(&buff[read_pos..])?;
                         read_pos += binlog_ev.header().event_size() as usize;
                         assert_eq!(
                             binlog_ev.header().event_type(),
                             Ok(EventType::WRITE_ROWS_EVENT)
                         );
 
-                        let binlog_ev = reader_no_checksum.read(&buff[read_pos..])?;
+                        let binlog_ev = binlog_file.reader_mut().read(&buff[read_pos..])?;
                         assert_eq!(binlog_ev.header().event_type(), Ok(EventType::XID_EVENT));
+                        binlog_file.reader_mut().set_checksum_enabled(true);
                     }
                 }
                 output = Vec::new();

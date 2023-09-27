@@ -216,6 +216,9 @@ impl<'a> FormatDescriptionEvent<'a> {
     pub fn footer(&self) -> BinlogEventFooter {
         self.footer
     }
+    pub fn footer_mut(&mut self) -> &mut BinlogEventFooter {
+        &mut self.footer
+    }
 
     /// Returns a parsed MySql version.
     pub fn split_version(&self) -> (u8, u8, u8) {

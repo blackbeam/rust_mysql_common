@@ -144,7 +144,8 @@ impl Event {
 
         // fde will always contain checksum (see WL#2540)
         let contains_checksum = footer.checksum_alg.is_some()
-            && (is_fde || footer.checksum_alg != Some(RawConst::new(0)));
+            && (is_fde || footer.checksum_alg != Some(RawConst::new(0)))
+            && footer.checksum_enabled;
 
         if contains_checksum {
             // truncate checksum
@@ -482,6 +483,9 @@ impl MySerialize for BinlogEventHeader {
 pub struct BinlogEventFooter {
     /// Raw checksum algorithm description.
     checksum_alg: Option<RawConst<u8, BinlogChecksumAlg>>,
+
+    /// Checksum enabled
+    checksum_enabled: bool,
 }
 
 impl BinlogEventFooter {
@@ -495,12 +499,23 @@ impl BinlogEventFooter {
     pub fn new(checksum_alg: BinlogChecksumAlg) -> Self {
         Self {
             checksum_alg: Some(RawConst::new(checksum_alg as u8)),
+            checksum_enabled: true,
         }
     }
 
     /// Returns parsed checksum algorithm, or raw value if algorithm is unknown.
     pub fn get_checksum_alg(&self) -> Result<Option<BinlogChecksumAlg>, UnknownChecksumAlg> {
         self.checksum_alg.as_ref().map(RawConst::get).transpose()
+    }
+
+    /// Returns `true` if checksum is enabled.
+    pub fn get_checksum_enabled(&self) -> bool {
+        self.checksum_enabled
+    }
+
+    /// Set checksum enabled flag.
+    pub fn set_checksum_enabled(&mut self, enabled: bool) {
+        self.checksum_enabled = enabled;
     }
 
     /// Reads binlog event footer from the given buffer.
@@ -528,6 +543,7 @@ impl BinlogEventFooter {
 
         Ok(Self {
             checksum_alg: checksum_alg.map(RawConst::new),
+            checksum_enabled: true,
         })
     }
 }
@@ -538,6 +554,7 @@ impl Default for BinlogEventFooter {
             checksum_alg: Some(RawConst::new(
                 BinlogChecksumAlg::BINLOG_CHECKSUM_ALG_OFF as u8,
             )),
+            checksum_enabled: true,
         }
     }
 }
