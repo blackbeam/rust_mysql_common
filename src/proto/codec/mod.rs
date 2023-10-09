@@ -229,9 +229,9 @@ impl Default for ChunkDecoder {
 /// Stores information about compressed packet being decoded.
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum CompData {
-    /// Compressed(<needed>, <uncompressed len>)
+    /// Compressed(&lt;needed&gt;, &lt;uncompressed len&gt;)
     Compressed(NonZeroUsize, NonZeroUsize),
-    /// Uncompressed(<needed>)
+    /// Uncompressed(&lt;needed&gt;)
     Uncompressed(NonZeroUsize),
 }
 

@@ -63,7 +63,7 @@
 //! | `Row`                                           | Trivial conversion for `Row` itself.              |
 //! | `T: FromValue`                                  | For rows with a single column.                    |
 //! | `(T1: FromValue [, ..., T12: FromValue])`       | Row to a tuple of arity 1-12.                     |
-//! | [`frunk::Hlist!`] types                         | Usefull to overcome tuple arity limitation        |
+//! | [`frunk::hlist::HList`] types                   | Usefull to overcome tuple arity limitation        |
 //!
 //! ## Crate features
 //!

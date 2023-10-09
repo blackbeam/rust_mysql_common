@@ -417,7 +417,7 @@ impl FromValue for Vec<u8> {
     type Intermediate = Vec<u8>;
 }
 
-/// Intermediate result of a Value-to-Option<T> conversion.
+/// Intermediate result of a `Value`-to-`Option<T>` conversion.
 #[derive(Debug, Clone, PartialEq)]
 pub enum OptionIr2<T: FromValue> {
     None,
