@@ -85,9 +85,18 @@ subprocess = "0.2"
 debug = true
 
 [features]
-default = ["flate2/zlib", "bigdecimal", "rust_decimal", "time", "frunk", "derive"]
+default = [
+    "flate2/zlib",
+    "bigdecimal",
+    "rust_decimal",
+    "time",
+    "frunk",
+    "derive",
+    "binlog",
+]
 test = ["derive"]
 derive = ["mysql-common-derive"]
+binlog = []
 nightly = ["test"]
 
 [package.metadata.docs.rs]
@@ -100,6 +109,8 @@ features = [
     "rust_decimal",
     "chrono",
     "bigdecimal02",
+    "bigdecimal04",
     "bigdecimal",
     "derive",
+    "binlog",
 ]

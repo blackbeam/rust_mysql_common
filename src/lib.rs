@@ -71,12 +71,14 @@
 //! | -------------- | ---------------------------------------------------- | ------- |
 //! | `bigdecimal02` | Enables `bigdecimal` v0.2.x types support            | 🔴      |
 //! | `bigdecimal`   | Enables `bigdecimal` v0.3.x types support            | 🟢      |
+//! | `bigdecimal04` | Enables `bigdecimal` v0.4.x types support            | 🔴      |
 //! | `chrono`       | Enables `chrono` types support                       | 🔴      |
 //! | `rust_decimal` | Enables `rust_decimal` types support                 | 🟢      |
 //! | `time02`       | Enables `time` v0.2.x types support                  | 🔴      |
 //! | `time`         | Enables `time` v0.3.x types support                  | 🟢      |
 //! | `frunk`        | Enables `FromRow` for `frunk::Hlist!` types          | 🟢      |
 //! | `derive`       | Enables [`FromValue` and `FromRow` derive macros][2] | 🟢      |
+//! | `binlog`       | Binlog-related functionality                         | 🟢      |
 //!
 //! # Derive Macros
 //!
@@ -473,6 +475,8 @@ pub mod row;
 pub mod scramble;
 pub mod value;
 
+#[cfg(feature = "binlog")]
+#[cfg_attr(docsrs, doc(cfg(feature = "binlog")))]
 pub mod binlog;
 
 #[cfg(test)]
