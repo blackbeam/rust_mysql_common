@@ -142,7 +142,8 @@ impl Event {
             fde.footer()
         };
 
-        // fde will always contain checksum (see WL#2540)
+        // * fde will always contain checksum (see WL#2540)
+        // * events inside of a Transaction_payload_event are not checksummed (see WL#3549)
         let contains_checksum = footer.checksum_alg.is_some()
             && (is_fde || footer.checksum_alg != Some(RawConst::new(0)))
             && footer.checksum_enabled;

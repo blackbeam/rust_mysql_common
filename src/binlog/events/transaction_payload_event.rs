@@ -92,8 +92,8 @@ impl<'a> TransactionPayloadEvent<'a> {
         self.payload.as_bytes()
     }
 
-    /// Returns raw payload decompressed
-    pub fn payload_raw_decompressed(self) -> Vec<u8> {
+    /// Returns raw payload decompressed (see [`crate::binlog::EventStreamReader::read_decompressed`]).
+    pub fn decompress_payload(self) -> Vec<u8> {
         if self.algorithm == TransactionPayloadCompressionType::NONE {
             return self.payload_raw().to_vec();
         }

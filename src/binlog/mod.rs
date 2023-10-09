@@ -124,7 +124,13 @@ impl EventStreamReader {
         &self.fde
     }
 
-    /// Disable/Enable checksum without changing the original algorithm
+    /// Disable/Enable checksum verification without changing the original algorithm.
+    ///
+    /// This is for binlog compression where compressed events are never checksummed (see WL#3549).
+    ///
+    /// # Warning
+    ///
+    /// Consider using [`EventStreamReader::read_decompressed`] instead.
     pub fn set_checksum_enabled(&mut self, enabled: bool) {
         self.fde.footer_mut().set_checksum_enabled(enabled);
     }
@@ -158,6 +164,17 @@ impl EventStreamReader {
         }
 
         Ok(event)
+    }
+
+    /// This is a convenience function to read decompressed paylaod of a Transaction_payload_event
+    /// (see [`events::TransactionPayloadEvent::decompress_payload`]).
+    ///
+    /// The only difference is that checksum verification will be disabled according to the WL#3549.
+    pub fn read_decompressed<T: Read>(&mut self, input: T) -> io::Result<Event> {
+        self.set_checksum_enabled(false);
+        let result = self.read(input);
+        self.set_checksum_enabled(true);
+        result
     }
 }
 
@@ -875,30 +892,28 @@ mod tests {
                 if file_path.file_name().unwrap() == "transaction_compression.000001" {
                     if let Some(EventData::TransactionPayloadEvent(data)) = ev.read_data().unwrap()
                     {
-                        let buff = data.payload_raw_decompressed();
-                        let mut read_pos = 0;
-                        binlog_file.reader_mut().set_checksum_enabled(false);
-                        let binlog_ev = binlog_file.reader_mut().read(&buff[read_pos..])?;
-                        read_pos += binlog_ev.header().event_size() as usize;
+                        let decompressed_payload = data.decompress_payload();
+                        let mut data = &decompressed_payload[..];
+                        let reader = binlog_file.reader_mut();
+
+                        let mut binlog_ev = reader.read_decompressed(&mut data)?;
                         assert_eq!(binlog_ev.header().event_type(), Ok(EventType::QUERY_EVENT));
 
-                        let binlog_ev = binlog_file.reader_mut().read(&buff[read_pos..])?;
-                        read_pos += binlog_ev.header().event_size() as usize;
+                        binlog_ev = reader.read_decompressed(&mut data)?;
                         assert_eq!(
                             binlog_ev.header().event_type(),
                             Ok(EventType::TABLE_MAP_EVENT)
                         );
 
-                        let binlog_ev = binlog_file.reader_mut().read(&buff[read_pos..])?;
-                        read_pos += binlog_ev.header().event_size() as usize;
+                        binlog_ev = reader.read_decompressed(&mut data)?;
                         assert_eq!(
                             binlog_ev.header().event_type(),
                             Ok(EventType::WRITE_ROWS_EVENT)
                         );
 
-                        let binlog_ev = binlog_file.reader_mut().read(&buff[read_pos..])?;
+                        binlog_ev = reader.read_decompressed(&mut data)?;
                         assert_eq!(binlog_ev.header().event_type(), Ok(EventType::XID_EVENT));
-                        binlog_file.reader_mut().set_checksum_enabled(true);
+                        assert!(data.is_empty());
                     }
                 }
                 output = Vec::new();

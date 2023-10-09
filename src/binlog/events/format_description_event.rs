@@ -216,7 +216,8 @@ impl<'a> FormatDescriptionEvent<'a> {
     pub fn footer(&self) -> BinlogEventFooter {
         self.footer
     }
-    pub fn footer_mut(&mut self) -> &mut BinlogEventFooter {
+
+    pub(crate) fn footer_mut(&mut self) -> &mut BinlogEventFooter {
         &mut self.footer
     }
 
