@@ -30,7 +30,14 @@ enum ParserState {
 
 use self::ParserState::*;
 
-/// Returns pair of:
+/// Parse named params in the given query.
+///
+/// Parameters must be named according to the following convention:
+///
+/// * parameter name must start with either `_` or `a..z`
+/// * parameter name may continue with `_`, `a..z` and `0..9`
+///
+/// Returns a pair of:
 ///
 /// * names of named parameters (if any) in order of appearance in `query`. Same name may
 ///   appear multiple times if named parameter used more than once.
