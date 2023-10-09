@@ -124,6 +124,13 @@ impl EventStreamReader {
         &self.fde
     }
 
+    /// Disable/Enable checksum verification without changing the original algorithm.
+    ///
+    /// See [`EventStreamReader::read_decompressed`].
+    pub(crate) fn set_checksum_enabled(&mut self, enabled: bool) {
+        self.fde.footer_mut().set_checksum_enabled(enabled);
+    }
+
     /// Returns the table map event for the given table id.
     ///
     /// Should be availeble if rows event with this table id encountered in the stream.
@@ -154,6 +161,21 @@ impl EventStreamReader {
 
         Ok(event)
     }
+
+    /// This is a convenience function to read decompressed paylaod of a Transaction_payload_event
+    /// (see [`events::TransactionPayloadEvent::decompress_payload`]).
+    ///
+    /// The difference is that checksum verification will be disabled according to the WL#3549.
+    ///
+    /// # Warning
+    ///
+    /// This function can't be used to skip checksum verification for regular events.
+    pub fn read_decompressed<T: Read>(&mut self, input: T) -> io::Result<Event> {
+        self.set_checksum_enabled(false);
+        let result = self.read(input);
+        self.set_checksum_enabled(true);
+        result
+    }
 }
 
 /// Binlog file.
@@ -178,6 +200,11 @@ impl<T: Read> BinlogFile<T> {
     /// Returns a reference to the binlog stream reader.
     pub fn reader(&self) -> &EventStreamReader {
         &self.reader
+    }
+
+    /// Returns a mutable reference to the binlog stream reader.
+    pub fn reader_mut(&mut self) -> &mut EventStreamReader {
+        &mut self.reader
     }
 }
 
@@ -247,7 +274,7 @@ mod tests {
     };
 
     use crate::{
-        binlog::{events::RowsEventData, value::BinlogValue, EventStreamReader},
+        binlog::{events::RowsEventData, value::BinlogValue},
         constants::ColumnFlags,
         proto::MySerialize,
         value::Value,
@@ -865,30 +892,28 @@ mod tests {
                 if file_path.file_name().unwrap() == "transaction_compression.000001" {
                     if let Some(EventData::TransactionPayloadEvent(data)) = ev.read_data().unwrap()
                     {
-                        let buff = data.payload_raw_decompressed();
-                        let mut read_pos = 0;
-                        let mut reader_no_checksum =
-                            EventStreamReader::new(BinlogVersion::Version4);
-                        let binlog_ev = reader_no_checksum.read(&buff[read_pos..])?;
-                        read_pos += binlog_ev.header().event_size() as usize;
+                        let decompressed_payload = data.decompress_payload();
+                        let mut data = &decompressed_payload[..];
+                        let reader = binlog_file.reader_mut();
+
+                        let mut binlog_ev = reader.read_decompressed(&mut data)?;
                         assert_eq!(binlog_ev.header().event_type(), Ok(EventType::QUERY_EVENT));
 
-                        let binlog_ev = reader_no_checksum.read(&buff[read_pos..])?;
-                        read_pos += binlog_ev.header().event_size() as usize;
+                        binlog_ev = reader.read_decompressed(&mut data)?;
                         assert_eq!(
                             binlog_ev.header().event_type(),
                             Ok(EventType::TABLE_MAP_EVENT)
                         );
 
-                        let binlog_ev = reader_no_checksum.read(&buff[read_pos..])?;
-                        read_pos += binlog_ev.header().event_size() as usize;
+                        binlog_ev = reader.read_decompressed(&mut data)?;
                         assert_eq!(
                             binlog_ev.header().event_type(),
                             Ok(EventType::WRITE_ROWS_EVENT)
                         );
 
-                        let binlog_ev = reader_no_checksum.read(&buff[read_pos..])?;
+                        binlog_ev = reader.read_decompressed(&mut data)?;
                         assert_eq!(binlog_ev.header().event_type(), Ok(EventType::XID_EVENT));
+                        assert!(data.is_empty());
                     }
                 }
                 output = Vec::new();

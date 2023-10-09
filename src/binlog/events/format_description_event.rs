@@ -217,6 +217,10 @@ impl<'a> FormatDescriptionEvent<'a> {
         self.footer
     }
 
+    pub(crate) fn footer_mut(&mut self) -> &mut BinlogEventFooter {
+        &mut self.footer
+    }
+
     /// Returns a parsed MySql version.
     pub fn split_version(&self) -> (u8, u8, u8) {
         crate::misc::split_version(&self.server_version.0)
