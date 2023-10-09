@@ -126,12 +126,8 @@ impl EventStreamReader {
 
     /// Disable/Enable checksum verification without changing the original algorithm.
     ///
-    /// This is for binlog compression where compressed events are never checksummed (see WL#3549).
-    ///
-    /// # Warning
-    ///
-    /// Consider using [`EventStreamReader::read_decompressed`] instead.
-    pub fn set_checksum_enabled(&mut self, enabled: bool) {
+    /// See [`EventStreamReader::read_decompressed`].
+    pub(crate) fn set_checksum_enabled(&mut self, enabled: bool) {
         self.fde.footer_mut().set_checksum_enabled(enabled);
     }
 
@@ -169,7 +165,11 @@ impl EventStreamReader {
     /// This is a convenience function to read decompressed paylaod of a Transaction_payload_event
     /// (see [`events::TransactionPayloadEvent::decompress_payload`]).
     ///
-    /// The only difference is that checksum verification will be disabled according to the WL#3549.
+    /// The difference is that checksum verification will be disabled according to the WL#3549.
+    ///
+    /// # Warning
+    ///
+    /// This function can't be used to skip checksum verification for regular events.
     pub fn read_decompressed<T: Read>(&mut self, input: T) -> io::Result<Event> {
         self.set_checksum_enabled(false);
         let result = self.read(input);
