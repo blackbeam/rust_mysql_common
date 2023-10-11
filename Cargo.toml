@@ -37,7 +37,7 @@ bigdecimal02 = { package = "bigdecimal", version = "0.2", features = [
 bigdecimal = { version = "0.3", optional = true }
 bigdecimal04 = { package = "bigdecimal", version = "0.4", optional = true }
 bitflags = "2.3"
-bitvec = "1.0"
+bitvec = { version = "1.0", optional = true }
 byteorder = "1"
 bytes = "1.0"
 chrono = { version = "0.4.20", default-features = false, features = [
@@ -96,7 +96,7 @@ default = [
 ]
 test = ["derive"]
 derive = ["mysql-common-derive"]
-binlog = []
+binlog = ["bitvec"]
 nightly = ["test"]
 
 [package.metadata.docs.rs]
