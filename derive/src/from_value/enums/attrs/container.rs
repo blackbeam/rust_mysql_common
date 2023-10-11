@@ -116,18 +116,18 @@ pub enum EnumRepr {
 }
 
 impl EnumRepr {
-    const I8_IDENT: &str = "i8";
-    const U8_IDENT: &str = "u8";
-    const I16_IDENT: &str = "i16";
-    const U16_IDENT: &str = "u16";
-    const I32_IDENT: &str = "i32";
-    const U32_IDENT: &str = "u32";
-    const I64_IDENT: &str = "i64";
-    const U64_IDENT: &str = "u64";
-    const I128_IDENT: &str = "i128";
-    const U128_IDENT: &str = "u128";
-    const ISIZE_IDENT: &str = "isize";
-    const USIZE_IDENT: &str = "usize";
+    const I8_IDENT: &'static str = "i8";
+    const U8_IDENT: &'static str = "u8";
+    const I16_IDENT: &'static str = "i16";
+    const U16_IDENT: &'static str = "u16";
+    const I32_IDENT: &'static str = "i32";
+    const U32_IDENT: &'static str = "u32";
+    const I64_IDENT: &'static str = "i64";
+    const U64_IDENT: &'static str = "u64";
+    const I128_IDENT: &'static str = "i128";
+    const U128_IDENT: &'static str = "u128";
+    const ISIZE_IDENT: &'static str = "isize";
+    const USIZE_IDENT: &'static str = "usize";
 
     pub fn span(&self) -> Span {
         match self {
@@ -197,13 +197,13 @@ impl Default for EnumRepr {
 impl FromMeta for EnumRepr {
     fn from_list(items: &[darling::ast::NestedMeta]) -> darling::Result<Self> {
         Ok(items
-            .into_iter()
+            .iter()
             .filter_map(|x| match x {
                 darling::ast::NestedMeta::Meta(syn::Meta::Path(path)) => Some(path),
                 _ => None,
             })
             .filter_map(|x| x.get_ident())
-            .find_map(|x| Self::from_ident(x))
+            .find_map(Self::from_ident)
             .unwrap_or_default())
     }
 }

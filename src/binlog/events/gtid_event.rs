@@ -316,7 +316,7 @@ impl<'de> MyDeserialize<'de> for GtidEvent {
     }
 }
 
-impl<'de> MySerialize for GtidEvent {
+impl MySerialize for GtidEvent {
     fn serialize(&self, buf: &mut Vec<u8>) {
         self.flags.serialize(&mut *buf);
         self.sid.serialize(&mut *buf);
@@ -373,7 +373,7 @@ impl<'a> BinlogStruct<'a> for GtidEvent {
             len += S(7); // original_commit_timestamp
         }
 
-        len += S(crate::misc::lenenc_int_len(*self.tx_length as u64) as usize); // tx_length
+        len += S(crate::misc::lenenc_int_len(*self.tx_length) as usize); // tx_length
         len += S(4); // immediate_server_version
         if self.immediate_server_version != self.original_server_version {
             len += S(4); // original_server_version

@@ -109,7 +109,7 @@ where
     /// Will write packets into the stream. Stream may not be flushed.
     pub fn write<U: Buf>(&mut self, item: &mut U) -> Result<(), PacketCodecError> {
         self.codec.encode(item, &mut self.out_buf)?;
-        with_interrupt!(self.stream.write_all(&*self.out_buf))?;
+        with_interrupt!(self.stream.write_all(&self.out_buf))?;
         self.out_buf.clear();
         Ok(())
     }

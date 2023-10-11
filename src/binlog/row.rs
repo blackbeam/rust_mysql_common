@@ -85,7 +85,7 @@ impl BinlogRow {
 
     /// Returns columns of this row.
     pub fn columns_ref(&self) -> &[Column] {
-        &*self.columns
+        &self.columns
     }
 
     /// Returns columns of this row.
@@ -229,9 +229,10 @@ impl<'de> MyDeserialize<'de> for BinlogRow {
                     column_flags |= ColumnFlags::UNSIGNED_FLAG;
                 }
 
-                if let Some(_) = primary_key_iter
+                if primary_key_iter
                     .next_if(|next| next.is_err() || next.as_ref().ok() == Some(&(i as u64)))
                     .transpose()?
+                    .is_some()
                 {
                     column_flags |= ColumnFlags::PRI_KEY_FLAG;
                 }

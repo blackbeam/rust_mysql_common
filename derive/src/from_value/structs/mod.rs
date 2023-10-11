@@ -36,14 +36,11 @@ pub fn impl_from_value_for_struct(
         }
     };
 
-    let meta = attrs.into_iter().map(|attr| &attr.meta).collect::<Vec<_>>();
+    let meta = attrs.iter().map(|attr| &attr.meta).collect::<Vec<_>>();
 
     let item_attrs = meta
         .iter()
-        .find_map(|x| match x {
-            syn::Meta::List(y) if y.path.is_ident("mysql") => Some(x),
-            _ => None,
-        })
+        .find(|x| matches!(x, syn::Meta::List(y) if y.path.is_ident("mysql")))
         .map(|x| <attrs::container::Mysql as FromMeta>::from_meta(x))
         .transpose()?
         .unwrap_or_default();
@@ -240,7 +237,7 @@ impl ToTokens for NewType<'_> {
         });
 
         let additional_bounds = {
-            let additional_bounds = self.item_attrs.bound.iter().map(|x| x.0.iter()).flatten();
+            let additional_bounds = self.item_attrs.bound.iter().flat_map(|x| x.0.iter());
             quote::quote!(#(#additional_bounds,)*)
         };
 

@@ -21,14 +21,11 @@ pub fn impl_from_value_for_enum(
     data_enum: &syn::DataEnum,
 ) -> crate::Result<TokenStream> {
     let item_attrs = <container::Mysql as FromAttributes>::from_attributes(attrs).expect("foo");
-    let meta = attrs.into_iter().map(|attr| &attr.meta).collect::<Vec<_>>();
+    let meta = attrs.iter().map(|attr| &attr.meta).collect::<Vec<_>>();
 
     let repr = meta
         .iter()
-        .find_map(|x| match x {
-            syn::Meta::List(y) if y.path.is_ident("repr") => Some(x),
-            _ => None,
-        })
+        .find(|x| matches!(x, syn::Meta::List(y) if y.path.is_ident("repr")))
         .map(|x| <container::Repr as FromMeta>::from_meta(x))
         .transpose()?
         .unwrap_or_default();
@@ -233,26 +230,24 @@ impl ToTokens for Enum {
                             Ok(#ir_name(#parsed_name::Parsed(#container_name::#ident, v)))
                         }
                     )
+                } else if discriminant < &BigInt::default() {
+                    quote::quote!(
+                        #crat::Value::Bytes(ref x) if x == #s => {
+                            Ok(#ir_name(#parsed_name::Parsed(#container_name::#ident, v)))
+                        }
+                        #crat::Value::Int(#n) => {
+                            Ok(#ir_name(#parsed_name::Ready(#container_name::#ident)))
+                        }
+                    )
                 } else {
-                    if discriminant < &BigInt::default() {
-                        quote::quote!(
-                            #crat::Value::Bytes(ref x) if x == #s => {
-                                Ok(#ir_name(#parsed_name::Parsed(#container_name::#ident, v)))
-                            }
-                            #crat::Value::Int(#n) => {
-                                Ok(#ir_name(#parsed_name::Ready(#container_name::#ident)))
-                            }
-                        )
-                    } else {
-                        quote::quote!(
-                            #crat::Value::Bytes(ref x) if x == #s => {
-                                Ok(#ir_name(#parsed_name::Parsed(#container_name::#ident, v)))
-                            }
-                            #crat::Value::Int(#n) | #crat::Value::UInt(#n) => {
-                                Ok(#ir_name(#parsed_name::Ready(#container_name::#ident)))
-                            }
-                        )
-                    }
+                    quote::quote!(
+                        #crat::Value::Bytes(ref x) if x == #s => {
+                            Ok(#ir_name(#parsed_name::Parsed(#container_name::#ident, v)))
+                        }
+                        #crat::Value::Int(#n) | #crat::Value::UInt(#n) => {
+                            Ok(#ir_name(#parsed_name::Ready(#container_name::#ident)))
+                        }
+                    )
                 }
             },
         );

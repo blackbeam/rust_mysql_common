@@ -250,9 +250,9 @@ impl ColumnType {
             | Self::MYSQL_TYPE_ENUM
             | Self::MYSQL_TYPE_STRING
             | Self::MYSQL_TYPE_BIT => ptr.get(..2).map(|x| (x, 2)),
-            Self::MYSQL_TYPE_TYPED_ARRAY => Self::try_from(*ptr.get(0)?)
+            Self::MYSQL_TYPE_TYPED_ARRAY => Self::try_from(*ptr.first()?)
                 .ok()?
-                .get_metadata(&ptr.get(1..)?, true)
+                .get_metadata(ptr.get(1..)?, true)
                 .map(|(x, n)| (x, n + 1)),
             _ => Some((&[], 0)),
         }

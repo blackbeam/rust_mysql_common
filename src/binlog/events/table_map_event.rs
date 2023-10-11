@@ -238,7 +238,7 @@ impl<'a> TableMapEvent<'a> {
             _ => (),
         }
 
-        return Ok(column_type);
+        Ok(column_type)
     }
 }
 
@@ -316,7 +316,7 @@ impl<'a> BinlogStruct<'a> for TableMapEvent<'a> {
         len += S(1);
         len += S(min(self.table_name.0.len(), u8::MAX as usize));
         len += S(1);
-        len += S(crate::misc::lenenc_int_len(self.columns_count() as u64) as usize);
+        len += S(crate::misc::lenenc_int_len(self.columns_count()) as usize);
         len += S(self.columns_count() as usize);
         len += S(crate::misc::lenenc_str_len(self.columns_metadata.as_bytes()) as usize);
         len += S((self.columns_count() as usize + 8) / 7);
@@ -1194,7 +1194,7 @@ impl<'a> OptionalMetadataIter<'a> {
             .0
             .iter()
             .filter_map(|val| ColumnType::try_from(*val).ok())
-            .filter(|ty| f(ty))
+            .filter(f)
             .count()
     }
 }

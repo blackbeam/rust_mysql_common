@@ -74,7 +74,7 @@ impl MySerialize for Value {
         match self {
             Self::NULL => (),
             Value::Bytes(x) => {
-                buf.put_lenenc_str(&*x);
+                buf.put_lenenc_str(x);
             }
             Value::Int(x) => {
                 buf.put_i64_le(*x);
@@ -226,7 +226,7 @@ impl Value {
     pub fn bin_len(&self) -> u64 {
         match self {
             Value::NULL => 0,
-            Value::Bytes(x) => lenenc_str_len(&*x),
+            Value::Bytes(x) => lenenc_str_len(x),
             Value::Int(_) => 8,
             Value::UInt(_) => 8,
             Value::Float(_) => 4,
@@ -283,7 +283,7 @@ impl Value {
                     )
                 }
             }
-            Value::Bytes(ref bytes) => match from_utf8(&*bytes) {
+            Value::Bytes(ref bytes) => match from_utf8(bytes) {
                 Ok(string) => escaped(string, no_backslash_escape),
                 Err(_) => {
                     let mut s = String::from("0x");
@@ -457,10 +457,10 @@ impl fmt::Debug for Value {
                 let mut debug = formatter.debug_tuple("Bytes");
                 if bytes.len() <= 8 {
                     debug
-                        .field(&String::from_utf8_lossy(&*bytes).replace("\n", "\\n"))
+                        .field(&String::from_utf8_lossy(bytes).replace('\n', "\\n"))
                         .finish()
                 } else {
-                    let bytes = String::from_utf8_lossy(&bytes[..8]).replace("\n", "\\n");
+                    let bytes = String::from_utf8_lossy(&bytes[..8]).replace('\n', "\\n");
                     debug.field(&format!("{}..", bytes)).finish()
                 }
             }

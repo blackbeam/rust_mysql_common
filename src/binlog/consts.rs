@@ -743,7 +743,7 @@ impl TryFrom<u64> for Gno {
     type Error = InvalidGno;
 
     fn try_from(value: u64) -> Result<Self, Self::Error> {
-        if value == 0 || (Self::MIN_GNO <= value && value <= Self::MAX_GNO) {
+        if value == 0 || (Self::MIN_GNO..Self::MAX_GNO).contains(&value) {
             Ok(Self(value))
         } else {
             Err(InvalidGno(value))

@@ -276,7 +276,7 @@ impl Column {
 
     /// Returns value of the schema field of a column packet as a byte slice.
     pub fn schema_ref(&self) -> &[u8] {
-        &*self.schema
+        &self.schema
     }
 
     /// Returns value of the schema field of a column packet as a string (lossy converted).
@@ -286,7 +286,7 @@ impl Column {
 
     /// Returns value of the table field of a column packet as a byte slice.
     pub fn table_ref(&self) -> &[u8] {
-        &*self.table
+        &self.table
     }
 
     /// Returns value of the table field of a column packet as a string (lossy converted).
@@ -298,7 +298,7 @@ impl Column {
     ///
     /// "org_table" is for original table name.
     pub fn org_table_ref(&self) -> &[u8] {
-        &*self.org_table
+        &self.org_table
     }
 
     /// Returns value of the org_table field of a column packet as a string (lossy converted).
@@ -308,7 +308,7 @@ impl Column {
 
     /// Returns value of the name field of a column packet as a byte slice.
     pub fn name_ref(&self) -> &[u8] {
-        &*self.name
+        &self.name
     }
 
     /// Returns value of the name field of a column packet as a string (lossy converted).
@@ -320,7 +320,7 @@ impl Column {
     ///
     /// "org_name" is for original column name.
     pub fn org_name_ref(&self) -> &[u8] {
-        &*self.org_name
+        &self.org_name
     }
 
     /// Returns value of the org_name field of a column packet as a string (lossy converted).
@@ -726,7 +726,7 @@ impl<'a> ProgressReport<'a> {
 
     /// Status or state name as a byte slice.
     pub fn stage_info_ref(&self) -> &[u8] {
-        &self.stage_info.as_bytes()
+        self.stage_info.as_bytes()
     }
 
     /// Status or state name as a string (lossy converted).
@@ -1136,7 +1136,7 @@ impl<'a> AuthPlugin<'a> {
             AuthPlugin::MysqlNativePassword => MYSQL_NATIVE_PASSWORD_PLUGIN_NAME,
             AuthPlugin::MysqlOldPassword => MYSQL_OLD_PASSWORD_PLUGIN_NAME,
             AuthPlugin::MysqlClearPassword => MYSQL_CLEAR_PASSWORD_PLUGIN_NAME,
-            AuthPlugin::Other(name) => &*name,
+            AuthPlugin::Other(name) => name,
         }
     }
 
@@ -1150,7 +1150,7 @@ impl<'a> AuthPlugin<'a> {
         }
     }
 
-    pub fn borrow<'b>(&'b self) -> AuthPlugin<'b> {
+    pub fn borrow(&self) -> AuthPlugin<'_> {
         match self {
             AuthPlugin::CachingSha2Password => AuthPlugin::CachingSha2Password,
             AuthPlugin::MysqlNativePassword => AuthPlugin::MysqlNativePassword,
@@ -1266,6 +1266,12 @@ impl OldAuthSwitchRequest {
 
     pub const fn auth_plugin(&self) -> AuthPlugin<'static> {
         AuthPlugin::MysqlOldPassword
+    }
+}
+
+impl Default for OldAuthSwitchRequest {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -3116,7 +3122,7 @@ impl<'a> ComBinlogDumpGtid<'a> {
 
     /// Returns the sequence of sids in this packet.
     pub fn sids(&self) -> &[Sid<'a>] {
-        &*self.sid_block
+        &self.sid_block
     }
 
     /// Defines filename for this instance.

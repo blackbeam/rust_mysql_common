@@ -231,7 +231,7 @@ impl Event {
         let contains_checksum = self.footer.checksum_alg.is_some()
             && (self.header.event_type.0 == (EventType::FORMAT_DESCRIPTION_EVENT as u8)
                 || self.footer.checksum_alg != Some(RawConst::new(0)));
-        contains_checksum.then(|| self.checksum)
+        contains_checksum.then_some(self.checksum)
     }
 
     /// Read event-type specific data as a binlog struct.
@@ -674,18 +674,18 @@ impl MySerialize for EventData<'_> {
     fn serialize(&self, buf: &mut Vec<u8>) {
         match self {
             EventData::UnknownEvent => (),
-            EventData::StartEventV3(ev) => buf.put_slice(&*ev),
+            EventData::StartEventV3(ev) => buf.put_slice(ev),
             EventData::QueryEvent(ev) => ev.serialize(buf),
             EventData::StopEvent => (),
             EventData::RotateEvent(ev) => ev.serialize(buf),
             EventData::IntvarEvent(ev) => ev.serialize(buf),
-            EventData::LoadEvent(ev) => buf.put_slice(&*ev),
+            EventData::LoadEvent(ev) => buf.put_slice(ev),
             EventData::SlaveEvent => (),
-            EventData::CreateFileEvent(ev) => buf.put_slice(&*ev),
-            EventData::AppendBlockEvent(ev) => buf.put_slice(&*ev),
-            EventData::ExecLoadEvent(ev) => buf.put_slice(&*ev),
-            EventData::DeleteFileEvent(ev) => buf.put_slice(&*ev),
-            EventData::NewLoadEvent(ev) => buf.put_slice(&*ev),
+            EventData::CreateFileEvent(ev) => buf.put_slice(ev),
+            EventData::AppendBlockEvent(ev) => buf.put_slice(ev),
+            EventData::ExecLoadEvent(ev) => buf.put_slice(ev),
+            EventData::DeleteFileEvent(ev) => buf.put_slice(ev),
+            EventData::NewLoadEvent(ev) => buf.put_slice(ev),
             EventData::RandEvent(ev) => ev.serialize(buf),
             EventData::UserVarEvent(ev) => ev.serialize(buf),
             EventData::FormatDescriptionEvent(ev) => ev.serialize(buf),
@@ -693,19 +693,19 @@ impl MySerialize for EventData<'_> {
             EventData::BeginLoadQueryEvent(ev) => ev.serialize(buf),
             EventData::ExecuteLoadQueryEvent(ev) => ev.serialize(buf),
             EventData::TableMapEvent(ev) => ev.serialize(buf),
-            EventData::PreGaWriteRowsEvent(ev) => buf.put_slice(&*ev),
-            EventData::PreGaUpdateRowsEvent(ev) => buf.put_slice(&*ev),
-            EventData::PreGaDeleteRowsEvent(ev) => buf.put_slice(&*ev),
+            EventData::PreGaWriteRowsEvent(ev) => buf.put_slice(ev),
+            EventData::PreGaUpdateRowsEvent(ev) => buf.put_slice(ev),
+            EventData::PreGaDeleteRowsEvent(ev) => buf.put_slice(ev),
             EventData::IncidentEvent(ev) => ev.serialize(buf),
             EventData::HeartbeatEvent => (),
-            EventData::IgnorableEvent(ev) => buf.put_slice(&*ev),
+            EventData::IgnorableEvent(ev) => buf.put_slice(ev),
             EventData::RowsQueryEvent(ev) => ev.serialize(buf),
             EventData::GtidEvent(ev) => ev.serialize(buf),
             EventData::AnonymousGtidEvent(ev) => ev.serialize(buf),
-            EventData::PreviousGtidsEvent(ev) => buf.put_slice(&*ev),
-            EventData::TransactionContextEvent(ev) => buf.put_slice(&*ev),
-            EventData::ViewChangeEvent(ev) => buf.put_slice(&*ev),
-            EventData::XaPrepareLogEvent(ev) => buf.put_slice(&*ev),
+            EventData::PreviousGtidsEvent(ev) => buf.put_slice(ev),
+            EventData::TransactionContextEvent(ev) => buf.put_slice(ev),
+            EventData::ViewChangeEvent(ev) => buf.put_slice(ev),
+            EventData::XaPrepareLogEvent(ev) => buf.put_slice(ev),
             EventData::RowsEvent(ev) => ev.serialize(buf),
             EventData::TransactionPayloadEvent(ev) => ev.serialize(buf),
         }

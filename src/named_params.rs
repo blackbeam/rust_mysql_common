@@ -83,10 +83,11 @@ pub fn parse_named_params(
                     rematch = true;
                 }
             },
-            InSharpComment => match c {
-                b'\n' => state = TopLevel,
-                _ => (),
-            },
+            InSharpComment => {
+                if *c == b'\n' {
+                    state = TopLevel
+                }
+            }
             MaybeInDoubleDashComment1 => match c {
                 b'-' => state = MaybeInDoubleDashComment2,
                 _ => state = TopLevel,
@@ -98,10 +99,11 @@ pub fn parse_named_params(
                     state = TopLevel
                 }
             }
-            InDoubleDashComment => match c {
-                b'\n' => state = TopLevel,
-                _ => (),
-            },
+            InDoubleDashComment => {
+                if *c == b'\n' {
+                    state = TopLevel
+                }
+            }
             MaybeInCComment1 => match c {
                 b'*' => state = MaybeInCComment2,
                 _ => state = TopLevel,
@@ -110,10 +112,11 @@ pub fn parse_named_params(
                 b'!' | b'+' => state = TopLevel, // extensions and optimizer hints
                 _ => state = InCComment,
             },
-            InCComment => match c {
-                b'*' => state = MaybeExitCComment,
-                _ => (),
-            },
+            InCComment => {
+                if *c == b'*' {
+                    state = MaybeExitCComment
+                }
+            }
             MaybeExitCComment => match c {
                 b'/' => state = TopLevel,
                 _ => state = InCComment,
