@@ -19,7 +19,7 @@ use std::{
     convert::TryFrom,
     hash::Hash,
     io::{
-        self, Error,
+        self, BufRead, Error,
         ErrorKind::{InvalidData, UnexpectedEof},
         Read, Write,
     },
@@ -30,9 +30,12 @@ use crate::{
     proto::{MyDeserialize, MySerialize},
 };
 
+#[allow(unused)]
+use self::events::TransactionPayloadEvent;
+
 use self::{
     consts::{BinlogVersion, EventType},
-    events::{Event, FormatDescriptionEvent, TableMapEvent},
+    events::{Event, FormatDescriptionEvent, RotateEvent, TableMapEvent},
 };
 
 pub mod consts;
@@ -100,9 +103,11 @@ impl BinlogFileHeader {
 
 /// Reader for binlog events.
 ///
-/// It'll maintain actual fde and table map, and can be used
-/// to read binlog files and binlog event streams from server.
-#[derive(Debug, Clone, Eq, PartialEq)]
+/// # Note
+///
+/// It's a low-level stream reader and only maintains actual fde and table map,
+/// so one should properly handle encountered events (see docs on [`EventStreamReader::read`]).
+#[derive(Debug)]
 pub struct EventStreamReader {
     fde: FormatDescriptionEvent<'static>,
     table_map: HashMap<u64, TableMapEvent<'static>>,
@@ -138,56 +143,99 @@ impl EventStreamReader {
         self.table_map.get(&table_id)
     }
 
-    /// Will read next event from the given stream.
-    pub fn read<T: Read>(&mut self, input: T) -> io::Result<Event> {
-        let event = Event::read(&self.fde, input)?;
-        let event_type = event.header().event_type_raw();
-
-        if event_type == EventType::FORMAT_DESCRIPTION_EVENT as u8 {
-            // we'll redefine fde with an actual one
-            self.fde = match event.read_event::<FormatDescriptionEvent>() {
-                Ok(fde) => fde.into_owned().with_footer(event.footer()),
-                Err(err) => return Err(err),
-            };
-        } else if event_type == EventType::TABLE_MAP_EVENT as u8 {
-            // we'll maintain known table maps
-            match event.read_event::<TableMapEvent>() {
-                Ok(tme) => {
-                    self.table_map.insert(tme.table_id(), tme.into_owned());
-                }
-                Err(err) => return Err(err),
-            }
+    /// Will read next event from the given stream (Returns None if stream is exhausted).
+    ///
+    /// # Note
+    ///
+    /// Since MySql 8.0.20 it is possible for an event stream to contain an embedded
+    /// stream of events in form of a [`TransactionPayloadEvent`]. This means that
+    /// to properly handle table maps it is necessary to read the embedded stream
+    /// as soon as it is encountered (see [`EventStreamReader::read_decompressed`]).
+    pub fn read<T: BufRead>(&mut self, mut input: T) -> io::Result<Option<Event>> {
+        if input.fill_buf().map(|x| x.is_empty())? {
+            return Ok(None);
         }
 
-        Ok(event)
+        let event = Event::read(&self.fde, input)?;
+
+        self.handle_event(&event)?;
+
+        Ok(Some(event))
     }
 
-    /// This is a convenience function to read decompressed paylaod of a Transaction_payload_event
-    /// (see [`events::TransactionPayloadEvent::decompress_payload`]).
+    /// This function reads decompressed payload of a Transaction_payload_event
+    /// (see [`TransactionPayloadEvent::decompressed`]).
     ///
     /// The difference is that checksum verification will be disabled according to the WL#3549.
     ///
     /// # Warning
     ///
     /// This function can't be used to skip checksum verification for regular events.
-    pub fn read_decompressed<T: Read>(&mut self, input: T) -> io::Result<Event> {
+    ///
+    /// # Errors
+    ///
+    /// There is a list of events that should never be a part of a transaction payload and the list
+    /// includes the [`TransactionPayloadEvent`] itself.
+    /// This function will emit an [`io::ErrorKind::Other`] if [`TransactionPayloadEvent`]
+    /// is encountered within the compressed payload.
+    pub fn read_decompressed<T: BufRead>(&mut self, input: T) -> io::Result<Option<Event>> {
         self.set_checksum_enabled(false);
         let result = self.read(input);
         self.set_checksum_enabled(true);
-        result
+        let Some(event) = result? else {
+            return Ok(None);
+        };
+
+        if event.header().event_type_raw() == EventType::TRANSACTION_PAYLOAD_EVENT as u8 {
+            return Err(io::Error::new(
+                io::ErrorKind::Other,
+                "TRANSACTION_PAYLOAD_EVENT encountered",
+            ));
+        }
+
+        self.handle_event(&event)?;
+
+        Ok(Some(event))
+    }
+
+    fn handle_event(&mut self, event: &Event) -> io::Result<()> {
+        let event_type = event.header().event_type_raw();
+
+        if event_type == EventType::FORMAT_DESCRIPTION_EVENT as u8 {
+            // we'll redefine fde with an actual one
+            let fde = event.read_event::<FormatDescriptionEvent>()?;
+            self.fde = fde.into_owned().with_footer(event.footer());
+        } else if event_type == EventType::TABLE_MAP_EVENT as u8 {
+            // we'll maintain known table maps
+            let tme = event.read_event::<TableMapEvent>()?;
+            self.table_map.insert(tme.table_id(), tme.into_owned());
+        } else if event_type == EventType::ROTATE_EVENT as u8 {
+            // we'll keep table map size within reasonlable bounds
+
+            // TODO: This value is arbitrary
+            const TABLE_MAP_MAX_SIZE: usize = 64;
+
+            let re = event.read_event::<RotateEvent>()?;
+            if !re.is_fake() {
+                self.table_map.clear();
+                self.table_map.shrink_to(TABLE_MAP_MAX_SIZE);
+            }
+        }
+
+        Ok(())
     }
 }
 
 /// Binlog file.
 ///
 /// It's an iterator over events in a binlog file.
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug)]
 pub struct BinlogFile<T> {
     reader: EventStreamReader,
     read: T,
 }
 
-impl<T: Read> BinlogFile<T> {
+impl<T: BufRead> BinlogFile<T> {
     /// Creates a new instance.
     ///
     /// It'll try to read binlog file header.
@@ -208,12 +256,12 @@ impl<T: Read> BinlogFile<T> {
     }
 }
 
-impl<T: Read> Iterator for BinlogFile<T> {
+impl<T: BufRead> Iterator for BinlogFile<T> {
     type Item = io::Result<Event>;
 
     fn next(&mut self) -> Option<Self::Item> {
         match self.reader.read(&mut self.read) {
-            Ok(event) => Some(Ok(event)),
+            Ok(event) => event.map(Ok),
             Err(err) if err.kind() == UnexpectedEof => None,
             Err(err) => Some(Err(err)),
         }
@@ -892,28 +940,27 @@ mod tests {
                 if file_path.file_name().unwrap() == "transaction_compression.000001" {
                     if let Some(EventData::TransactionPayloadEvent(data)) = ev.read_data().unwrap()
                     {
-                        let decompressed_payload = data.decompress_payload();
-                        let mut data = &decompressed_payload[..];
+                        let mut payload = data.decompressed()?;
                         let reader = binlog_file.reader_mut();
 
-                        let mut binlog_ev = reader.read_decompressed(&mut data)?;
+                        let mut binlog_ev = reader.read_decompressed(&mut payload)?.unwrap();
                         assert_eq!(binlog_ev.header().event_type(), Ok(EventType::QUERY_EVENT));
 
-                        binlog_ev = reader.read_decompressed(&mut data)?;
+                        binlog_ev = reader.read_decompressed(&mut payload)?.unwrap();
                         assert_eq!(
                             binlog_ev.header().event_type(),
                             Ok(EventType::TABLE_MAP_EVENT)
                         );
 
-                        binlog_ev = reader.read_decompressed(&mut data)?;
+                        binlog_ev = reader.read_decompressed(&mut payload)?.unwrap();
                         assert_eq!(
                             binlog_ev.header().event_type(),
                             Ok(EventType::WRITE_ROWS_EVENT)
                         );
 
-                        binlog_ev = reader.read_decompressed(&mut data)?;
+                        binlog_ev = reader.read_decompressed(&mut payload)?.unwrap();
                         assert_eq!(binlog_ev.header().event_type(), Ok(EventType::XID_EVENT));
-                        assert!(data.is_empty());
+                        assert!(reader.read_decompressed(&mut payload)?.is_none());
                     }
                 }
                 output = Vec::new();

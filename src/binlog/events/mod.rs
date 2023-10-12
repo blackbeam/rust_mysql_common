@@ -34,7 +34,7 @@ pub use self::{
     rows_event::{RowsEvent, RowsEventRows},
     rows_query_event::RowsQueryEvent,
     table_map_event::*,
-    transaction_payload_event::TransactionPayloadEvent,
+    transaction_payload_event::{TransactionPayloadEvent, TransactionPayloadReader},
     update_rows_event::UpdateRowsEvent,
     update_rows_event_v1::UpdateRowsEventV1,
     user_var_event::UserVarEvent,
