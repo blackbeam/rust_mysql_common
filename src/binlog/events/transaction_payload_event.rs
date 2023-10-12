@@ -11,6 +11,9 @@ use std::{borrow::Cow, cmp::min, convert::TryFrom, io};
 
 use saturating::Saturating as S;
 
+#[allow(unused)]
+use crate::binlog::EventStreamReader;
+
 use super::BinlogEventHeader;
 use crate::{
     binlog::{

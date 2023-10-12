@@ -22,7 +22,7 @@ use crate::value::Value;
 
 pub mod bigdecimal;
 pub mod bigdecimal02;
-pub mod bigdecimal04;
+pub mod bigdecimal03;
 pub mod bigint;
 pub mod chrono;
 pub mod decimal;

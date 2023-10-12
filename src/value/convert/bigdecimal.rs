@@ -1,4 +1,4 @@
-// Copyright (c) 2021 Anatoly Ikorsky
+// Copyright (c) 2023 Anatoly Ikorsky
 //
 // Licensed under the Apache License, Version 2.0
 // <LICENSE-APACHE or http://www.apache.org/licenses/LICENSE-2.0> or the MIT
@@ -6,7 +6,7 @@
 // option. All files in the project carrying such notice may not be copied,
 // modified, or distributed except according to those terms.
 
-//! This module implements conversion from/to `Value` for the `BigDecimal` type (`bigdecimal` crate version "0.3.x").
+//! This module implements conversion from/to `Value` for `BigDecimal` type.
 
 #![cfg(feature = "bigdecimal")]
 
