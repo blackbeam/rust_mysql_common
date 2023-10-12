@@ -84,6 +84,12 @@ subprocess = "0.2"
 [profile.bench]
 debug = true
 
+[profile.features-subsets]
+inherits = "test"
+debug = false
+strip = "debuginfo"
+incremental = false
+
 [features]
 default = [
     "flate2/zlib",
