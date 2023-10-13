@@ -54,6 +54,7 @@
 //! | [`decimal::Decimal`]                 | MySql int, uint or bytes parsed using `Decimal::from_str`.<br>⚠️ Note that this type doesn't support full range of MySql `DECIMAL` type. |
 //! | [`bigdecimal::BigDecimal`] (v0.2.x)  | MySql int, uint, floats or bytes parsed using `BigDecimal::parse_bytes`.<br>⚠️ Note that range of this type is greater than supported by MySql `DECIMAL` type but it'll be serialized anyway. |
 //! | [`bigdecimal::BigDecimal`] (v0.3.x)  | MySql int, uint, floats or bytes parsed using `BigDecimal::parse_bytes`.<br>⚠️ Note that range of this type is greater than supported by MySql `DECIMAL` type but it'll be serialized anyway. |
+//! | [`bigdecimal::BigDecimal`] (v0.4.x)  | MySql int, uint, floats or bytes parsed using `BigDecimal::parse_bytes`.<br>⚠️ Note that range of this type is greater than supported by MySql `DECIMAL` type but it'll be serialized anyway. |
 //! | `num_bigint::{BigInt, BigUint}`      | MySql int, uint or bytes parsed using `_::parse_bytes`.<br>⚠️ Note that range of this type is greater than supported by MySql integer types but it'll be serialized anyway (as decimal bytes string). |
 //!
 //! Also crate provides from-row convertion for the following list of types (see `FromRow` trait):
@@ -70,8 +71,8 @@
 //! | Feature        | Description                                          | Default |
 //! | -------------- | ---------------------------------------------------- | ------- |
 //! | `bigdecimal02` | Enables `bigdecimal` v0.2.x types support            | 🔴      |
-//! | `bigdecimal`   | Enables `bigdecimal` v0.3.x types support            | 🟢      |
-//! | `bigdecimal04` | Enables `bigdecimal` v0.4.x types support            | 🔴      |
+//! | `bigdecimal03` | Enables `bigdecimal` v0.3.x types support            | 🔴      |
+//! | `bigdecimal`   | Enables `bigdecimal` v0.4.x types support            | 🟢      |
 //! | `chrono`       | Enables `chrono` types support                       | 🔴      |
 //! | `rust_decimal` | Enables `rust_decimal` types support                 | 🟢      |
 //! | `time02`       | Enables `time` v0.2.x types support                  | 🔴      |
@@ -94,7 +95,7 @@
 //!
 //! #### Container attributes:
 //!
-//! *  `#[mysql(crate_name = "some_name")]` – overrides an attemt to guess a crate that provides
+//! *  `#[mysql(crate_name = "some_name")]` – overrides an attempt to guess a crate that provides
 //!    required traits
 //! *  `#[mysql(rename_all = ...)]` – rename all the variants according to the given case
 //!    convention. The possible values are "lowercase", "UPPERCASE", "PascalCase", "camelCase",
@@ -143,7 +144,7 @@
 //!
 //! #### Container attributes:
 //!
-//! *  `#[mysql(crate_name = "some_name")]` – overrides an attemt to guess a crate to import types from
+//! *  `#[mysql(crate_name = "some_name")]` – overrides an attempt to guess a crate to import types from
 //! *  `#[mysql(bound = "Foo: Bar, Baz: Quux")]` – use the following additional bounds
 //! *  `#[mysql(deserialize_with = "some::path")]` – use the following function to deserialize
 //!    the wrapped value. Expected signature is `fn (Value) -> Result<Wrapped, FromValueError>`.
@@ -248,7 +249,7 @@
 //!
 //! ### Container attributes:
 //!
-//! *  `#[mysql(crate_name = "some_name")]` – overrides an attemt to guess a crate that provides
+//! *  `#[mysql(crate_name = "some_name")]` – overrides an attempt to guess a crate that provides
 //!    required traits
 //! *  `#[mysql(rename_all = ...)]` – rename all column names according to the given case
 //!    convention. The possible values are "lowercase", "UPPERCASE", "PascalCase", "camelCase",
@@ -341,6 +342,9 @@ pub mod bitflags_ext;
 
 #[cfg(feature = "bigdecimal02")]
 pub use bigdecimal02;
+
+#[cfg(feature = "bigdecimal03")]
+pub use bigdecimal03;
 
 #[cfg(feature = "bigdecimal")]
 pub use bigdecimal;

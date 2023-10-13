@@ -124,7 +124,7 @@ macro_rules! def_end_repr {
                     buf.$ser(val)
                 }
 
-                fn deserialize<'de>(buf: &mut ParseBuf<'de>) -> io::Result<Self::Primitive> {
+                fn deserialize(buf: &mut ParseBuf<'_>) -> io::Result<Self::Primitive> {
                     Ok(buf.$de())
                 }
             }
@@ -144,7 +144,7 @@ macro_rules! def_end_repr {
                     buf.$ser(val)
                 }
 
-                fn deserialize<'de>(buf: &mut ParseBuf<'de>) -> io::Result<Self::Primitive> {
+                fn deserialize(buf: &mut ParseBuf<'_>) -> io::Result<Self::Primitive> {
                     buf.$de().ok_or_else(crate::misc::unexpected_buf_eof)
                 }
             }

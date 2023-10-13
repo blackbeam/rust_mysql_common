@@ -6,10 +6,18 @@
 // option. All files in the project carrying such notice may not be copied,
 // modified, or distributed except according to those terms.
 
-use crate::io::ReadMysqlExt;
-use std::{borrow::Cow, cmp::min, convert::TryFrom, io};
+use std::{
+    borrow::Cow,
+    cmp::min,
+    convert::TryFrom,
+    fmt,
+    io::{self, BufRead, BufReader},
+};
 
 use saturating::Saturating as S;
+
+#[allow(unused)]
+use crate::binlog::EventStreamReader;
 
 use super::BinlogEventHeader;
 use crate::{
@@ -19,28 +27,129 @@ use crate::{
         },
         BinlogCtx, BinlogEvent, BinlogStruct,
     },
-    io::{BufMutExt, ParseBuf},
+    io::{BufMutExt, ParseBuf, ReadMysqlExt},
     misc::raw::{bytes::EofBytes, int::*, RawBytes},
     proto::{MyDeserialize, MySerialize},
 };
 
-/// The rotate event is added to the binlog as last event
-/// to tell the reader what binlog to request next.
+/// This structure implements [`io::BufRead`] and represents
+/// the payload of a [`TransactionPayloadEvent`].
+#[derive(Debug)]
+pub struct TransactionPayloadReader<'a> {
+    inner: TransactionPayloadInner<'a>,
+}
+
+impl<'a> TransactionPayloadReader<'a> {
+    /// Creates new instance (`data` is not compressed).
+    pub fn new_uncompressed(data: &'a [u8]) -> Self {
+        Self {
+            inner: TransactionPayloadInner::Uncompressed(data),
+        }
+    }
+
+    /// Creates new instance (`data` is ZSTD-compressed).
+    pub fn new_zstd(data: &'a [u8]) -> io::Result<Self> {
+        let decoder = zstd::Decoder::with_buffer(data)?;
+        Ok(Self {
+            inner: TransactionPayloadInner::ZstdCompressed(BufReader::new(decoder)),
+        })
+    }
+
+    /// Returns `false` if the reader is exhausted.
+    ///
+    /// Some io might be necessary to check for data,
+    /// so this functions returns `Result<bool>`, not `bool`.
+    pub fn has_data_left(&mut self) -> io::Result<bool> {
+        self.inner.has_data_left()
+    }
+}
+
+impl io::Read for TransactionPayloadReader<'_> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        self.inner.read(buf)
+    }
+}
+
+impl io::BufRead for TransactionPayloadReader<'_> {
+    fn fill_buf(&mut self) -> io::Result<&[u8]> {
+        self.inner.fill_buf()
+    }
+
+    fn consume(&mut self, amt: usize) {
+        self.inner.consume(amt)
+    }
+}
+
+/// Wraps the data providing [`io::BufRead`] implementaion.
+enum TransactionPayloadInner<'a> {
+    Uncompressed(&'a [u8]),
+    ZstdCompressed(BufReader<zstd::Decoder<'a, &'a [u8]>>),
+}
+
+impl TransactionPayloadInner<'_> {
+    fn has_data_left(&mut self) -> io::Result<bool> {
+        match self {
+            TransactionPayloadInner::Uncompressed(x) => Ok(!x.is_empty()),
+            TransactionPayloadInner::ZstdCompressed(ref mut x) => {
+                x.fill_buf().map(|b| !b.is_empty())
+            }
+        }
+    }
+}
+
+impl io::BufRead for TransactionPayloadInner<'_> {
+    fn fill_buf(&mut self) -> io::Result<&[u8]> {
+        match self {
+            TransactionPayloadInner::Uncompressed(ref mut x) => x.fill_buf(),
+            TransactionPayloadInner::ZstdCompressed(ref mut x) => x.fill_buf(),
+        }
+    }
+
+    fn consume(&mut self, amt: usize) {
+        match self {
+            TransactionPayloadInner::Uncompressed(ref mut x) => x.consume(amt),
+            TransactionPayloadInner::ZstdCompressed(ref mut x) => x.consume(amt),
+        }
+    }
+}
+
+impl io::Read for TransactionPayloadInner<'_> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        match self {
+            TransactionPayloadInner::Uncompressed(ref mut x) => x.read(buf),
+            TransactionPayloadInner::ZstdCompressed(ref mut x) => x.read(buf),
+        }
+    }
+}
+
+impl fmt::Debug for TransactionPayloadInner<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Uncompressed(arg0) => f.debug_tuple("Uncompressed").field(arg0).finish(),
+            Self::ZstdCompressed(_) => f.debug_tuple("ZstdCompressed").field(&"..").finish(),
+        }
+    }
+}
+
+/// Event that encloses all the events of a transaction.
+///
+/// It is used for carrying compressed payloads, and contains
+/// compression metadata.
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct TransactionPayloadEvent<'a> {
-    // payload size
+    /// payload size
     payload_size: RawInt<LeU64>,
 
-    // compression algorithm
+    /// compression algorithm
     algorithm: TransactionPayloadCompressionType,
 
-    // uncompressed size
+    /// uncompressed size
     uncompressed_size: RawInt<LeU64>,
 
-    // payload to be decompressed
+    /// payload to be decompressed
     payload: RawBytes<'a, EofBytes>,
 
-    // size of parsed header
+    /// size of parsed header
     header_size: usize,
 }
 
@@ -53,7 +162,7 @@ impl<'a> TransactionPayloadEvent<'a> {
     ) -> Self {
         Self {
             payload_size: RawInt::new(payload_size),
-            algorithm: algorithm,
+            algorithm,
             uncompressed_size: RawInt::new(uncompressed_size),
             payload: RawBytes::new(payload),
             header_size: 0,
@@ -92,8 +201,26 @@ impl<'a> TransactionPayloadEvent<'a> {
         self.payload.as_bytes()
     }
 
-    /// Returns raw payload decompressed (see [`crate::binlog::EventStreamReader::read_decompressed`]).
-    pub fn decompress_payload(self) -> Vec<u8> {
+    /// Returns decompressed payload in form of a struct that implements [`io::BufRead`].
+    ///
+    /// See [`EventStreamReader::read_decompressed`].
+    pub fn decompressed(&self) -> io::Result<TransactionPayloadReader<'_>> {
+        if self.algorithm == TransactionPayloadCompressionType::NONE {
+            return Ok(TransactionPayloadReader::new_uncompressed(
+                self.payload_raw(),
+            ));
+        }
+
+        return TransactionPayloadReader::new_zstd(self.payload_raw());
+    }
+
+    /// Decompress the whole payload.
+    ///
+    /// # Danger
+    ///
+    /// This function may allocate a huge buffer and cause OOM.
+    /// Consider using [`TransactionPayloadEvent::decompressed`] instead.
+    pub fn danger_decompress(self) -> Vec<u8> {
         if self.algorithm == TransactionPayloadCompressionType::NONE {
             return self.payload_raw().to_vec();
         }
@@ -151,7 +278,7 @@ impl<'de> MyDeserialize<'de> for TransactionPayloadEvent<'de> {
                     if !have_payload_size || !have_compression_type {
                         Err(io::Error::new(
                             io::ErrorKind::InvalidData,
-                            format!("Missing field in payload header"),
+                            "Missing field in payload header",
                         ))?;
                     }
                     if ob.payload_size.0 as usize > buf.len() {
@@ -205,19 +332,19 @@ impl<'de> MyDeserialize<'de> for TransactionPayloadEvent<'de> {
 impl MySerialize for TransactionPayloadEvent<'_> {
     fn serialize(&self, buf: &mut Vec<u8>) {
         buf.put_lenenc_int(TransactionPayloadFields::OTW_PAYLOAD_COMPRESSION_TYPE_FIELD as u64);
-        buf.put_lenenc_int(crate::misc::lenenc_int_len(self.algorithm as u64) as u64);
+        buf.put_lenenc_int(crate::misc::lenenc_int_len(self.algorithm as u64));
         buf.put_lenenc_int(self.algorithm as u64);
 
         if self.algorithm != TransactionPayloadCompressionType::NONE {
             buf.put_lenenc_int(
                 TransactionPayloadFields::OTW_PAYLOAD_UNCOMPRESSED_SIZE_FIELD as u64,
             );
-            buf.put_lenenc_int(crate::misc::lenenc_int_len(self.uncompressed_size.0) as u64);
+            buf.put_lenenc_int(crate::misc::lenenc_int_len(self.uncompressed_size.0));
             buf.put_lenenc_int(self.uncompressed_size.0);
         }
 
         buf.put_lenenc_int(TransactionPayloadFields::OTW_PAYLOAD_SIZE_FIELD as u64);
-        buf.put_lenenc_int(crate::misc::lenenc_int_len(self.payload_size.0) as u64);
+        buf.put_lenenc_int(crate::misc::lenenc_int_len(self.payload_size.0));
         buf.put_lenenc_int(self.payload_size.0);
 
         buf.put_lenenc_int(TransactionPayloadFields::OTW_PAYLOAD_HEADER_END_MARK as u64);

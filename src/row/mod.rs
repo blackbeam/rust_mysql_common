@@ -77,7 +77,7 @@ impl Row {
 
     /// Returns columns of this row.
     pub fn columns_ref(&self) -> &[Column] {
-        &*self.columns
+        &self.columns
     }
 
     /// Returns columns of this row.
@@ -100,7 +100,7 @@ impl Row {
         T: FromValue,
         I: ColumnIndex,
     {
-        index.idx(&*self.columns).and_then(|idx| {
+        index.idx(&self.columns).and_then(|idx| {
             self.values
                 .get(idx)
                 .and_then(|x| x.as_ref())
@@ -117,7 +117,7 @@ impl Row {
         I: ColumnIndex,
     {
         index
-            .idx(&*self.columns)
+            .idx(&self.columns)
             .and_then(|idx| self.values.get(idx))
             .and_then(|x| x.as_ref())
             .map(|x| from_value_opt::<T>(x.clone()))
@@ -130,7 +130,7 @@ impl Row {
         T: FromValue,
         I: ColumnIndex,
     {
-        index.idx(&*self.columns).and_then(|idx| {
+        index.idx(&self.columns).and_then(|idx| {
             self.values
                 .get_mut(idx)
                 .and_then(|x| x.take())
@@ -147,7 +147,7 @@ impl Row {
         I: ColumnIndex,
     {
         index
-            .idx(&*self.columns)
+            .idx(&self.columns)
             .and_then(|idx| self.values.get_mut(idx))
             .and_then(|x| x.take())
             .map(from_value_opt::<T>)

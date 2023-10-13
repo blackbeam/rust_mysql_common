@@ -157,7 +157,7 @@ impl Decimal {
         }
 
         // is it negative or not
-        let mask = if buffer.get(0).copied().unwrap_or(0) & 0x80 == 0 {
+        let mask = if buffer.first().copied().unwrap_or(0) & 0x80 == 0 {
             // positive, so mask should do noghing
             0
         } else {
@@ -324,7 +324,7 @@ impl FromStr for Decimal {
             from = &from[1..];
         }
 
-        let point_idx = from.find('.').unwrap_or_else(|| from.len());
+        let point_idx = from.find('.').unwrap_or(from.len());
         let (mut integral, mut fractional) = from.split_at(point_idx);
         fractional = fractional.get(1..).unwrap_or(fractional);
 

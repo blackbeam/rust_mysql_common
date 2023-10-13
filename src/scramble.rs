@@ -24,7 +24,7 @@ where
 
 fn to_u8_32(bytes: impl AsRef<[u8]>) -> [u8; 32] {
     let mut out = [0; 32];
-    (&mut out[..]).copy_from_slice(bytes.as_ref());
+    out[..].copy_from_slice(bytes.as_ref());
     out
 }
 
@@ -87,7 +87,6 @@ pub fn scramble_323(nonce: &[u8], password: &[u8]) -> Option<[u8; 8]> {
     }
 
     let mut output = [0_u8; 8];
-    let extra: u8;
 
     hash_password(&mut hash_pass, password);
     hash_password(&mut hash_message, nonce);
@@ -101,7 +100,7 @@ pub fn scramble_323(nonce: &[u8], password: &[u8]) -> Option<[u8; 8]> {
         *x = ((rand_st.my_rnd() * 31_f64).floor() + 64_f64) as u8;
     }
 
-    extra = (rand_st.my_rnd() * 31_f64).floor() as u8;
+    let extra = (rand_st.my_rnd() * 31_f64).floor() as u8;
 
     for x in output.iter_mut() {
         *x ^= extra;

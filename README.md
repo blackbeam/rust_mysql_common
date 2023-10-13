@@ -54,6 +54,7 @@ column and protocol type correspondence:
 | [`decimal::Decimal`]                 | MySql int, uint or bytes parsed using `Decimal::from_str`.<br>⚠️ Note that this type doesn't support full range of MySql `DECIMAL` type. |
 | [`bigdecimal::BigDecimal`] (v0.2.x)  | MySql int, uint, floats or bytes parsed using `BigDecimal::parse_bytes`.<br>⚠️ Note that range of this type is greater than supported by MySql `DECIMAL` type but it'll be serialized anyway. |
 | [`bigdecimal::BigDecimal`] (v0.3.x)  | MySql int, uint, floats or bytes parsed using `BigDecimal::parse_bytes`.<br>⚠️ Note that range of this type is greater than supported by MySql `DECIMAL` type but it'll be serialized anyway. |
+| [`bigdecimal::BigDecimal`] (v0.4.x)  | MySql int, uint, floats or bytes parsed using `BigDecimal::parse_bytes`.<br>⚠️ Note that range of this type is greater than supported by MySql `DECIMAL` type but it'll be serialized anyway. |
 | `num_bigint::{BigInt, BigUint}`      | MySql int, uint or bytes parsed using `_::parse_bytes`.<br>⚠️ Note that range of this type is greater than supported by MySql integer types but it'll be serialized anyway (as decimal bytes string). |
 
 Also crate provides from-row convertion for the following list of types (see `FromRow` trait):
@@ -63,20 +64,22 @@ Also crate provides from-row convertion for the following list of types (see `Fr
 | `Row`                                           | Trivial conversion for `Row` itself.              |
 | `T: FromValue`                                  | For rows with a single column.                    |
 | `(T1: FromValue [, ..., T12: FromValue])`       | Row to a tuple of arity 1-12.                     |
-| [`frunk::Hlist!`] types                         | Usefull to overcome tuple arity limitation        |
+| [`frunk::hlist::HList`] types                   | Usefull to overcome tuple arity limitation        |
 
 ### Crate features
 
 | Feature        | Description                                          | Default |
 | -------------- | ---------------------------------------------------- | ------- |
 | `bigdecimal02` | Enables `bigdecimal` v0.2.x types support            | 🔴      |
-| `bigdecimal`   | Enables `bigdecimal` v0.3.x types support            | 🟢      |
+| `bigdecimal03` | Enables `bigdecimal` v0.3.x types support            | 🔴      |
+| `bigdecimal`   | Enables `bigdecimal` v0.4.x types support            | 🟢      |
 | `chrono`       | Enables `chrono` types support                       | 🔴      |
 | `rust_decimal` | Enables `rust_decimal` types support                 | 🟢      |
 | `time02`       | Enables `time` v0.2.x types support                  | 🔴      |
 | `time`         | Enables `time` v0.3.x types support                  | 🟢      |
 | `frunk`        | Enables `FromRow` for `frunk::Hlist!` types          | 🟢      |
 | `derive`       | Enables [`FromValue` and `FromRow` derive macros][2] | 🟢      |
+| `binlog`       | Binlog-related functionality                         | 🟢      |
 
 ## Derive Macros
 
@@ -92,7 +95,7 @@ Supported derivations:
 
 ##### Container attributes:
 
-*  `#[mysql(crate_name = "some_name")]` – overrides an attemt to guess a crate that provides
+*  `#[mysql(crate_name = "some_name")]` – overrides an attempt to guess a crate that provides
    required traits
 *  `#[mysql(rename_all = ...)]` – rename all the variants according to the given case
    convention. The possible values are "lowercase", "UPPERCASE", "PascalCase", "camelCase",
@@ -139,7 +142,7 @@ Also note, that to support `FromRow` the wrapped value must satisfy `Into<Value>
 
 ##### Container attributes:
 
-*  `#[mysql(crate_name = "some_name")]` – overrides an attemt to guess a crate to import types from
+*  `#[mysql(crate_name = "some_name")]` – overrides an attempt to guess a crate to import types from
 *  `#[mysql(bound = "Foo: Bar, Baz: Quux")]` – use the following additional bounds
 *  `#[mysql(deserialize_with = "some::path")]` – use the following function to deserialize
    the wrapped value. Expected signature is `fn (Value) -> Result<Wrapped, FromValueError>`.
@@ -227,7 +230,7 @@ Supported derivations:
 
 #### Container attributes:
 
-*  `#[mysql(crate_name = "some_name")]` – overrides an attemt to guess a crate that provides
+*  `#[mysql(crate_name = "some_name")]` – overrides an attempt to guess a crate that provides
    required traits
 *  `#[mysql(rename_all = ...)]` – rename all column names according to the given case
    convention. The possible values are "lowercase", "UPPERCASE", "PascalCase", "camelCase",

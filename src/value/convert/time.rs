@@ -109,14 +109,14 @@ lazy_static::lazy_static! {
     static ref DATE_TIME_FORMAT: Vec<FormatItem<'static>> = {
         let mut format = DATE_FORMAT.clone();
         format.push(FormatItem::Literal(b" "));
-        format.extend_from_slice(&*TIME_FORMAT);
+        format.extend_from_slice(&TIME_FORMAT);
         format
     };
 
     static ref DATE_TIME_FORMAT_MICRO: Vec<FormatItem<'static>> = {
         let mut format = DATE_FORMAT.clone();
         format.push(FormatItem::Literal(b" "));
-        format.extend_from_slice(&*TIME_FORMAT_MICRO);
+        format.extend_from_slice(&TIME_FORMAT_MICRO);
         format
     };
 }
@@ -178,7 +178,7 @@ impl TryFrom<Value> for ParseIr<Date> {
                 }
             }
             Value::Bytes(ref bytes) => {
-                match from_utf8(&*bytes)
+                match from_utf8(bytes)
                     .ok()
                     .and_then(|s| Date::parse(s, &*DATE_FORMAT).ok())
                 {
@@ -274,7 +274,7 @@ fn create_primitive_date_time(
 pub(crate) fn parse_mysql_datetime_string_with_time(
     bytes: &[u8],
 ) -> Result<PrimitiveDateTime, Parse> {
-    from_utf8(&*bytes)
+    from_utf8(bytes)
         .map_err(|_| Parse::TryFromParsed(TryFromParsed::InsufficientInformation))
         .and_then(|s| {
             if s.len() > 19 {
@@ -290,7 +290,7 @@ pub(crate) fn parse_mysql_datetime_string_with_time(
 }
 
 fn parse_mysql_time_string_with_time(bytes: &[u8]) -> Result<Time, Parse> {
-    from_utf8(&*bytes)
+    from_utf8(bytes)
         .map_err(|_| Parse::TryFromParsed(TryFromParsed::InsufficientInformation))
         .and_then(|s| match s.len().cmp(&8) {
             Ordering::Less => Err(Parse::TryFromParsed(TryFromParsed::InsufficientInformation)),
@@ -382,14 +382,7 @@ impl From<Date> for Value {
 #[cfg_attr(docsrs, doc(cfg(feature = "time")))]
 impl From<Time> for Value {
     fn from(x: Time) -> Value {
-        Value::Time(
-            false,
-            0,
-            x.hour() as u8,
-            x.minute() as u8,
-            x.second() as u8,
-            x.microsecond(),
-        )
+        Value::Time(false, 0, x.hour(), x.minute(), x.second(), x.microsecond())
     }
 }
 

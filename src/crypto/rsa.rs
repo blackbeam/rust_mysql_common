@@ -56,7 +56,7 @@ impl<T: Rng> Padding for Pkcs1Padding<T> {
         }
 
         output[2 + ps_len] = 0x00;
-        (&mut output[2 + ps_len + 1..]).copy_from_slice(input);
+        output[2 + ps_len + 1..].copy_from_slice(input);
         output
     }
 }
@@ -95,7 +95,7 @@ impl<T> Pkcs1OaepPadding<T> {
             .map(|c| {
                 let cs = &mut [0u8; 4];
                 BigEndian::write_u32(cs, c as u32);
-                Sha1::digest(&[seed, cs].concat()).to_vec()
+                Sha1::digest([seed, cs].concat()).to_vec()
             })
             .collect::<Vec<Vec<u8>>>()
             .concat();
@@ -118,26 +118,22 @@ impl<T: Rng> Padding for Pkcs1OaepPadding<T> {
         let mut ps = vec![0; k - input.len() - 2 * Self::HASH_LEN - 2];
         ps.push(0x01);
         // 4. Let pHash = Hash(P), an octet string of length hLen.
-        let p_hash = Sha1::digest(&[]).to_vec();
+        let p_hash = Sha1::digest([]).to_vec();
         // 5. Concatenate pHash, PS, the message M, and other padding to form a
         //    data block DB as: DB = pHash || PS || 01 || M
         let db = [&*p_hash, &*ps, input].concat();
         // 6. Generate a random octet string seed of length hLen.
         let seed: Vec<_> = (0..Self::HASH_LEN).map(|_| self.rng.gen()).collect();
         // 7. Let dbMask = MGF(seed, emLen-hLen).
-        let db_mask = Self::mgf1(&*seed, k - Self::HASH_LEN);
+        let db_mask = Self::mgf1(&seed, k - Self::HASH_LEN);
         // 8. Let maskedDB = DB \xor dbMask.
-        let masked_db: Vec<_> = db
-            .into_iter()
-            .zip(db_mask.into_iter())
-            .map(|(a, b)| a ^ b)
-            .collect();
+        let masked_db: Vec<_> = db.into_iter().zip(db_mask).map(|(a, b)| a ^ b).collect();
         // 9. Let seedMask = MGF(maskedDB, hLen).
-        let seed_mask = Self::mgf1(&*masked_db, Self::HASH_LEN);
+        let seed_mask = Self::mgf1(&masked_db, Self::HASH_LEN);
         // 10. Let maskedSeed = seed \xor seedMask.
         let masked_seed: Vec<_> = seed
             .into_iter()
-            .zip(seed_mask.into_iter())
+            .zip(seed_mask)
             .map(|(a, b)| a ^ b)
             .collect();
         // 11. Let EM = maskedSeed || maskedDB.
@@ -164,7 +160,7 @@ impl PublicKey {
     /// Will panic in case of bad pem data.
     pub fn from_pem(pem_data: impl AsRef<[u8]>) -> PublicKey {
         let (der, file_type) = der::pem_to_der(pem_data);
-        let (modulus, exponent) = der::parse_pub_key(&*der, file_type);
+        let (modulus, exponent) = der::parse_pub_key(&der, file_type);
         PublicKey::new(modulus, exponent)
     }
 
@@ -190,7 +186,7 @@ impl PublicKey {
     /// Will panic if block is too long for key or padding.
     pub fn encrypt_block(&self, block: impl AsRef<[u8]>, mut pad: impl Padding) -> Vec<u8> {
         let enc_block = pad.pub_pad(block, self.num_octets());
-        let enc_int = BigUint::from_bytes_be(&*enc_block);
+        let enc_int = BigUint::from_bytes_be(&enc_block);
         let rsa = enc_int.modpow(self.exponent(), self.modulus());
         let mut rsa_bytes = rsa.to_bytes_be();
         // is this needed?

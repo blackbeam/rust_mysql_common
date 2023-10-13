@@ -191,10 +191,7 @@ impl BytesRepr for NullBytes {
     type Ctx = ();
 
     fn serialize(text: &[u8], buf: &mut Vec<u8>) {
-        let last = text
-            .iter()
-            .position(|x| *x == 0)
-            .unwrap_or_else(|| text.len());
+        let last = text.iter().position(|x| *x == 0).unwrap_or(text.len());
         buf.put_slice(&text[..last]);
         buf.put_u8(0);
     }

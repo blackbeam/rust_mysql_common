@@ -64,13 +64,13 @@ impl<'a> BinlogRequest<'a> {
 
     /// Filename of the binlog on the master (defaults to an empty string).
     pub fn filename_raw(&'a self) -> &'a [u8] {
-        &self.filename.as_ref()
+        self.filename.as_ref()
     }
 
     /// Filename of the binlog on the master as a UTF-8 string (lossy converted)
     /// (defaults to an empty string).
     pub fn filename(&'a self) -> &'a [u8] {
-        &self.filename.as_ref()
+        self.filename.as_ref()
     }
 
     /// Position in the binlog-file to start the stream with (defaults to `4`).

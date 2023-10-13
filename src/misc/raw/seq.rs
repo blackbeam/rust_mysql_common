@@ -80,7 +80,7 @@ where
     U: SeqRepr,
 {
     fn serialize(&self, buf: &mut Vec<u8>) {
-        U::serialize(&*self.0, buf);
+        U::serialize(&self.0, buf);
     }
 }
 
@@ -172,6 +172,11 @@ impl<'a, T: IntRepr, U> RawSeq<'a, T, U> {
     /// Returns a length of this sequence.
     pub fn len(&self) -> usize {
         self.0.len()
+    }
+
+    /// Returns `true` if the sequence has a length of 0.
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
     }
 
     /// Returns a `'static` version of `self`.

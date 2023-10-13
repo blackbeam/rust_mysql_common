@@ -63,12 +63,12 @@ impl ToTokens for GenericStruct<'_> {
             Crate::Found(ref name) => syn::Ident::new(name, Span::call_site()),
         };
 
-        let impl_generics = (generics.params.len() > 0).then(|| {
+        let impl_generics = (!generics.params.is_empty()).then(|| {
             let generics = self.generics.params.iter();
             quote::quote!(< #(#generics,)* >)
         });
 
-        let ident_generics = (generics.params.len() > 0).then(|| {
+        let ident_generics = (!generics.params.is_empty()).then(|| {
             let generics = self.generics.params.iter().map(|g| match g {
                 syn::GenericParam::Type(x) => {
                     let ident = &x.ident;
@@ -92,14 +92,14 @@ impl ToTokens for GenericStruct<'_> {
         });
 
         let table_name_constant = item_attrs.table_name.as_ref().map(|name| {
-            let lit = syn::LitStr::new(&*name, name.span());
+            let lit = syn::LitStr::new(name, name.span());
             quote::quote!(const TABLE_NAME: &'static str = #lit;)
         });
 
         let fields_attrs = fields
             .named
             .iter()
-            .map(|f| <attrs::field::Mysql as FromAttributes>::from_attributes(&*f.attrs))
+            .map(|f| <attrs::field::Mysql as FromAttributes>::from_attributes(&f.attrs))
             .collect::<Result<Vec<_>, _>>()
             .map_err(|e: darling::Error| abort!(crate::Error::from(e)))
             .unwrap();
@@ -131,7 +131,7 @@ impl ToTokens for GenericStruct<'_> {
 
         let filed_name_constant = fields.named.iter().zip(&fields_names).map(|(f, name)| {
             let ident = f.ident.as_ref().unwrap().unraw();
-            let lit = syn::LitStr::new(&*name, f.span());
+            let lit = syn::LitStr::new(name, f.span());
             let const_name = syn::Ident::new(
                 &format!("{}_FIELD", heck::AsShoutySnakeCase(ident.to_string())),
                 f.span(),
@@ -148,8 +148,8 @@ impl ToTokens for GenericStruct<'_> {
             .enumerate()
             .map(|(i, ((f, attrs), name))| {
                 let ident = f.ident.as_ref().unwrap();
-                let ref ty = f.ty;
-                let lit = syn::LitStr::new(&name, ident.span());
+                let ty = &f.ty;
+                let lit = syn::LitStr::new(name, ident.span());
 
                 let place = field_ident
                     .iter()
@@ -157,7 +157,7 @@ impl ToTokens for GenericStruct<'_> {
                     .zip(&fields_names)
                     .take(i)
                     .map(|((f, attrs), name)| {
-                        let lit = syn::LitStr::new(&name, f.span());
+                        let lit = syn::LitStr::new(name, f.span());
                         if attrs.json {
                             quote::quote!(
                                 row.place(*indexes.get(#lit).unwrap(), #f.rollback())
@@ -206,7 +206,7 @@ impl ToTokens for GenericStruct<'_> {
             .zip(&fields_attrs)
             .map(|(f, attrs)| {
                 let ident = f.ident.as_ref().unwrap();
-                let ref ty = f.ty;
+                let ty = &f.ty;
                 if attrs.json {
                     quote::quote!(#ident: #ident.commit().0)
                 } else {

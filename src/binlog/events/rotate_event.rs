@@ -70,6 +70,11 @@ impl<'a> RotateEvent<'a> {
         self.name.as_str()
     }
 
+    /// Returns true if it's a fake [`RotateEvent`] (its log postion is `0`).
+    pub fn is_fake(&self) -> bool {
+        self.position() == 0
+    }
+
     pub fn into_owned(self) -> RotateEvent<'static> {
         RotateEvent {
             position: self.position,

@@ -35,7 +35,7 @@ pub fn print_warning(
     writeln!(&mut buffer, "  | ")?;
 
     let content = format!("{content}");
-    for line in content.split("\n") {
+    for line in content.split('\n') {
         write!(&mut buffer, "  | ")?;
         buffer.set_color(&white)?;
         writeln!(&mut buffer, "{}", line)?;

@@ -22,7 +22,7 @@ use crate::value::Value;
 
 pub mod bigdecimal;
 pub mod bigdecimal02;
-pub mod bigdecimal04;
+pub mod bigdecimal03;
 pub mod bigint;
 pub mod chrono;
 pub mod decimal;
@@ -335,7 +335,7 @@ fn mysql_time_to_duration(
     seconds: u8,
     microseconds: u32,
 ) -> Duration {
-    let nanos = (microseconds as u32) * 1000;
+    let nanos = (microseconds) * 1000;
     let secs = u64::from(seconds)
         + u64::from(minutes) * 60
         + u64::from(hours) * 60 * 60
@@ -353,7 +353,7 @@ impl TryFrom<Value> for ParseIrOpt<Duration> {
                 Ok(ParseIrOpt::Parsed(duration, v))
             }
             Value::Bytes(ref val_bytes) => {
-                let duration = match parse_mysql_time_string(&*val_bytes) {
+                let duration = match parse_mysql_time_string(val_bytes) {
                     Some((false, hours, minutes, seconds, microseconds)) => {
                         let days = hours / 24;
                         let hours = (hours % 24) as u8;

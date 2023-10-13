@@ -33,7 +33,7 @@ impl<'de> MyDeserialize<'de> for AnonymousGtidEvent {
     }
 }
 
-impl<'de> MySerialize for AnonymousGtidEvent {
+impl MySerialize for AnonymousGtidEvent {
     fn serialize(&self, buf: &mut Vec<u8>) {
         self.0.serialize(buf)
     }

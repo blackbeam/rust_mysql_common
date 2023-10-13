@@ -117,7 +117,7 @@ where
     [u8; LEN]: Array<Item = u8>,
 {
     fn serialize(&self, buf: &mut Vec<u8>) {
-        buf.put_slice(&*self)
+        buf.put_slice(self)
     }
 }
 

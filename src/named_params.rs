@@ -30,203 +30,211 @@ enum ParserState {
 
 use self::ParserState::*;
 
-/// Parse named params in the given query.
-///
-/// Parameters must be named according to the following convention:
-///
-/// * parameter name must start with either `_` or `a..z`
-/// * parameter name may continue with `_`, `a..z` and `0..9`
-///
-/// Returns a pair of:
-///
-/// * names of named parameters (if any) in order of appearance in `query`. Same name may
-///   appear multiple times if named parameter used more than once.
-/// * query string to pass to MySql (named parameters replaced with `?`).
-pub fn parse_named_params(
-    query: &[u8],
-) -> Result<(Option<Vec<Vec<u8>>>, Cow<'_, [u8]>), MixedParamsError> {
-    let mut state = TopLevel;
-    let mut have_positional = false;
-    let mut cur_param = 0;
-    // Vec<(start_offset, end_offset, name)>
-    let mut params = Vec::new();
-    for (i, c) in query.iter().enumerate() {
-        let mut rematch = false;
-        match state {
-            TopLevel => match c {
-                b':' => state = MaybeInNamedParam,
-                b'/' => state = MaybeInCComment1,
-                b'-' => state = MaybeInDoubleDashComment1,
-                b'#' => state = InSharpComment,
-                b'\'' => state = InStringLiteral(b'\'', b'\''),
-                b'"' => state = InStringLiteral(b'"', b'"'),
-                b'?' => have_positional = true,
-                _ => (),
-            },
-            InStringLiteral(separator, prev_char) => match c {
-                x if *x == separator && prev_char != b'\\' => state = TopLevel,
-                x => state = InStringLiteral(separator, *x),
-            },
-            MaybeInNamedParam => match c {
-                b'a'..=b'z' | b'_' => {
-                    params.push((i - 1, 0, Vec::with_capacity(16)));
-                    params[cur_param].2.push(*c);
-                    state = InNamedParam;
+/// Parsed named params (see [`ParsedNamedParams::parse`]).
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct ParsedNamedParams<'a> {
+    query: Cow<'a, [u8]>,
+    params: Vec<Cow<'a, [u8]>>,
+}
+
+impl<'a> ParsedNamedParams<'a> {
+    /// Parse named params in the given query.
+    ///
+    /// Parameters must be named according to the following convention:
+    ///
+    /// * parameter name must start with either `_` or `a..z`
+    /// * parameter name may continue with `_`, `a..z` and `0..9`
+    pub fn parse(query: &'a [u8]) -> Result<Self, MixedParamsError> {
+        let mut state = TopLevel;
+        let mut have_positional = false;
+        let mut cur_param = 0;
+        // Vec<(colon_offset, start_offset, end_offset)>
+        let mut params = Vec::new();
+        for (i, c) in query.iter().enumerate() {
+            let mut rematch = false;
+            match state {
+                TopLevel => match c {
+                    b':' => state = MaybeInNamedParam,
+                    b'/' => state = MaybeInCComment1,
+                    b'-' => state = MaybeInDoubleDashComment1,
+                    b'#' => state = InSharpComment,
+                    b'\'' => state = InStringLiteral(b'\'', b'\''),
+                    b'"' => state = InStringLiteral(b'"', b'"'),
+                    b'?' => have_positional = true,
+                    _ => (),
+                },
+                InStringLiteral(separator, prev_char) => match c {
+                    x if *x == separator && prev_char != b'\\' => state = TopLevel,
+                    x => state = InStringLiteral(separator, *x),
+                },
+                MaybeInNamedParam => match c {
+                    b'a'..=b'z' | b'_' => {
+                        params.push((i - 1, i, 0));
+                        state = InNamedParam;
+                    }
+                    _ => rematch = true,
+                },
+                InNamedParam => {
+                    if !matches!(c, b'a'..=b'z' | b'0'..=b'9' | b'_') {
+                        params[cur_param].2 = i;
+                        cur_param += 1;
+                        rematch = true;
+                    }
                 }
-                _ => rematch = true,
-            },
-            InNamedParam => match c {
-                b'a'..=b'z' | b'0'..=b'9' | b'_' => params[cur_param].2.push(*c),
-                _ => {
-                    params[cur_param].1 = i;
-                    cur_param += 1;
-                    rematch = true;
+                InSharpComment => {
+                    if *c == b'\n' {
+                        state = TopLevel
+                    }
                 }
-            },
-            InSharpComment => match c {
-                b'\n' => state = TopLevel,
-                _ => (),
-            },
-            MaybeInDoubleDashComment1 => match c {
-                b'-' => state = MaybeInDoubleDashComment2,
-                _ => state = TopLevel,
-            },
-            MaybeInDoubleDashComment2 => {
-                if c.is_ascii_whitespace() && *c != b'\n' {
-                    state = InDoubleDashComment
-                } else {
-                    state = TopLevel
+                MaybeInDoubleDashComment1 => match c {
+                    b'-' => state = MaybeInDoubleDashComment2,
+                    _ => state = TopLevel,
+                },
+                MaybeInDoubleDashComment2 => {
+                    if c.is_ascii_whitespace() && *c != b'\n' {
+                        state = InDoubleDashComment
+                    } else {
+                        state = TopLevel
+                    }
+                }
+                InDoubleDashComment => {
+                    if *c == b'\n' {
+                        state = TopLevel
+                    }
+                }
+                MaybeInCComment1 => match c {
+                    b'*' => state = MaybeInCComment2,
+                    _ => state = TopLevel,
+                },
+                MaybeInCComment2 => match c {
+                    b'!' | b'+' => state = TopLevel, // extensions and optimizer hints
+                    _ => state = InCComment,
+                },
+                InCComment => {
+                    if *c == b'*' {
+                        state = MaybeExitCComment
+                    }
+                }
+                MaybeExitCComment => match c {
+                    b'/' => state = TopLevel,
+                    _ => state = InCComment,
+                },
+            }
+            if rematch {
+                match c {
+                    b':' => state = MaybeInNamedParam,
+                    b'\'' => state = InStringLiteral(b'\'', b'\''),
+                    b'"' => state = InStringLiteral(b'"', b'"'),
+                    _ => state = TopLevel,
                 }
             }
-            InDoubleDashComment => match c {
-                b'\n' => state = TopLevel,
-                _ => (),
-            },
-            MaybeInCComment1 => match c {
-                b'*' => state = MaybeInCComment2,
-                _ => state = TopLevel,
-            },
-            MaybeInCComment2 => match c {
-                b'!' | b'+' => state = TopLevel, // extensions and optimizer hints
-                _ => state = InCComment,
-            },
-            InCComment => match c {
-                b'*' => state = MaybeExitCComment,
-                _ => (),
-            },
-            MaybeExitCComment => match c {
-                b'/' => state = TopLevel,
-                _ => state = InCComment,
-            },
         }
-        if rematch {
-            match c {
-                b':' => state = MaybeInNamedParam,
-                b'\'' => state = InStringLiteral(b'\'', b'\''),
-                b'"' => state = InStringLiteral(b'"', b'"'),
-                _ => state = TopLevel,
+
+        if let InNamedParam = state {
+            params[cur_param].2 = query.len();
+        }
+
+        if !params.is_empty() {
+            if have_positional {
+                return Err(MixedParamsError);
             }
+            let mut real_query = Vec::with_capacity(query.len());
+            let mut last = 0;
+            let mut out_params = Vec::with_capacity(params.len());
+            for (colon_offset, start, end) in params {
+                real_query.extend(&query[last..colon_offset]);
+                real_query.push(b'?');
+                last = end;
+                out_params.push(Cow::Borrowed(&query[start..end]));
+            }
+            real_query.extend(&query[last..]);
+            Ok(Self {
+                query: Cow::Owned(real_query),
+                params: out_params,
+            })
+        } else {
+            Ok(Self {
+                query: Cow::Borrowed(query),
+                params: vec![],
+            })
         }
     }
-    if let InNamedParam = state {
-        params[cur_param].1 = query.len();
+
+    /// Returns a query string to pass to MySql (named parameters have been replaced with `?`).
+    pub fn query(&self) -> &[u8] {
+        &self.query
     }
-    if !params.is_empty() {
-        if have_positional {
-            return Err(MixedParamsError);
-        }
-        let mut real_query = Vec::with_capacity(query.len());
-        let mut last = 0;
-        let mut out_params = Vec::with_capacity(params.len());
-        for (start, end, name) in params.into_iter() {
-            real_query.extend(&query[last..start]);
-            real_query.push(b'?');
-            last = end;
-            out_params.push(name);
-        }
-        real_query.extend(&query[last..]);
-        Ok((Some(out_params), real_query.into()))
-    } else {
-        Ok((None, query.into()))
+
+    /// Names of named parameters in order of appearance.
+    ///
+    /// # Note
+    ///
+    /// * the returned slice might be empty if original query contained
+    ///   no named parameters.
+    /// * same name may appear multiple times.
+    pub fn params(&self) -> &[Cow<'a, [u8]>] {
+        &self.params
     }
 }
 
 #[cfg(test)]
 mod test {
-    use crate::named_params::parse_named_params;
+    use super::*;
+
+    macro_rules! cows {
+        ($($l:expr),+ $(,)?) => { &[$(Cow::Borrowed(&$l[..]),)*] };
+    }
 
     #[test]
     fn should_parse_named_params() {
-        let result = parse_named_params(b":a :b").unwrap();
-        assert_eq!(
-            (
-                Some(vec![b"a".to_vec(), b"b".to_vec()]),
-                (&b"? ?"[..]).into()
-            ),
-            result
-        );
+        let result = ParsedNamedParams::parse(b":a :b").unwrap();
+        assert_eq!(result.query(), b"? ?");
+        assert_eq!(result.params(), cows!(b"a", b"b"));
 
-        let result = parse_named_params(b"SELECT (:a-10)").unwrap();
-        assert_eq!(
-            (Some(vec![b"a".to_vec()]), (&b"SELECT (?-10)"[..]).into()),
-            result
-        );
+        let result = ParsedNamedParams::parse(b"SELECT (:a-10)").unwrap();
+        assert_eq!(result.query(), b"SELECT (?-10)");
+        assert_eq!(result.params(), cows!(b"a"));
 
-        let result = parse_named_params(br#"SELECT '"\':a' "'\"':c" :b"#).unwrap();
-        assert_eq!(
-            (
-                Some(vec![b"b".to_vec()]),
-                (&br#"SELECT '"\':a' "'\"':c" ?"#[..]).into(),
-            ),
-            result
-        );
+        let result = ParsedNamedParams::parse(br#"SELECT '"\':a' "'\"':c" :b"#).unwrap();
+        assert_eq!(result.query(), br#"SELECT '"\':a' "'\"':c" ?"#);
+        assert_eq!(result.params(), cows!(b"b"));
 
-        let result = parse_named_params(br":a_Aa:b").unwrap();
-        assert_eq!(
-            (
-                Some(vec![b"a_".to_vec(), b"b".to_vec()]),
-                (&br"?Aa?"[..]).into()
-            ),
-            result
-        );
+        let result = ParsedNamedParams::parse(br":a_Aa:b").unwrap();
+        assert_eq!(result.query(), b"?Aa?");
+        assert_eq!(result.params(), cows!(b"a_", b"b"));
 
-        let result = parse_named_params(br"::b").unwrap();
-        assert_eq!((Some(vec![b"b".to_vec()]), (&br":?"[..]).into()), result);
+        let result = ParsedNamedParams::parse(br"::b").unwrap();
+        assert_eq!(result.query(), b":?");
+        assert_eq!(result.params(), cows!(b"b"));
 
-        parse_named_params(br":a ?").unwrap_err();
+        ParsedNamedParams::parse(b":a ?").unwrap_err();
     }
 
     #[test]
     fn should_allow_numbers_in_param_name() {
-        let result = parse_named_params(b":a1 :a2").unwrap();
-        assert_eq!(
-            (
-                Some(vec![b"a1".to_vec(), b"a2".to_vec()]),
-                (&b"? ?"[..]).into()
-            ),
-            result
-        );
+        let result = ParsedNamedParams::parse(b":a1 :a2").unwrap();
+        assert_eq!(result.query(), b"? ?");
+        assert_eq!(result.params(), cows!(b"a1", b"a2"));
 
-        let result = parse_named_params(b":1a :2a").unwrap();
-        assert_eq!((None, (&b":1a :2a"[..]).into()), result);
+        let result = ParsedNamedParams::parse(b":1a :2a").unwrap();
+        assert_eq!(result.query(), b":1a :2a");
+        assert!(result.params().is_empty());
     }
 
     #[test]
     fn special_characters_in_query() {
         let result =
-            parse_named_params(r"SELECT 1 FROM été WHERE thing = :param;".as_bytes()).unwrap();
+            ParsedNamedParams::parse("SELECT 1 FROM été WHERE thing = :param;".as_bytes()).unwrap();
         assert_eq!(
-            (
-                Some(vec![b"param".to_vec()]),
-                "SELECT 1 FROM été WHERE thing = ?;".as_bytes().into(),
-            ),
-            result
+            result.query(),
+            "SELECT 1 FROM été WHERE thing = ?;".as_bytes()
         );
+        assert_eq!(result.params(), cows!(b"param"));
     }
 
     #[test]
     fn comments_with_question_marks() {
-        let result = parse_named_params(
+        let result = ParsedNamedParams::parse(
             "SELECT 1 FROM my_table WHERE thing = :param;/* question\n  mark '?' in multiline\n\
             comment? */\n# ??- sharp comment -??\n-- dash-dash?\n/*! extention param :param2 */\n\
             /*+ optimizer hint :param3 */; select :foo; # another comment?"
@@ -234,31 +242,25 @@ mod test {
         )
         .unwrap();
         assert_eq!(
-            (
-                Some(vec![
-                    b"param".to_vec(),
-                    b"param2".to_vec(),
-                    b"param3".to_vec(),
-                    b"foo".to_vec()
-                ]),
-                "SELECT 1 FROM my_table WHERE thing = ?;/* question\n  mark '?' in multiline\n\
-                comment? */\n# ??- sharp comment -??\n-- dash-dash?\n/*! extention param ? */\n\
-                /*+ optimizer hint ? */; select ?; # another comment?"
-                    .as_bytes()
-                    .into(),
-            ),
-            result
+            result.query(),
+            b"SELECT 1 FROM my_table WHERE thing = ?;/* question\n  mark '?' in multiline\n\
+        comment? */\n# ??- sharp comment -??\n-- dash-dash?\n/*! extention param ? */\n\
+        /*+ optimizer hint ? */; select ?; # another comment?"
+        );
+        assert_eq!(
+            result.params(),
+            cows!(b"param", b"param2", b"param3", b"foo"),
         );
     }
 
     #[cfg(feature = "nightly")]
     mod bench {
-        use crate::named_params::parse_named_params;
+        use super::*;
 
         #[bench]
         fn parse_ten_named_params(bencher: &mut test::Bencher) {
             bencher.iter(|| {
-                let result = parse_named_params(
+                let result = ParsedNamedParams::parse(
                     r#"
                 SELECT :one, :two, :three, :four, :five, :six, :seven, :eight, :nine, :ten
                 "#,
@@ -271,7 +273,7 @@ mod test {
         #[bench]
         fn parse_zero_named_params(bencher: &mut test::Bencher) {
             bencher.iter(|| {
-                let result = parse_named_params(
+                let result = ParsedNamedParams::parse(
                     r"
                 SELECT one, two, three, four, five, six, seven, eight, nine, ten
                 ",

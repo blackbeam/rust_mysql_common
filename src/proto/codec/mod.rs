@@ -132,11 +132,12 @@ impl ChunkInfo {
 }
 
 /// Decoder for MySql protocol chunk.
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Default)]
 pub enum ChunkDecoder {
     /// Decoder is waiting for the first or subsequent packet chunk.
     ///
     /// It'll need at least 4 bytes to start decoding a chunk.
+    #[default]
     Idle,
     /// Chunk is being decoded.
     Chunk {
@@ -217,12 +218,6 @@ impl ChunkDecoder {
                 }
             }
         }
-    }
-}
-
-impl Default for ChunkDecoder {
-    fn default() -> Self {
-        ChunkDecoder::Idle
     }
 }
 
