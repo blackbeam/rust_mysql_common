@@ -731,6 +731,12 @@ impl<'a> From<&'a [u8]> for Value {
     }
 }
 
+impl From<Box<[u8]>> for Value {
+    fn from(x: Box<[u8]>) -> Value {
+        Value::Bytes(x.into())
+    }
+}
+
 impl From<Vec<u8>> for Value {
     fn from(x: Vec<u8>) -> Value {
         Value::Bytes(x)
