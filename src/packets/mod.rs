@@ -12,6 +12,7 @@ use regex::bytes::Regex;
 use smallvec::SmallVec;
 use uuid::Uuid;
 
+use std::convert::TryInto;
 use std::str::FromStr;
 use std::{
     borrow::Cow, cmp::max, collections::HashMap, convert::TryFrom, fmt, io, marker::PhantomData,
@@ -877,12 +878,12 @@ impl<'a> fmt::Display for ErrPacket<'a> {
 #[derive(Debug, Clone, PartialEq)]
 pub struct ServerError<'a> {
     code: RawInt<LeU16>,
-    state: [u8; 5],
+    state: Option<[u8; 5]>,
     message: RawBytes<'a, EofBytes>,
 }
 
 impl<'a> ServerError<'a> {
-    pub fn new(code: u16, state: [u8; 5], msg: impl Into<Cow<'a, [u8]>>) -> Self {
+    pub fn new(code: u16, state: Option<[u8; 5]>, msg: impl Into<Cow<'a, [u8]>>) -> Self {
         Self {
             code: RawInt::new(code),
             state,
@@ -896,13 +897,13 @@ impl<'a> ServerError<'a> {
     }
 
     /// Returns an sql state.
-    pub fn sql_state_ref(&self) -> [u8; 5] {
+    pub fn sql_state_ref(&self) -> Option<[u8; 5]> {
         self.state
     }
 
     /// Returns an sql state as a string (lossy converted).
-    pub fn sql_state_str(&self) -> Cow<'_, str> {
-        String::from_utf8_lossy(&self.state[..])
+    pub fn sql_state_str(&self) -> Option<Cow<'_, str>> {
+        self.state.as_ref().map(|s| String::from_utf8_lossy(s))
     }
 
     /// Returns an error message.
@@ -924,6 +925,20 @@ impl<'a> ServerError<'a> {
     }
 }
 
+impl<'de> MyDeserialize<'de> for Option<[u8; 5]> {
+    const SIZE: Option<usize> = Some(5);
+    type Ctx = usize;
+
+    fn deserialize(len: Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+        match buf.checked_eat(len) {
+            Some(b) => Ok(Some(b.try_into().unwrap())),
+            None => Err(unexpected_buf_eof()),
+        }
+    }
+}
+
+const STATE_CODE_LEN: usize = 5;
+
 impl<'de> MyDeserialize<'de> for ServerError<'de> {
     const SIZE: Option<usize> = None;
     /// An error packet error code.
@@ -935,13 +950,13 @@ impl<'de> MyDeserialize<'de> for ServerError<'de> {
                 buf.skip(1);
                 Ok(ServerError {
                     code: RawInt::new(code),
-                    state: buf.parse(())?,
+                    state: buf.parse(STATE_CODE_LEN)?,
                     message: buf.parse(())?,
                 })
             }
             _ => Ok(ServerError {
                 code: RawInt::new(code),
-                state: *b"HY000",
+                state: None,
                 message: buf.parse(())?,
             }),
         }
@@ -950,19 +965,25 @@ impl<'de> MyDeserialize<'de> for ServerError<'de> {
 
 impl MySerialize for ServerError<'_> {
     fn serialize(&self, buf: &mut Vec<u8>) {
-        buf.put_u8(b'#');
-        buf.put_slice(&self.state[..]);
+        if let Some(state) = &self.state {
+            buf.put_u8(b'#');
+            buf.put_slice(state);
+        }
         self.message.serialize(buf);
     }
 }
 
 impl fmt::Display for ServerError<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let sql_state_str = match self.sql_state_str() {
+            Some(s) => format!(" ({})", s.as_ref()),
+            None => "".to_string(),
+        };
         write!(
             f,
-            "ERROR {} ({}): {}",
+            "ERROR {}{}: {}",
             self.error_code(),
-            self.sql_state_str(),
+            sql_state_str,
             self.message_str()
         )
     }
@@ -3525,7 +3546,7 @@ mod test {
             ErrPacket::deserialize(CapabilityFlags::empty(), &mut ParseBuf(ERR_PACKET)).unwrap();
         let err_packet = err_packet.server_error();
         assert_eq!(err_packet.error_code(), 1096);
-        assert_eq!(err_packet.sql_state_str(), "HY000");
+        assert_eq!(err_packet.sql_state_str().unwrap(), "HY000");
         assert_eq!(err_packet.message_str(), "No tables used");
 
         let err_packet = ErrPacket::deserialize(
@@ -3535,7 +3556,7 @@ mod test {
         .unwrap();
         let server_error = err_packet.server_error();
         assert_eq!(server_error.error_code(), 1040);
-        assert_eq!(server_error.sql_state_str(), "HY000");
+        assert_eq!(server_error.sql_state_str(), None);
         assert_eq!(server_error.message_str(), "Too many connections");
 
         let err_packet = ErrPacket::deserialize(
