@@ -14,7 +14,9 @@ use std::{
     any::type_name,
     borrow::Cow,
     convert::{TryFrom, TryInto},
+    rc::Rc,
     str::from_utf8,
+    sync::Arc,
     time::Duration,
 };
 
@@ -417,6 +419,105 @@ impl FromValue for Vec<u8> {
     type Intermediate = Vec<u8>;
 }
 
+impl TryFrom<Value> for Arc<[u8]> {
+    type Error = FromValueError;
+
+    fn try_from(v: Value) -> Result<Self, Self::Error> {
+        match v {
+            Value::Bytes(bytes) => Ok(bytes.into()),
+            v => Err(FromValueError(v)),
+        }
+    }
+}
+
+impl FromValue for Arc<[u8]> {
+    type Intermediate = Arc<[u8]>;
+}
+
+impl TryFrom<Value> for Rc<[u8]> {
+    type Error = FromValueError;
+
+    fn try_from(v: Value) -> Result<Self, Self::Error> {
+        match v {
+            Value::Bytes(bytes) => Ok(bytes.into()),
+            v => Err(FromValueError(v)),
+        }
+    }
+}
+
+impl FromValue for Rc<[u8]> {
+    type Intermediate = Rc<[u8]>;
+}
+
+impl TryFrom<Value> for Box<[u8]> {
+    type Error = FromValueError;
+
+    fn try_from(v: Value) -> Result<Self, Self::Error> {
+        match v {
+            Value::Bytes(bytes) => Ok(bytes.into()),
+            v => Err(FromValueError(v)),
+        }
+    }
+}
+
+impl FromValue for Box<[u8]> {
+    type Intermediate = Box<[u8]>;
+}
+
+impl TryFrom<Value> for Arc<str> {
+    type Error = FromValueError;
+
+    fn try_from(v: Value) -> Result<Self, Self::Error> {
+        match v {
+            Value::Bytes(bytes) => match String::from_utf8(bytes) {
+                Ok(x) => Ok(x.into()),
+                Err(e) => Err(FromValueError(Value::Bytes(e.into_bytes()))),
+            },
+            v => Err(FromValueError(v)),
+        }
+    }
+}
+
+impl FromValue for Arc<str> {
+    type Intermediate = Arc<str>;
+}
+
+impl TryFrom<Value> for Rc<str> {
+    type Error = FromValueError;
+
+    fn try_from(v: Value) -> Result<Self, Self::Error> {
+        match v {
+            Value::Bytes(bytes) => match String::from_utf8(bytes) {
+                Ok(x) => Ok(x.into()),
+                Err(e) => Err(FromValueError(Value::Bytes(e.into_bytes()))),
+            },
+            v => Err(FromValueError(v)),
+        }
+    }
+}
+
+impl FromValue for Rc<str> {
+    type Intermediate = Rc<str>;
+}
+
+impl TryFrom<Value> for Box<str> {
+    type Error = FromValueError;
+
+    fn try_from(v: Value) -> Result<Self, Self::Error> {
+        match v {
+            Value::Bytes(bytes) => match String::from_utf8(bytes) {
+                Ok(x) => Ok(x.into()),
+                Err(e) => Err(FromValueError(Value::Bytes(e.into_bytes()))),
+            },
+            v => Err(FromValueError(v)),
+        }
+    }
+}
+
+impl FromValue for Box<str> {
+    type Intermediate = Box<str>;
+}
+
 /// Intermediate result of a `Value`-to-`Option<T>` conversion.
 #[derive(Debug, Clone, PartialEq)]
 pub enum OptionIr2<T: FromValue> {
@@ -737,6 +838,18 @@ impl From<Box<[u8]>> for Value {
     }
 }
 
+impl From<Arc<[u8]>> for Value {
+    fn from(x: Arc<[u8]>) -> Value {
+        Value::Bytes(x.as_ref().into())
+    }
+}
+
+impl From<Rc<[u8]>> for Value {
+    fn from(x: Rc<[u8]>) -> Value {
+        Value::Bytes(x.as_ref().into())
+    }
+}
+
 impl From<Vec<u8>> for Value {
     fn from(x: Vec<u8>) -> Value {
         Value::Bytes(x)
@@ -747,6 +860,24 @@ impl<'a> From<&'a str> for Value {
     fn from(x: &'a str) -> Value {
         let string: String = x.into();
         Value::Bytes(string.into_bytes())
+    }
+}
+
+impl From<Box<str>> for Value {
+    fn from(x: Box<str>) -> Value {
+        Value::Bytes(String::from(x).into_bytes())
+    }
+}
+
+impl From<Arc<str>> for Value {
+    fn from(x: Arc<str>) -> Value {
+        Value::Bytes(x.as_ref().as_bytes().into())
+    }
+}
+
+impl From<Rc<str>> for Value {
+    fn from(x: Rc<str>) -> Value {
+        Value::Bytes(x.as_ref().as_bytes().into())
     }
 }
 
