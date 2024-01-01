@@ -72,6 +72,9 @@ my_bitflags! {
         /// This status flag, when on, implies that one of the state information has
         /// changed on the server because of the execution of the last statement.
         const SERVER_SESSION_STATE_CHANGED       = 0x4000;
+
+        /// Introduced by mariadb. Contain the information about ANSI_QUOTES SQL_MODE.
+        const SERVER_STATUS_ANSI_QUOTES       = 0x8000;
     }
 }
 
