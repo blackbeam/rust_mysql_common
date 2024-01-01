@@ -175,10 +175,17 @@ impl ToTokens for GenericStruct<'_> {
                     quote::quote!(<#ty as FromValue>::Intermediate)
                 };
 
+                let try_from = if let Some(ref path) = attrs.with {
+                    let path = &path.0;
+                    quote::quote!( #path(x) )
+                } else {
+                    quote::quote!( <#intermediate_ty as std::convert::TryFrom<Value>>::try_from(x) )
+                };
+
                 quote::quote!(
                     let #ident = {
                         let val = match row.take_opt::<Value, &str>(#lit) {
-                            Some(Ok(x)) => match <#intermediate_ty as std::convert::TryFrom<Value>>::try_from(x) {
+                            Some(Ok(x)) => match #try_from {
                                 Ok(x) => Some(x),
                                 Err(e) => {
                                     row.place(*indexes.get(#lit).unwrap(), e.0);
@@ -210,7 +217,11 @@ impl ToTokens for GenericStruct<'_> {
                 if attrs.json {
                     quote::quote!(#ident: #ident.commit().0)
                 } else {
-                    quote::quote!(#ident: <<#ty as FromValue>::Intermediate as std::convert::Into<#ty>>::into(#ident))
+                    if attrs.with.is_some() {
+                        quote::quote!( #ident )
+                    } else {
+                        quote::quote!(#ident: <<#ty as FromValue>::Intermediate as std::convert::Into<#ty>>::into(#ident))
+                    }
                 }
             })
             .collect::<Vec<_>>();

@@ -261,6 +261,9 @@
 //! *  `#[mysql(rename = "some_name")]` – overrides column name of a field
 //! *  `#[mysql(json)]` - column will be interpreted as a JSON string containing
 //!    a value of a field type
+//! *  `#[mysql(with = path::to::convert_fn)]` – `convert_fn` will be used to deserialize
+//!    a field value (expects a function with a signature that mimics
+//!    `TryFrom<Value, Error=FromValueError>``)
 //!
 //! ### Example
 //!
@@ -646,4 +649,81 @@ fn from_value_is_integer() {
     assert_eq!(Value::from(SomeTypeIsInteger::FirstVariant), Value::Int(-1));
     assert_eq!(Value::from(SomeTypeIsInteger::SecondVariant), Value::Int(2));
     assert_eq!(Value::from(SomeTypeIsInteger::ThirdVariant), Value::Int(3));
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::row::convert::FromRow;
+    use crate::{constants::ColumnType, packets::Column, row::new_row};
+
+    #[test]
+    fn from_row_derive() {
+        #[derive(FromRow)]
+        #[mysql(table_name = "Foos", rename_all = "camelCase")]
+        struct Foo {
+            id: u64,
+            text_data: String,
+            #[mysql(json)]
+            json_data: serde_json::Value,
+            #[mysql(with = "from_literal", rename = "custom")]
+            custom_bool: bool,
+        }
+
+        fn from_literal(value: crate::Value) -> Result<bool, crate::FromValueError> {
+            match value {
+                crate::Value::Bytes(x) if x == b"true" => Ok(true),
+                crate::Value::Bytes(x) if x == b"false" => Ok(false),
+                x => Err(crate::FromValueError(x)),
+            }
+        }
+
+        assert_eq!(Foo::TABLE_NAME, "Foos");
+        assert_eq!(Foo::ID_FIELD, "id");
+        assert_eq!(Foo::TEXT_DATA_FIELD, "textData");
+        assert_eq!(Foo::JSON_DATA_FIELD, "jsonData");
+        assert_eq!(Foo::CUSTOM_BOOL_FIELD, "custom");
+
+        let columns = vec![
+            Column::new(ColumnType::MYSQL_TYPE_LONGLONG)
+                .with_name(b"id")
+                .with_org_name(b"id")
+                .with_table(b"Foos")
+                .with_org_table(b"Foos"),
+            Column::new(ColumnType::MYSQL_TYPE_VARCHAR)
+                .with_name(b"textData")
+                .with_org_name(b"textData")
+                .with_table(b"Foos")
+                .with_org_table(b"Foos"),
+            Column::new(ColumnType::MYSQL_TYPE_JSON)
+                .with_name(b"jsonData")
+                .with_org_name(b"jsonData")
+                .with_table(b"Foos")
+                .with_org_table(b"Foos"),
+            Column::new(ColumnType::MYSQL_TYPE_VARCHAR)
+                .with_name(b"custom")
+                .with_org_name(b"custom")
+                .with_table(b"Foos")
+                .with_org_table(b"Foos"),
+        ];
+
+        let row = new_row(
+            vec![
+                crate::Value::Int(10),
+                crate::Value::Bytes(b"bytes".into()),
+                crate::Value::Bytes(b"[true,false,\"not found\"]".into()),
+                crate::Value::Bytes(b"true".into()),
+            ],
+            columns.into(),
+        );
+
+        let deserialized = Foo::from_row(row);
+
+        assert_eq!(deserialized.id, 10);
+        assert_eq!(deserialized.text_data, "bytes");
+        assert_eq!(
+            deserialized.json_data.to_string(),
+            "[true,false,\"not found\"]"
+        );
+        assert!(deserialized.custom_bool);
+    }
 }
