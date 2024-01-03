@@ -92,6 +92,7 @@ macro_rules! define_const_bytes {
 }
 
 pub mod binlog_request;
+pub mod caching_sha2_password;
 pub mod session_state_change;
 
 define_const_bytes!(
@@ -1239,6 +1240,52 @@ impl MySerialize for AuthMoreData<'_> {
     fn serialize(&self, buf: &mut Vec<u8>) {
         self.__header.serialize(&mut *buf);
         self.data.serialize(buf);
+    }
+}
+
+define_header!(
+    PublicKeyResponseHeader,
+    InvalidPublicKeyResponse("Invalid PublicKeyResponse header"),
+    0x01
+);
+
+/// A response containing a public RSA key for authentication protection.
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct PublicKeyResponse<'a> {
+    __header: PublicKeyResponseHeader,
+    rsa_key: RawBytes<'a, EofBytes>,
+}
+
+impl<'a> PublicKeyResponse<'a> {
+    pub fn new(rsa_key: impl Into<Cow<'a, [u8]>>) -> Self {
+        Self {
+            __header: PublicKeyResponseHeader::new(),
+            rsa_key: RawBytes::new(rsa_key),
+        }
+    }
+
+    /// The server's RSA public key in PEM format.
+    pub fn rsa_key(&self) -> Cow<'_, str> {
+        self.rsa_key.as_str()
+    }
+}
+
+impl<'de> MyDeserialize<'de> for PublicKeyResponse<'de> {
+    const SIZE: Option<usize> = None;
+    type Ctx = ();
+
+    fn deserialize((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+        Ok(Self {
+            __header: buf.parse(())?,
+            rsa_key: buf.parse(())?,
+        })
+    }
+}
+
+impl MySerialize for PublicKeyResponse<'_> {
+    fn serialize(&self, buf: &mut Vec<u8>) {
+        self.__header.serialize(&mut *buf);
+        self.rsa_key.serialize(buf);
     }
 }
 
@@ -3888,5 +3935,28 @@ mod test {
             e.to_string(),
             "start(4) >= end(4) in GnoInterval".to_string()
         );
+    }
+
+    #[test]
+    fn should_parse_rsa_public_key_response_packet() {
+        const PUBLIC_RSA_KEY_RESPONSE: &[u8] = b"\x01test";
+
+        let rsa_public_key_response =
+            PublicKeyResponse::deserialize((), &mut ParseBuf(PUBLIC_RSA_KEY_RESPONSE));
+
+        assert!(rsa_public_key_response.is_ok());
+        assert_eq!(rsa_public_key_response.unwrap().rsa_key(), "test");
+    }
+
+    #[test]
+    fn should_build_rsa_public_key_response_packet() {
+        let rsa_public_key_response = PublicKeyResponse::new("test".as_bytes());
+
+        let mut actual = Vec::new();
+        rsa_public_key_response.serialize(&mut actual);
+
+        let expected = b"\x01test".to_vec();
+
+        assert_eq!(expected, actual);
     }
 }
