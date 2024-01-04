@@ -71,6 +71,7 @@ serde_json = "1"
 mysql-common-derive = { path = "derive", version = "0.30.2", optional = true }
 btoi = "0.4.3"
 zstd = "0.13"
+unic-langid = { version = "0.9.4", optional = true }
 
 [dev-dependencies]
 proptest = "1.0"
@@ -104,6 +105,7 @@ test = ["derive"]
 derive = ["mysql-common-derive"]
 binlog = ["bitvec"]
 nightly = ["test"]
+unic-langid = ["dep:unic-langid"]
 
 [package.metadata.docs.rs]
 rustdoc-args = ["--cfg", "docsrs"]
@@ -119,4 +121,5 @@ features = [
     "bigdecimal",
     "derive",
     "binlog",
+    "unic-langid",
 ]
