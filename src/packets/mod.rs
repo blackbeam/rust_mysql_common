@@ -54,13 +54,13 @@ macro_rules! define_header {
         #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, thiserror::Error)]
         #[error($msg)]
         pub struct $err;
-        pub type $name = ConstU8<$err, $val>;
+        pub type $name = crate::misc::raw::int::ConstU8<$err, $val>;
     };
     ($name:ident, $cmd:ident, $err:ident) => {
         #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, thiserror::Error)]
         #[error("Invalid header for {}", stringify!($cmd))]
         pub struct $err;
-        pub type $name = ConstU8<$err, { Command::$cmd as u8 }>;
+        pub type $name = crate::misc::raw::int::ConstU8<$err, { Command::$cmd as u8 }>;
     };
 }
 
