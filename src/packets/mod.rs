@@ -1249,7 +1249,9 @@ define_header!(
     0x01
 );
 
-/// A response containing a public RSA key for authentication protection.
+/// A server response to a [`PublicKeyRequest`] containing a public RSA key for authentication protection.
+///
+/// [`PublicKeyRequest`]: crate::packets::caching_sha2_password::PublicKeyRequest
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct PublicKeyResponse<'a> {
     __header: PublicKeyResponseHeader,

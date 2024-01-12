@@ -11,8 +11,10 @@ define_header!(
     0x02
 );
 
-/// A request for a public RSA key, used by some authentication mechanisms
-/// to add a layer of protection to an unsecured channel.
+/// A client request for a server public RSA key, used by some authentication mechanisms
+/// to add a layer of protection to an unsecured channel (see [`PublicKeyResponse`]).
+///
+/// [`PublicKeyResponse`]: crate::packets::PublicKeyResponse
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct PublicKeyRequest {
     __header: PublicKeyRequestHeader,
