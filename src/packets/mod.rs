@@ -1974,6 +1974,7 @@ type ScrambleBuf<'a> =
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HandshakeResponse<'a> {
     capabilities: Const<CapabilityFlags, LeU32>,
+    max_packet_size: RawInt<LeU32>,
     collation: RawInt<u8>,
     scramble_buf: ScrambleBuf<'a>,
     user: RawBytes<'a, NullBytes>,
@@ -1991,6 +1992,7 @@ impl<'a> HandshakeResponse<'a> {
         auth_plugin: Option<AuthPlugin<'a>>,
         mut capabilities: CapabilityFlags,
         connect_attributes: Option<HashMap<String, String>>,
+        max_packet_size: u32,
     ) -> Self {
         let scramble_buf =
             if capabilities.contains(CapabilityFlags::CLIENT_PLUGIN_AUTH_LENENC_CLIENT_DATA) {
@@ -2042,6 +2044,7 @@ impl<'a> HandshakeResponse<'a> {
                     .map(|(k, v)| (RawBytes::new(k.into_bytes()), RawBytes::new(v.into_bytes())))
                     .collect()
             }),
+            max_packet_size: RawInt::new(max_packet_size),
         }
     }
 
@@ -2093,7 +2096,7 @@ impl<'de> MyDeserialize<'de> for HandshakeResponse<'de> {
     fn deserialize((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
         let mut sbuf: ParseBuf = buf.parse(4 + 4 + 1 + 23)?;
         let client_flags: RawConst<LeU32, CapabilityFlags> = sbuf.parse_unchecked(())?;
-        sbuf.parse_unchecked::<Skip<4>>(())?;
+        let max_packet_size: RawInt<LeU32> = sbuf.parse_unchecked(())?;
         let collation = sbuf.parse_unchecked(())?;
         sbuf.parse_unchecked::<Skip<23>>(())?;
 
@@ -2125,6 +2128,7 @@ impl<'de> MyDeserialize<'de> for HandshakeResponse<'de> {
 
         Ok(Self {
             capabilities: Const::new(CapabilityFlags::from_bits_truncate(client_flags.0)),
+            max_packet_size,
             collation,
             scramble_buf,
             user,
@@ -2138,7 +2142,7 @@ impl<'de> MyDeserialize<'de> for HandshakeResponse<'de> {
 impl MySerialize for HandshakeResponse<'_> {
     fn serialize(&self, buf: &mut Vec<u8>) {
         self.capabilities.serialize(&mut *buf);
-        buf.put_slice(&[0, 0, 0, 1]);
+        self.max_packet_size.serialize(&mut *buf);
         self.collation.serialize(&mut *buf);
         buf.put_slice(&[0; 23]);
         self.user.serialize(&mut *buf);
@@ -3860,6 +3864,7 @@ mod test {
             Some(AuthPlugin::MysqlNativePassword),
             flags_without_db_name,
             None,
+            1_u32.to_be(),
         );
         let mut actual = Vec::new();
         response.serialize(&mut actual);
@@ -3888,6 +3893,7 @@ mod test {
             Some(AuthPlugin::MysqlNativePassword),
             flags_with_db_name,
             None,
+            1_u32.to_be(),
         );
         let mut actual = Vec::new();
         response.serialize(&mut actual);
@@ -3916,6 +3922,7 @@ mod test {
             Some(AuthPlugin::MysqlNativePassword),
             flags_without_db_name,
             None,
+            1_u32.to_be(),
         );
         let mut actual = Vec::new();
         response.serialize(&mut actual);
@@ -3929,6 +3936,7 @@ mod test {
             Some(AuthPlugin::MysqlNativePassword),
             flags_with_db_name,
             None,
+            1_u32.to_be(),
         );
         let mut actual = Vec::new();
         response.serialize(&mut actual);
