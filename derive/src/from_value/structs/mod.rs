@@ -106,6 +106,13 @@ impl ToTokens for NewTypeNoGenerics<'_> {
                             #path(x.0)
                         }
                     }
+
+                    impl From<#container_name> for #crat::Value
+                    {
+                        fn from(x: #container_name) -> Self {
+                            #path(x.0)
+                        }
+                    }
                 ))
             }
             None => None,

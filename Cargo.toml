@@ -74,6 +74,7 @@ zstd = "0.13"
 
 [dev-dependencies]
 proptest = "1.0"
+unic-langid = { version = "0.9.4" }
 
 [build-dependencies]
 bindgen = { version = "0", default-features = false, features = ["runtime"] }
