@@ -653,8 +653,54 @@ fn from_value_is_integer() {
 
 #[cfg(test)]
 mod tests {
-    use crate::row::convert::FromRow;
-    use crate::{constants::ColumnType, packets::Column, row::new_row};
+    use crate::{
+        constants::ColumnType,
+        packets::Column,
+        row::{convert::FromRow, new_row},
+        value::{convert::from_value, Value},
+        FromValueError,
+    };
+    use unic_langid::LanguageIdentifier;
+
+    #[derive(FromValue)]
+    #[mysql(serialize_with = "from_langid", deserialize_with = "to_langid")]
+    struct LangId(LanguageIdentifier);
+
+    impl std::ops::Deref for LangId {
+        type Target = LanguageIdentifier;
+
+        fn deref(&self) -> &Self::Target {
+            &self.0
+        }
+    }
+
+    fn to_langid(v: Value) -> Result<LanguageIdentifier, FromValueError> {
+        match v {
+            Value::Bytes(ref b) => match LanguageIdentifier::from_bytes(b) {
+                Ok(ident) => Ok(ident),
+                Err(_) => Err(FromValueError(v)),
+            },
+            _ => Err(FromValueError(v)),
+        }
+    }
+
+    fn from_langid(land_id: LanguageIdentifier) -> Value {
+        Value::Bytes(land_id.to_string().into())
+    }
+
+    #[test]
+    fn newtype_with() {
+        let mut value = Value::Bytes(b"en-US".into());
+
+        let ident = from_value::<LangId>(value);
+
+        assert_eq!(ident.language.to_string().as_str(), "en");
+        assert_eq!(ident.to_string().as_str(), "en-US");
+
+        value = ident.into();
+
+        assert_eq!(value, Value::Bytes(b"en-US".into()));
+    }
 
     #[test]
     fn from_row_derive() {
