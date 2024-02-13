@@ -45,7 +45,7 @@ use self::session_state_change::SessionStateChange;
 
 lazy_static::lazy_static! {
     static ref MARIADB_VERSION_RE: Regex =
-        Regex::new(r"^5.5.5-(\d{1,2})\.(\d{1,2})\.(\d{1,3})-MariaDB").unwrap();
+        Regex::new(r"^(?:5.5.5-)?(\d{1,2})\.(\d{1,2})\.(\d{1,3})-MariaDB").unwrap();
     static ref VERSION_RE: Regex = Regex::new(r"^(\d{1,2})\.(\d{1,2})\.(\d{1,3})(.*)").unwrap();
 }
 
