@@ -12,7 +12,7 @@ use std::io::{self};
 
 use crate::{
     binlog::{
-        consts::{BinlogVersion, EventType},
+        consts::{BinlogVersion, EventType, RowsEventFlags},
         BinlogCtx, BinlogEvent, BinlogStruct,
     },
     io::ParseBuf,
@@ -56,6 +56,11 @@ impl<'a> PartialUpdateRowsEvent<'a> {
     /// Returns raw rows data.
     pub fn rows_data(&'a self) -> &'a [u8] {
         self.0.rows_data()
+    }
+
+    /// Returns row flags.
+    pub fn flags(&'a self) -> RowsEventFlags {
+        self.0.flags()
     }
 
     /// Returns an iterator over event's rows given the corresponding `TableMapEvent`.
