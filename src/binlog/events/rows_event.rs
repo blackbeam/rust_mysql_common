@@ -124,6 +124,11 @@ impl<'a> RowsEvent<'a> {
         self.rows_data.as_bytes()
     }
 
+    /// Returns the flags (unknown bits are truncated).
+    pub fn flags(&self) -> RowsEventFlags {
+        self.flags.get()
+    }
+
     /// Returns length of this event in bytes.
     ///
     /// This function will be used in `BinlogStruct` implementations for derived events.

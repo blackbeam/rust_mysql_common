@@ -53,8 +53,8 @@ use std::{
 
 use super::{
     consts::{
-        BinlogChecksumAlg, BinlogVersion, EventFlags, EventType, UnknownChecksumAlg,
-        UnknownEventType,
+        BinlogChecksumAlg, BinlogVersion, EventFlags, EventType, RowsEventFlags,
+        UnknownChecksumAlg, UnknownEventType,
     },
     misc::LimitWrite,
     BinlogCtx, BinlogEvent,
@@ -791,6 +791,19 @@ impl<'a> RowsEventData<'a> {
             RowsEventData::UpdateRowsEvent(ev) => ev.rows_data(),
             RowsEventData::DeleteRowsEvent(ev) => ev.rows_data(),
             RowsEventData::PartialUpdateRowsEvent(ev) => ev.rows_data(),
+        }
+    }
+
+    /// Returns event flags.
+    pub fn flags(&self) -> RowsEventFlags {
+        match self {
+            RowsEventData::WriteRowsEventV1(ev) => ev.flags(),
+            RowsEventData::UpdateRowsEventV1(ev) => ev.flags(),
+            RowsEventData::DeleteRowsEventV1(ev) => ev.flags(),
+            RowsEventData::WriteRowsEvent(ev) => ev.flags(),
+            RowsEventData::UpdateRowsEvent(ev) => ev.flags(),
+            RowsEventData::DeleteRowsEvent(ev) => ev.flags(),
+            RowsEventData::PartialUpdateRowsEvent(ev) => ev.flags(),
         }
     }
 
