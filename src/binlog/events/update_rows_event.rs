@@ -59,9 +59,14 @@ impl<'a> UpdateRowsEvent<'a> {
         self.0.rows_data()
     }
 
-    /// Returns row flags.
+    /// Returns event flags (unknown bits are truncated).
     pub fn flags(&'a self) -> RowsEventFlags {
         self.0.flags()
+    }
+
+    /// Returns raw event flags (unknown bits are preserved).
+    pub fn flags_raw(&'a self) -> u16 {
+        self.0.flags_raw()
     }
 
     /// Returns an iterator over event's rows given the corresponding `TableMapEvent`.
