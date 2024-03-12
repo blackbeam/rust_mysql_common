@@ -440,14 +440,14 @@ impl BinlogEventHeader {
         self.log_pos.0
     }
 
-    /// Returns the raw event flags.
-    pub fn flags_raw(&self) -> u16 {
-        self.flags.0
-    }
-
-    /// Returns the parsed event flags. Unknown bits will be truncated.
+    /// Returns event flags (unknown bits are truncated).
     pub fn flags(&self) -> EventFlags {
         self.flags.get()
+    }
+
+    /// Returns raw event flags (unknown bits are preserved).
+    pub fn flags_raw(&self) -> u16 {
+        self.flags.0
     }
 }
 

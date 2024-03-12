@@ -124,9 +124,14 @@ impl<'a> RowsEvent<'a> {
         self.rows_data.as_bytes()
     }
 
-    /// Returns the flags (unknown bits are truncated).
+    /// Returns event flags (unknown bits are truncated).
     pub fn flags(&self) -> RowsEventFlags {
         self.flags.get()
+    }
+
+    /// Returns raw event flags (unknown bits are preserved).
+    pub fn flags_raw(&self) -> u16 {
+        self.flags.0
     }
 
     /// Returns length of this event in bytes.
