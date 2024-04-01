@@ -26,6 +26,7 @@ enum ParserState {
     MaybeInCComment2,
     InCComment,
     MaybeExitCComment,
+    InQuotedIdentifier,
 }
 
 use self::ParserState::*;
@@ -61,6 +62,7 @@ impl<'a> ParsedNamedParams<'a> {
                     b'\'' => state = InStringLiteral(b'\'', b'\''),
                     b'"' => state = InStringLiteral(b'"', b'"'),
                     b'?' => have_positional = true,
+                    b'`' => state = InQuotedIdentifier,
                     _ => (),
                 },
                 InStringLiteral(separator, prev_char) => match c {
@@ -119,6 +121,11 @@ impl<'a> ParsedNamedParams<'a> {
                     b'/' => state = TopLevel,
                     _ => state = InCComment,
                 },
+                InQuotedIdentifier => {
+                    if *c == b'`' {
+                        state = TopLevel
+                    }
+                }
             }
             if rematch {
                 match c {
@@ -251,6 +258,17 @@ mod test {
             result.params(),
             cows!(b"param", b"param2", b"param3", b"foo"),
         );
+    }
+
+    #[test]
+    fn quoted_identifier() {
+        let result = ParsedNamedParams::parse(b"INSERT INTO `my:table` VALUES (?)").unwrap();
+        assert_eq!(result.query(), b"INSERT INTO `my:table` VALUES (?)");
+        assert!(result.params().is_empty());
+
+        let result = ParsedNamedParams::parse(b"INSERT INTO `my:table` VALUES (:foo)").unwrap();
+        assert_eq!(result.query(), b"INSERT INTO `my:table` VALUES (?)");
+        assert_eq!(result.params(), cows!(b"foo"));
     }
 
     #[cfg(feature = "nightly")]
