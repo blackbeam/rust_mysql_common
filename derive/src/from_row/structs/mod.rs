@@ -216,12 +216,10 @@ impl ToTokens for GenericStruct<'_> {
                 let ty = &f.ty;
                 if attrs.json {
                     quote::quote!(#ident: #ident.commit().0)
+                } else if attrs.with.is_some() {
+                    quote::quote!( #ident )
                 } else {
-                    if attrs.with.is_some() {
-                        quote::quote!( #ident )
-                    } else {
-                        quote::quote!(#ident: <<#ty as FromValue>::Intermediate as std::convert::Into<#ty>>::into(#ident))
-                    }
+                    quote::quote!(#ident: <<#ty as FromValue>::Intermediate as std::convert::Into<#ty>>::into(#ident))
                 }
             })
             .collect::<Vec<_>>();
