@@ -128,7 +128,7 @@ impl ToTokens for NewTypeNoGenerics<'_> {
                     impl std::convert::TryFrom<#crat::Value> for #ir_name {
                         type Error = #crat::FromValueError;
 
-                        fn try_from(v: #crat::Value) -> Result<Self, Self::Error> {
+                        fn try_from(v: #crat::Value) -> std::result::Result<Self, Self::Error> {
                             #path(v).map(Self)
                         }
                     }
@@ -162,7 +162,7 @@ impl ToTokens for NewTypeNoGenerics<'_> {
                     impl TryFrom<Value> for #ir_name<#field_type> {
                         type Error = <<#field_type as FromValue>::Intermediate as TryFrom<Value>>::Error;
 
-                        fn try_from(value: Value) -> Result<Self, Self::Error> {
+                        fn try_from(value: Value) -> std::result::Result<Self, Self::Error> {
                             <#field_type as FromValue>::Intermediate::try_from(value).map(Self)
                         }
                     }
@@ -279,7 +279,7 @@ impl ToTokens for NewType<'_> {
                     where #additional_bounds {
                         type Error = #crat::FromValueError;
 
-                        fn try_from(v: #crat::Value) -> Result<Self, Self::Error> {
+                        fn try_from(v: #crat::Value) -> std::result::Result<Self, Self::Error> {
                             #path(v)
                         }
                     }
@@ -305,7 +305,7 @@ impl ToTokens for NewType<'_> {
                 {
                     type Error = <<#field_type as #crat::prelude::FromValue>::Intermediate as std::convert::TryFrom<#crat::Value>>::Error;
 
-                    fn try_from(value: #crat::Value) -> Result<Self, Self::Error> {
+                    fn try_from(value: #crat::Value) -> std::result::Result<Self, Self::Error> {
                         <#field_type as #crat::prelude::FromValue>::Intermediate::try_from(value).map(Self)
                     }
                 }

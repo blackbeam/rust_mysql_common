@@ -333,7 +333,7 @@ impl ToTokens for Enum {
             impl std::convert::TryFrom<#crat::Value> for #ir_name {
                 type Error = #crat::FromValueError;
 
-                fn try_from(v: #crat::Value) -> Result<Self, Self::Error> {
+                fn try_from(v: #crat::Value) -> std::result::Result<Self, Self::Error> {
                     match v {
                         #( #branches )*
                         v => Err(#crat::FromValueError(v)),
