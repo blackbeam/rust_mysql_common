@@ -11,7 +11,7 @@ categories = ["database"]
 exclude = ["README.tpl"]
 
 # * Invoke `cargo readme > README.md` if relevant!
-version = "0.31.0"
+version = "0.31.1"
 
 [lib]
 proc-macro = true
