@@ -233,8 +233,8 @@ impl TryFrom<Value> for ParseIrOpt<bool> {
 
     fn try_from(v: Value) -> Result<Self, Self::Error> {
         match v {
-            Value::Int(0) => Ok(ParseIrOpt::Ready(false)),
-            Value::Int(1) => Ok(ParseIrOpt::Ready(true)),
+            Value::Int(0) | Value::UInt(0) => Ok(ParseIrOpt::Ready(false)),
+            Value::Int(_) | Value::UInt(_) => Ok(ParseIrOpt::Ready(true)),
             Value::Bytes(ref bytes) => match bytes.as_slice() {
                 [b'0'] => Ok(ParseIrOpt::Parsed(false, v)),
                 [b'1'] => Ok(ParseIrOpt::Parsed(true, v)),
@@ -1010,6 +1010,26 @@ mod tests {
         fn parse_mysql_datetime_string_doesnt_crash(s in "\\PC*") {
             parse_mysql_datetime_string(s.as_bytes());
             let _ = super::time02::parse_mysql_datetime_string_with_time(s.as_bytes());
+        }
+
+        #[test]
+        fn parse_int_as_bool(n: i64) {
+            let val = Value::Int(n);
+            if n == 0 {
+                assert_eq!(from_value::<bool>(val), false);
+            } else {
+                assert_eq!(from_value::<bool>(val), true);
+            }
+        }
+
+        #[test]
+        fn parse_uint_as_bool(n: u64) {
+            let val = Value::UInt(n);
+            if n == 0 {
+                assert_eq!(from_value::<bool>(val), false);
+            } else {
+                assert_eq!(from_value::<bool>(val), true);
+            }
         }
 
         #[test]
