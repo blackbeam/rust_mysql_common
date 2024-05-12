@@ -17,7 +17,7 @@ use std::{
     borrow::Cow, cmp::max, collections::HashMap, convert::TryFrom, fmt, io, marker::PhantomData,
 };
 
-use crate::collations::CollationID;
+use crate::collations::CollationId;
 use crate::{
     constants::{
         CapabilityFlags, ColumnFlags, ColumnType, Command, CursorType, SessionStateType,
@@ -2030,9 +2030,9 @@ impl<'a> HandshakeResponse<'a> {
         Self {
             scramble_buf,
             collation: if server_version >= (5, 5, 3) {
-                RawInt::new(CollationID::UTF8MB4_GENERAL_CI as u8)
+                RawInt::new(CollationId::UTF8MB4_GENERAL_CI as u8)
             } else {
-                RawInt::new(CollationID::UTF8MB3_GENERAL_CI as u8)
+                RawInt::new(CollationId::UTF8MB3_GENERAL_CI as u8)
             },
             user: user.map(RawBytes::new).unwrap_or_default(),
             db_name: db_name.map(RawBytes::new),
@@ -3672,7 +3672,7 @@ mod test {
         assert_eq!(column.org_name_str(), "org_name");
         assert_eq!(
             column.character_set(),
-            CollationID::UTF8MB3_GENERAL_CI as u16
+            CollationId::UTF8MB3_GENERAL_CI as u16
         );
         assert_eq!(column.column_length(), 15);
         assert_eq!(column.column_type(), ColumnType::MYSQL_TYPE_DECIMAL);

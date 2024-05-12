@@ -1,12 +1,18 @@
 /// MySql collation type.
+///
 /// Collected via:
+///
 /// ```sql
-/// SELECT CONCAT(UPPER(COLLATION_NAME), ' = ', ID, ',') FROM INFORMATION_SCHEMA.COLLATIONS ORDER BY ID
+/// SELECT CONCAT(
+///     UPPER(COLLATION_NAME), ' = ', ID, ','
+/// )
+/// FROM INFORMATION_SCHEMA.COLLATIONS
+/// ORDER BY ID;
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[allow(non_camel_case_types)]
 #[repr(u16)]
-pub enum CollationID {
+pub enum CollationId {
     UNKNOWN_COLLATION_ID = 0,
     BIG5_CHINESE_CI = 1,
     LATIN2_CZECH_CS = 2,
@@ -296,304 +302,311 @@ pub enum CollationID {
     UTF8MB4_MN_CYRL_0900_AS_CS = 323,
 }
 
-impl From<u16> for CollationID {
-    /// u16 conversion .
+impl From<u16> for CollationId {
+    /// u16 conversion.
+    ///
     /// Collected via:
+    ///
     /// ```sql
-    /// SELECT CONCAT(ID, ' => CollationID::', UPPER(COLLATION_NAME), ',') FROM INFORMATION_SCHEMA.COLLATIONS ORDER BY ID
+    /// SELECT CONCAT(
+    ///     ID, ' => CollationId::', UPPER(COLLATION_NAME), ','
+    /// )
+    /// FROM INFORMATION_SCHEMA.COLLATIONS
+    /// ORDER BY ID;
     /// ```
     fn from(value: u16) -> Self {
         match value {
-            1 => CollationID::BIG5_CHINESE_CI,
-            2 => CollationID::LATIN2_CZECH_CS,
-            3 => CollationID::DEC8_SWEDISH_CI,
-            4 => CollationID::CP850_GENERAL_CI,
-            5 => CollationID::LATIN1_GERMAN1_CI,
-            6 => CollationID::HP8_ENGLISH_CI,
-            7 => CollationID::KOI8R_GENERAL_CI,
-            8 => CollationID::LATIN1_SWEDISH_CI,
-            9 => CollationID::LATIN2_GENERAL_CI,
-            10 => CollationID::SWE7_SWEDISH_CI,
-            11 => CollationID::ASCII_GENERAL_CI,
-            12 => CollationID::UJIS_JAPANESE_CI,
-            13 => CollationID::SJIS_JAPANESE_CI,
-            14 => CollationID::CP1251_BULGARIAN_CI,
-            15 => CollationID::LATIN1_DANISH_CI,
-            16 => CollationID::HEBREW_GENERAL_CI,
-            18 => CollationID::TIS620_THAI_CI,
-            19 => CollationID::EUCKR_KOREAN_CI,
-            20 => CollationID::LATIN7_ESTONIAN_CS,
-            21 => CollationID::LATIN2_HUNGARIAN_CI,
-            22 => CollationID::KOI8U_GENERAL_CI,
-            23 => CollationID::CP1251_UKRAINIAN_CI,
-            24 => CollationID::GB2312_CHINESE_CI,
-            25 => CollationID::GREEK_GENERAL_CI,
-            26 => CollationID::CP1250_GENERAL_CI,
-            27 => CollationID::LATIN2_CROATIAN_CI,
-            28 => CollationID::GBK_CHINESE_CI,
-            29 => CollationID::CP1257_LITHUANIAN_CI,
-            30 => CollationID::LATIN5_TURKISH_CI,
-            31 => CollationID::LATIN1_GERMAN2_CI,
-            32 => CollationID::ARMSCII8_GENERAL_CI,
-            33 => CollationID::UTF8MB3_GENERAL_CI,
-            34 => CollationID::CP1250_CZECH_CS,
-            35 => CollationID::UCS2_GENERAL_CI,
-            36 => CollationID::CP866_GENERAL_CI,
-            37 => CollationID::KEYBCS2_GENERAL_CI,
-            38 => CollationID::MACCE_GENERAL_CI,
-            39 => CollationID::MACROMAN_GENERAL_CI,
-            40 => CollationID::CP852_GENERAL_CI,
-            41 => CollationID::LATIN7_GENERAL_CI,
-            42 => CollationID::LATIN7_GENERAL_CS,
-            43 => CollationID::MACCE_BIN,
-            44 => CollationID::CP1250_CROATIAN_CI,
-            45 => CollationID::UTF8MB4_GENERAL_CI,
-            46 => CollationID::UTF8MB4_BIN,
-            47 => CollationID::LATIN1_BIN,
-            48 => CollationID::LATIN1_GENERAL_CI,
-            49 => CollationID::LATIN1_GENERAL_CS,
-            50 => CollationID::CP1251_BIN,
-            51 => CollationID::CP1251_GENERAL_CI,
-            52 => CollationID::CP1251_GENERAL_CS,
-            53 => CollationID::MACROMAN_BIN,
-            54 => CollationID::UTF16_GENERAL_CI,
-            55 => CollationID::UTF16_BIN,
-            56 => CollationID::UTF16LE_GENERAL_CI,
-            57 => CollationID::CP1256_GENERAL_CI,
-            58 => CollationID::CP1257_BIN,
-            59 => CollationID::CP1257_GENERAL_CI,
-            60 => CollationID::UTF32_GENERAL_CI,
-            61 => CollationID::UTF32_BIN,
-            62 => CollationID::UTF16LE_BIN,
-            63 => CollationID::BINARY,
-            64 => CollationID::ARMSCII8_BIN,
-            65 => CollationID::ASCII_BIN,
-            66 => CollationID::CP1250_BIN,
-            67 => CollationID::CP1256_BIN,
-            68 => CollationID::CP866_BIN,
-            69 => CollationID::DEC8_BIN,
-            70 => CollationID::GREEK_BIN,
-            71 => CollationID::HEBREW_BIN,
-            72 => CollationID::HP8_BIN,
-            73 => CollationID::KEYBCS2_BIN,
-            74 => CollationID::KOI8R_BIN,
-            75 => CollationID::KOI8U_BIN,
-            76 => CollationID::UTF8MB3_TOLOWER_CI,
-            77 => CollationID::LATIN2_BIN,
-            78 => CollationID::LATIN5_BIN,
-            79 => CollationID::LATIN7_BIN,
-            80 => CollationID::CP850_BIN,
-            81 => CollationID::CP852_BIN,
-            82 => CollationID::SWE7_BIN,
-            83 => CollationID::UTF8MB3_BIN,
-            84 => CollationID::BIG5_BIN,
-            85 => CollationID::EUCKR_BIN,
-            86 => CollationID::GB2312_BIN,
-            87 => CollationID::GBK_BIN,
-            88 => CollationID::SJIS_BIN,
-            89 => CollationID::TIS620_BIN,
-            90 => CollationID::UCS2_BIN,
-            91 => CollationID::UJIS_BIN,
-            92 => CollationID::GEOSTD8_GENERAL_CI,
-            93 => CollationID::GEOSTD8_BIN,
-            94 => CollationID::LATIN1_SPANISH_CI,
-            95 => CollationID::CP932_JAPANESE_CI,
-            96 => CollationID::CP932_BIN,
-            97 => CollationID::EUCJPMS_JAPANESE_CI,
-            98 => CollationID::EUCJPMS_BIN,
-            99 => CollationID::CP1250_POLISH_CI,
-            101 => CollationID::UTF16_UNICODE_CI,
-            102 => CollationID::UTF16_ICELANDIC_CI,
-            103 => CollationID::UTF16_LATVIAN_CI,
-            104 => CollationID::UTF16_ROMANIAN_CI,
-            105 => CollationID::UTF16_SLOVENIAN_CI,
-            106 => CollationID::UTF16_POLISH_CI,
-            107 => CollationID::UTF16_ESTONIAN_CI,
-            108 => CollationID::UTF16_SPANISH_CI,
-            109 => CollationID::UTF16_SWEDISH_CI,
-            110 => CollationID::UTF16_TURKISH_CI,
-            111 => CollationID::UTF16_CZECH_CI,
-            112 => CollationID::UTF16_DANISH_CI,
-            113 => CollationID::UTF16_LITHUANIAN_CI,
-            114 => CollationID::UTF16_SLOVAK_CI,
-            115 => CollationID::UTF16_SPANISH2_CI,
-            116 => CollationID::UTF16_ROMAN_CI,
-            117 => CollationID::UTF16_PERSIAN_CI,
-            118 => CollationID::UTF16_ESPERANTO_CI,
-            119 => CollationID::UTF16_HUNGARIAN_CI,
-            120 => CollationID::UTF16_SINHALA_CI,
-            121 => CollationID::UTF16_GERMAN2_CI,
-            122 => CollationID::UTF16_CROATIAN_CI,
-            123 => CollationID::UTF16_UNICODE_520_CI,
-            124 => CollationID::UTF16_VIETNAMESE_CI,
-            128 => CollationID::UCS2_UNICODE_CI,
-            129 => CollationID::UCS2_ICELANDIC_CI,
-            130 => CollationID::UCS2_LATVIAN_CI,
-            131 => CollationID::UCS2_ROMANIAN_CI,
-            132 => CollationID::UCS2_SLOVENIAN_CI,
-            133 => CollationID::UCS2_POLISH_CI,
-            134 => CollationID::UCS2_ESTONIAN_CI,
-            135 => CollationID::UCS2_SPANISH_CI,
-            136 => CollationID::UCS2_SWEDISH_CI,
-            137 => CollationID::UCS2_TURKISH_CI,
-            138 => CollationID::UCS2_CZECH_CI,
-            139 => CollationID::UCS2_DANISH_CI,
-            140 => CollationID::UCS2_LITHUANIAN_CI,
-            141 => CollationID::UCS2_SLOVAK_CI,
-            142 => CollationID::UCS2_SPANISH2_CI,
-            143 => CollationID::UCS2_ROMAN_CI,
-            144 => CollationID::UCS2_PERSIAN_CI,
-            145 => CollationID::UCS2_ESPERANTO_CI,
-            146 => CollationID::UCS2_HUNGARIAN_CI,
-            147 => CollationID::UCS2_SINHALA_CI,
-            148 => CollationID::UCS2_GERMAN2_CI,
-            149 => CollationID::UCS2_CROATIAN_CI,
-            150 => CollationID::UCS2_UNICODE_520_CI,
-            151 => CollationID::UCS2_VIETNAMESE_CI,
-            159 => CollationID::UCS2_GENERAL_MYSQL500_CI,
-            160 => CollationID::UTF32_UNICODE_CI,
-            161 => CollationID::UTF32_ICELANDIC_CI,
-            162 => CollationID::UTF32_LATVIAN_CI,
-            163 => CollationID::UTF32_ROMANIAN_CI,
-            164 => CollationID::UTF32_SLOVENIAN_CI,
-            165 => CollationID::UTF32_POLISH_CI,
-            166 => CollationID::UTF32_ESTONIAN_CI,
-            167 => CollationID::UTF32_SPANISH_CI,
-            168 => CollationID::UTF32_SWEDISH_CI,
-            169 => CollationID::UTF32_TURKISH_CI,
-            170 => CollationID::UTF32_CZECH_CI,
-            171 => CollationID::UTF32_DANISH_CI,
-            172 => CollationID::UTF32_LITHUANIAN_CI,
-            173 => CollationID::UTF32_SLOVAK_CI,
-            174 => CollationID::UTF32_SPANISH2_CI,
-            175 => CollationID::UTF32_ROMAN_CI,
-            176 => CollationID::UTF32_PERSIAN_CI,
-            177 => CollationID::UTF32_ESPERANTO_CI,
-            178 => CollationID::UTF32_HUNGARIAN_CI,
-            179 => CollationID::UTF32_SINHALA_CI,
-            180 => CollationID::UTF32_GERMAN2_CI,
-            181 => CollationID::UTF32_CROATIAN_CI,
-            182 => CollationID::UTF32_UNICODE_520_CI,
-            183 => CollationID::UTF32_VIETNAMESE_CI,
-            192 => CollationID::UTF8MB3_UNICODE_CI,
-            193 => CollationID::UTF8MB3_ICELANDIC_CI,
-            194 => CollationID::UTF8MB3_LATVIAN_CI,
-            195 => CollationID::UTF8MB3_ROMANIAN_CI,
-            196 => CollationID::UTF8MB3_SLOVENIAN_CI,
-            197 => CollationID::UTF8MB3_POLISH_CI,
-            198 => CollationID::UTF8MB3_ESTONIAN_CI,
-            199 => CollationID::UTF8MB3_SPANISH_CI,
-            200 => CollationID::UTF8MB3_SWEDISH_CI,
-            201 => CollationID::UTF8MB3_TURKISH_CI,
-            202 => CollationID::UTF8MB3_CZECH_CI,
-            203 => CollationID::UTF8MB3_DANISH_CI,
-            204 => CollationID::UTF8MB3_LITHUANIAN_CI,
-            205 => CollationID::UTF8MB3_SLOVAK_CI,
-            206 => CollationID::UTF8MB3_SPANISH2_CI,
-            207 => CollationID::UTF8MB3_ROMAN_CI,
-            208 => CollationID::UTF8MB3_PERSIAN_CI,
-            209 => CollationID::UTF8MB3_ESPERANTO_CI,
-            210 => CollationID::UTF8MB3_HUNGARIAN_CI,
-            211 => CollationID::UTF8MB3_SINHALA_CI,
-            212 => CollationID::UTF8MB3_GERMAN2_CI,
-            213 => CollationID::UTF8MB3_CROATIAN_CI,
-            214 => CollationID::UTF8MB3_UNICODE_520_CI,
-            215 => CollationID::UTF8MB3_VIETNAMESE_CI,
-            223 => CollationID::UTF8MB3_GENERAL_MYSQL500_CI,
-            224 => CollationID::UTF8MB4_UNICODE_CI,
-            225 => CollationID::UTF8MB4_ICELANDIC_CI,
-            226 => CollationID::UTF8MB4_LATVIAN_CI,
-            227 => CollationID::UTF8MB4_ROMANIAN_CI,
-            228 => CollationID::UTF8MB4_SLOVENIAN_CI,
-            229 => CollationID::UTF8MB4_POLISH_CI,
-            230 => CollationID::UTF8MB4_ESTONIAN_CI,
-            231 => CollationID::UTF8MB4_SPANISH_CI,
-            232 => CollationID::UTF8MB4_SWEDISH_CI,
-            233 => CollationID::UTF8MB4_TURKISH_CI,
-            234 => CollationID::UTF8MB4_CZECH_CI,
-            235 => CollationID::UTF8MB4_DANISH_CI,
-            236 => CollationID::UTF8MB4_LITHUANIAN_CI,
-            237 => CollationID::UTF8MB4_SLOVAK_CI,
-            238 => CollationID::UTF8MB4_SPANISH2_CI,
-            239 => CollationID::UTF8MB4_ROMAN_CI,
-            240 => CollationID::UTF8MB4_PERSIAN_CI,
-            241 => CollationID::UTF8MB4_ESPERANTO_CI,
-            242 => CollationID::UTF8MB4_HUNGARIAN_CI,
-            243 => CollationID::UTF8MB4_SINHALA_CI,
-            244 => CollationID::UTF8MB4_GERMAN2_CI,
-            245 => CollationID::UTF8MB4_CROATIAN_CI,
-            246 => CollationID::UTF8MB4_UNICODE_520_CI,
-            247 => CollationID::UTF8MB4_VIETNAMESE_CI,
-            248 => CollationID::GB18030_CHINESE_CI,
-            249 => CollationID::GB18030_BIN,
-            250 => CollationID::GB18030_UNICODE_520_CI,
-            255 => CollationID::UTF8MB4_0900_AI_CI,
-            256 => CollationID::UTF8MB4_DE_PB_0900_AI_CI,
-            257 => CollationID::UTF8MB4_IS_0900_AI_CI,
-            258 => CollationID::UTF8MB4_LV_0900_AI_CI,
-            259 => CollationID::UTF8MB4_RO_0900_AI_CI,
-            260 => CollationID::UTF8MB4_SL_0900_AI_CI,
-            261 => CollationID::UTF8MB4_PL_0900_AI_CI,
-            262 => CollationID::UTF8MB4_ET_0900_AI_CI,
-            263 => CollationID::UTF8MB4_ES_0900_AI_CI,
-            264 => CollationID::UTF8MB4_SV_0900_AI_CI,
-            265 => CollationID::UTF8MB4_TR_0900_AI_CI,
-            266 => CollationID::UTF8MB4_CS_0900_AI_CI,
-            267 => CollationID::UTF8MB4_DA_0900_AI_CI,
-            268 => CollationID::UTF8MB4_LT_0900_AI_CI,
-            269 => CollationID::UTF8MB4_SK_0900_AI_CI,
-            270 => CollationID::UTF8MB4_ES_TRAD_0900_AI_CI,
-            271 => CollationID::UTF8MB4_LA_0900_AI_CI,
-            273 => CollationID::UTF8MB4_EO_0900_AI_CI,
-            274 => CollationID::UTF8MB4_HU_0900_AI_CI,
-            275 => CollationID::UTF8MB4_HR_0900_AI_CI,
-            277 => CollationID::UTF8MB4_VI_0900_AI_CI,
-            278 => CollationID::UTF8MB4_0900_AS_CS,
-            279 => CollationID::UTF8MB4_DE_PB_0900_AS_CS,
-            280 => CollationID::UTF8MB4_IS_0900_AS_CS,
-            281 => CollationID::UTF8MB4_LV_0900_AS_CS,
-            282 => CollationID::UTF8MB4_RO_0900_AS_CS,
-            283 => CollationID::UTF8MB4_SL_0900_AS_CS,
-            284 => CollationID::UTF8MB4_PL_0900_AS_CS,
-            285 => CollationID::UTF8MB4_ET_0900_AS_CS,
-            286 => CollationID::UTF8MB4_ES_0900_AS_CS,
-            287 => CollationID::UTF8MB4_SV_0900_AS_CS,
-            288 => CollationID::UTF8MB4_TR_0900_AS_CS,
-            289 => CollationID::UTF8MB4_CS_0900_AS_CS,
-            290 => CollationID::UTF8MB4_DA_0900_AS_CS,
-            291 => CollationID::UTF8MB4_LT_0900_AS_CS,
-            292 => CollationID::UTF8MB4_SK_0900_AS_CS,
-            293 => CollationID::UTF8MB4_ES_TRAD_0900_AS_CS,
-            294 => CollationID::UTF8MB4_LA_0900_AS_CS,
-            296 => CollationID::UTF8MB4_EO_0900_AS_CS,
-            297 => CollationID::UTF8MB4_HU_0900_AS_CS,
-            298 => CollationID::UTF8MB4_HR_0900_AS_CS,
-            300 => CollationID::UTF8MB4_VI_0900_AS_CS,
-            303 => CollationID::UTF8MB4_JA_0900_AS_CS,
-            304 => CollationID::UTF8MB4_JA_0900_AS_CS_KS,
-            305 => CollationID::UTF8MB4_0900_AS_CI,
-            306 => CollationID::UTF8MB4_RU_0900_AI_CI,
-            307 => CollationID::UTF8MB4_RU_0900_AS_CS,
-            308 => CollationID::UTF8MB4_ZH_0900_AS_CS,
-            309 => CollationID::UTF8MB4_0900_BIN,
-            310 => CollationID::UTF8MB4_NB_0900_AI_CI,
-            311 => CollationID::UTF8MB4_NB_0900_AS_CS,
-            312 => CollationID::UTF8MB4_NN_0900_AI_CI,
-            313 => CollationID::UTF8MB4_NN_0900_AS_CS,
-            314 => CollationID::UTF8MB4_SR_LATN_0900_AI_CI,
-            315 => CollationID::UTF8MB4_SR_LATN_0900_AS_CS,
-            316 => CollationID::UTF8MB4_BS_0900_AI_CI,
-            317 => CollationID::UTF8MB4_BS_0900_AS_CS,
-            318 => CollationID::UTF8MB4_BG_0900_AI_CI,
-            319 => CollationID::UTF8MB4_BG_0900_AS_CS,
-            320 => CollationID::UTF8MB4_GL_0900_AI_CI,
-            321 => CollationID::UTF8MB4_GL_0900_AS_CS,
-            322 => CollationID::UTF8MB4_MN_CYRL_0900_AI_CI,
-            323 => CollationID::UTF8MB4_MN_CYRL_0900_AS_CS,
-            _ => CollationID::UNKNOWN_COLLATION_ID,
+            1 => CollationId::BIG5_CHINESE_CI,
+            2 => CollationId::LATIN2_CZECH_CS,
+            3 => CollationId::DEC8_SWEDISH_CI,
+            4 => CollationId::CP850_GENERAL_CI,
+            5 => CollationId::LATIN1_GERMAN1_CI,
+            6 => CollationId::HP8_ENGLISH_CI,
+            7 => CollationId::KOI8R_GENERAL_CI,
+            8 => CollationId::LATIN1_SWEDISH_CI,
+            9 => CollationId::LATIN2_GENERAL_CI,
+            10 => CollationId::SWE7_SWEDISH_CI,
+            11 => CollationId::ASCII_GENERAL_CI,
+            12 => CollationId::UJIS_JAPANESE_CI,
+            13 => CollationId::SJIS_JAPANESE_CI,
+            14 => CollationId::CP1251_BULGARIAN_CI,
+            15 => CollationId::LATIN1_DANISH_CI,
+            16 => CollationId::HEBREW_GENERAL_CI,
+            18 => CollationId::TIS620_THAI_CI,
+            19 => CollationId::EUCKR_KOREAN_CI,
+            20 => CollationId::LATIN7_ESTONIAN_CS,
+            21 => CollationId::LATIN2_HUNGARIAN_CI,
+            22 => CollationId::KOI8U_GENERAL_CI,
+            23 => CollationId::CP1251_UKRAINIAN_CI,
+            24 => CollationId::GB2312_CHINESE_CI,
+            25 => CollationId::GREEK_GENERAL_CI,
+            26 => CollationId::CP1250_GENERAL_CI,
+            27 => CollationId::LATIN2_CROATIAN_CI,
+            28 => CollationId::GBK_CHINESE_CI,
+            29 => CollationId::CP1257_LITHUANIAN_CI,
+            30 => CollationId::LATIN5_TURKISH_CI,
+            31 => CollationId::LATIN1_GERMAN2_CI,
+            32 => CollationId::ARMSCII8_GENERAL_CI,
+            33 => CollationId::UTF8MB3_GENERAL_CI,
+            34 => CollationId::CP1250_CZECH_CS,
+            35 => CollationId::UCS2_GENERAL_CI,
+            36 => CollationId::CP866_GENERAL_CI,
+            37 => CollationId::KEYBCS2_GENERAL_CI,
+            38 => CollationId::MACCE_GENERAL_CI,
+            39 => CollationId::MACROMAN_GENERAL_CI,
+            40 => CollationId::CP852_GENERAL_CI,
+            41 => CollationId::LATIN7_GENERAL_CI,
+            42 => CollationId::LATIN7_GENERAL_CS,
+            43 => CollationId::MACCE_BIN,
+            44 => CollationId::CP1250_CROATIAN_CI,
+            45 => CollationId::UTF8MB4_GENERAL_CI,
+            46 => CollationId::UTF8MB4_BIN,
+            47 => CollationId::LATIN1_BIN,
+            48 => CollationId::LATIN1_GENERAL_CI,
+            49 => CollationId::LATIN1_GENERAL_CS,
+            50 => CollationId::CP1251_BIN,
+            51 => CollationId::CP1251_GENERAL_CI,
+            52 => CollationId::CP1251_GENERAL_CS,
+            53 => CollationId::MACROMAN_BIN,
+            54 => CollationId::UTF16_GENERAL_CI,
+            55 => CollationId::UTF16_BIN,
+            56 => CollationId::UTF16LE_GENERAL_CI,
+            57 => CollationId::CP1256_GENERAL_CI,
+            58 => CollationId::CP1257_BIN,
+            59 => CollationId::CP1257_GENERAL_CI,
+            60 => CollationId::UTF32_GENERAL_CI,
+            61 => CollationId::UTF32_BIN,
+            62 => CollationId::UTF16LE_BIN,
+            63 => CollationId::BINARY,
+            64 => CollationId::ARMSCII8_BIN,
+            65 => CollationId::ASCII_BIN,
+            66 => CollationId::CP1250_BIN,
+            67 => CollationId::CP1256_BIN,
+            68 => CollationId::CP866_BIN,
+            69 => CollationId::DEC8_BIN,
+            70 => CollationId::GREEK_BIN,
+            71 => CollationId::HEBREW_BIN,
+            72 => CollationId::HP8_BIN,
+            73 => CollationId::KEYBCS2_BIN,
+            74 => CollationId::KOI8R_BIN,
+            75 => CollationId::KOI8U_BIN,
+            76 => CollationId::UTF8MB3_TOLOWER_CI,
+            77 => CollationId::LATIN2_BIN,
+            78 => CollationId::LATIN5_BIN,
+            79 => CollationId::LATIN7_BIN,
+            80 => CollationId::CP850_BIN,
+            81 => CollationId::CP852_BIN,
+            82 => CollationId::SWE7_BIN,
+            83 => CollationId::UTF8MB3_BIN,
+            84 => CollationId::BIG5_BIN,
+            85 => CollationId::EUCKR_BIN,
+            86 => CollationId::GB2312_BIN,
+            87 => CollationId::GBK_BIN,
+            88 => CollationId::SJIS_BIN,
+            89 => CollationId::TIS620_BIN,
+            90 => CollationId::UCS2_BIN,
+            91 => CollationId::UJIS_BIN,
+            92 => CollationId::GEOSTD8_GENERAL_CI,
+            93 => CollationId::GEOSTD8_BIN,
+            94 => CollationId::LATIN1_SPANISH_CI,
+            95 => CollationId::CP932_JAPANESE_CI,
+            96 => CollationId::CP932_BIN,
+            97 => CollationId::EUCJPMS_JAPANESE_CI,
+            98 => CollationId::EUCJPMS_BIN,
+            99 => CollationId::CP1250_POLISH_CI,
+            101 => CollationId::UTF16_UNICODE_CI,
+            102 => CollationId::UTF16_ICELANDIC_CI,
+            103 => CollationId::UTF16_LATVIAN_CI,
+            104 => CollationId::UTF16_ROMANIAN_CI,
+            105 => CollationId::UTF16_SLOVENIAN_CI,
+            106 => CollationId::UTF16_POLISH_CI,
+            107 => CollationId::UTF16_ESTONIAN_CI,
+            108 => CollationId::UTF16_SPANISH_CI,
+            109 => CollationId::UTF16_SWEDISH_CI,
+            110 => CollationId::UTF16_TURKISH_CI,
+            111 => CollationId::UTF16_CZECH_CI,
+            112 => CollationId::UTF16_DANISH_CI,
+            113 => CollationId::UTF16_LITHUANIAN_CI,
+            114 => CollationId::UTF16_SLOVAK_CI,
+            115 => CollationId::UTF16_SPANISH2_CI,
+            116 => CollationId::UTF16_ROMAN_CI,
+            117 => CollationId::UTF16_PERSIAN_CI,
+            118 => CollationId::UTF16_ESPERANTO_CI,
+            119 => CollationId::UTF16_HUNGARIAN_CI,
+            120 => CollationId::UTF16_SINHALA_CI,
+            121 => CollationId::UTF16_GERMAN2_CI,
+            122 => CollationId::UTF16_CROATIAN_CI,
+            123 => CollationId::UTF16_UNICODE_520_CI,
+            124 => CollationId::UTF16_VIETNAMESE_CI,
+            128 => CollationId::UCS2_UNICODE_CI,
+            129 => CollationId::UCS2_ICELANDIC_CI,
+            130 => CollationId::UCS2_LATVIAN_CI,
+            131 => CollationId::UCS2_ROMANIAN_CI,
+            132 => CollationId::UCS2_SLOVENIAN_CI,
+            133 => CollationId::UCS2_POLISH_CI,
+            134 => CollationId::UCS2_ESTONIAN_CI,
+            135 => CollationId::UCS2_SPANISH_CI,
+            136 => CollationId::UCS2_SWEDISH_CI,
+            137 => CollationId::UCS2_TURKISH_CI,
+            138 => CollationId::UCS2_CZECH_CI,
+            139 => CollationId::UCS2_DANISH_CI,
+            140 => CollationId::UCS2_LITHUANIAN_CI,
+            141 => CollationId::UCS2_SLOVAK_CI,
+            142 => CollationId::UCS2_SPANISH2_CI,
+            143 => CollationId::UCS2_ROMAN_CI,
+            144 => CollationId::UCS2_PERSIAN_CI,
+            145 => CollationId::UCS2_ESPERANTO_CI,
+            146 => CollationId::UCS2_HUNGARIAN_CI,
+            147 => CollationId::UCS2_SINHALA_CI,
+            148 => CollationId::UCS2_GERMAN2_CI,
+            149 => CollationId::UCS2_CROATIAN_CI,
+            150 => CollationId::UCS2_UNICODE_520_CI,
+            151 => CollationId::UCS2_VIETNAMESE_CI,
+            159 => CollationId::UCS2_GENERAL_MYSQL500_CI,
+            160 => CollationId::UTF32_UNICODE_CI,
+            161 => CollationId::UTF32_ICELANDIC_CI,
+            162 => CollationId::UTF32_LATVIAN_CI,
+            163 => CollationId::UTF32_ROMANIAN_CI,
+            164 => CollationId::UTF32_SLOVENIAN_CI,
+            165 => CollationId::UTF32_POLISH_CI,
+            166 => CollationId::UTF32_ESTONIAN_CI,
+            167 => CollationId::UTF32_SPANISH_CI,
+            168 => CollationId::UTF32_SWEDISH_CI,
+            169 => CollationId::UTF32_TURKISH_CI,
+            170 => CollationId::UTF32_CZECH_CI,
+            171 => CollationId::UTF32_DANISH_CI,
+            172 => CollationId::UTF32_LITHUANIAN_CI,
+            173 => CollationId::UTF32_SLOVAK_CI,
+            174 => CollationId::UTF32_SPANISH2_CI,
+            175 => CollationId::UTF32_ROMAN_CI,
+            176 => CollationId::UTF32_PERSIAN_CI,
+            177 => CollationId::UTF32_ESPERANTO_CI,
+            178 => CollationId::UTF32_HUNGARIAN_CI,
+            179 => CollationId::UTF32_SINHALA_CI,
+            180 => CollationId::UTF32_GERMAN2_CI,
+            181 => CollationId::UTF32_CROATIAN_CI,
+            182 => CollationId::UTF32_UNICODE_520_CI,
+            183 => CollationId::UTF32_VIETNAMESE_CI,
+            192 => CollationId::UTF8MB3_UNICODE_CI,
+            193 => CollationId::UTF8MB3_ICELANDIC_CI,
+            194 => CollationId::UTF8MB3_LATVIAN_CI,
+            195 => CollationId::UTF8MB3_ROMANIAN_CI,
+            196 => CollationId::UTF8MB3_SLOVENIAN_CI,
+            197 => CollationId::UTF8MB3_POLISH_CI,
+            198 => CollationId::UTF8MB3_ESTONIAN_CI,
+            199 => CollationId::UTF8MB3_SPANISH_CI,
+            200 => CollationId::UTF8MB3_SWEDISH_CI,
+            201 => CollationId::UTF8MB3_TURKISH_CI,
+            202 => CollationId::UTF8MB3_CZECH_CI,
+            203 => CollationId::UTF8MB3_DANISH_CI,
+            204 => CollationId::UTF8MB3_LITHUANIAN_CI,
+            205 => CollationId::UTF8MB3_SLOVAK_CI,
+            206 => CollationId::UTF8MB3_SPANISH2_CI,
+            207 => CollationId::UTF8MB3_ROMAN_CI,
+            208 => CollationId::UTF8MB3_PERSIAN_CI,
+            209 => CollationId::UTF8MB3_ESPERANTO_CI,
+            210 => CollationId::UTF8MB3_HUNGARIAN_CI,
+            211 => CollationId::UTF8MB3_SINHALA_CI,
+            212 => CollationId::UTF8MB3_GERMAN2_CI,
+            213 => CollationId::UTF8MB3_CROATIAN_CI,
+            214 => CollationId::UTF8MB3_UNICODE_520_CI,
+            215 => CollationId::UTF8MB3_VIETNAMESE_CI,
+            223 => CollationId::UTF8MB3_GENERAL_MYSQL500_CI,
+            224 => CollationId::UTF8MB4_UNICODE_CI,
+            225 => CollationId::UTF8MB4_ICELANDIC_CI,
+            226 => CollationId::UTF8MB4_LATVIAN_CI,
+            227 => CollationId::UTF8MB4_ROMANIAN_CI,
+            228 => CollationId::UTF8MB4_SLOVENIAN_CI,
+            229 => CollationId::UTF8MB4_POLISH_CI,
+            230 => CollationId::UTF8MB4_ESTONIAN_CI,
+            231 => CollationId::UTF8MB4_SPANISH_CI,
+            232 => CollationId::UTF8MB4_SWEDISH_CI,
+            233 => CollationId::UTF8MB4_TURKISH_CI,
+            234 => CollationId::UTF8MB4_CZECH_CI,
+            235 => CollationId::UTF8MB4_DANISH_CI,
+            236 => CollationId::UTF8MB4_LITHUANIAN_CI,
+            237 => CollationId::UTF8MB4_SLOVAK_CI,
+            238 => CollationId::UTF8MB4_SPANISH2_CI,
+            239 => CollationId::UTF8MB4_ROMAN_CI,
+            240 => CollationId::UTF8MB4_PERSIAN_CI,
+            241 => CollationId::UTF8MB4_ESPERANTO_CI,
+            242 => CollationId::UTF8MB4_HUNGARIAN_CI,
+            243 => CollationId::UTF8MB4_SINHALA_CI,
+            244 => CollationId::UTF8MB4_GERMAN2_CI,
+            245 => CollationId::UTF8MB4_CROATIAN_CI,
+            246 => CollationId::UTF8MB4_UNICODE_520_CI,
+            247 => CollationId::UTF8MB4_VIETNAMESE_CI,
+            248 => CollationId::GB18030_CHINESE_CI,
+            249 => CollationId::GB18030_BIN,
+            250 => CollationId::GB18030_UNICODE_520_CI,
+            255 => CollationId::UTF8MB4_0900_AI_CI,
+            256 => CollationId::UTF8MB4_DE_PB_0900_AI_CI,
+            257 => CollationId::UTF8MB4_IS_0900_AI_CI,
+            258 => CollationId::UTF8MB4_LV_0900_AI_CI,
+            259 => CollationId::UTF8MB4_RO_0900_AI_CI,
+            260 => CollationId::UTF8MB4_SL_0900_AI_CI,
+            261 => CollationId::UTF8MB4_PL_0900_AI_CI,
+            262 => CollationId::UTF8MB4_ET_0900_AI_CI,
+            263 => CollationId::UTF8MB4_ES_0900_AI_CI,
+            264 => CollationId::UTF8MB4_SV_0900_AI_CI,
+            265 => CollationId::UTF8MB4_TR_0900_AI_CI,
+            266 => CollationId::UTF8MB4_CS_0900_AI_CI,
+            267 => CollationId::UTF8MB4_DA_0900_AI_CI,
+            268 => CollationId::UTF8MB4_LT_0900_AI_CI,
+            269 => CollationId::UTF8MB4_SK_0900_AI_CI,
+            270 => CollationId::UTF8MB4_ES_TRAD_0900_AI_CI,
+            271 => CollationId::UTF8MB4_LA_0900_AI_CI,
+            273 => CollationId::UTF8MB4_EO_0900_AI_CI,
+            274 => CollationId::UTF8MB4_HU_0900_AI_CI,
+            275 => CollationId::UTF8MB4_HR_0900_AI_CI,
+            277 => CollationId::UTF8MB4_VI_0900_AI_CI,
+            278 => CollationId::UTF8MB4_0900_AS_CS,
+            279 => CollationId::UTF8MB4_DE_PB_0900_AS_CS,
+            280 => CollationId::UTF8MB4_IS_0900_AS_CS,
+            281 => CollationId::UTF8MB4_LV_0900_AS_CS,
+            282 => CollationId::UTF8MB4_RO_0900_AS_CS,
+            283 => CollationId::UTF8MB4_SL_0900_AS_CS,
+            284 => CollationId::UTF8MB4_PL_0900_AS_CS,
+            285 => CollationId::UTF8MB4_ET_0900_AS_CS,
+            286 => CollationId::UTF8MB4_ES_0900_AS_CS,
+            287 => CollationId::UTF8MB4_SV_0900_AS_CS,
+            288 => CollationId::UTF8MB4_TR_0900_AS_CS,
+            289 => CollationId::UTF8MB4_CS_0900_AS_CS,
+            290 => CollationId::UTF8MB4_DA_0900_AS_CS,
+            291 => CollationId::UTF8MB4_LT_0900_AS_CS,
+            292 => CollationId::UTF8MB4_SK_0900_AS_CS,
+            293 => CollationId::UTF8MB4_ES_TRAD_0900_AS_CS,
+            294 => CollationId::UTF8MB4_LA_0900_AS_CS,
+            296 => CollationId::UTF8MB4_EO_0900_AS_CS,
+            297 => CollationId::UTF8MB4_HU_0900_AS_CS,
+            298 => CollationId::UTF8MB4_HR_0900_AS_CS,
+            300 => CollationId::UTF8MB4_VI_0900_AS_CS,
+            303 => CollationId::UTF8MB4_JA_0900_AS_CS,
+            304 => CollationId::UTF8MB4_JA_0900_AS_CS_KS,
+            305 => CollationId::UTF8MB4_0900_AS_CI,
+            306 => CollationId::UTF8MB4_RU_0900_AI_CI,
+            307 => CollationId::UTF8MB4_RU_0900_AS_CS,
+            308 => CollationId::UTF8MB4_ZH_0900_AS_CS,
+            309 => CollationId::UTF8MB4_0900_BIN,
+            310 => CollationId::UTF8MB4_NB_0900_AI_CI,
+            311 => CollationId::UTF8MB4_NB_0900_AS_CS,
+            312 => CollationId::UTF8MB4_NN_0900_AI_CI,
+            313 => CollationId::UTF8MB4_NN_0900_AS_CS,
+            314 => CollationId::UTF8MB4_SR_LATN_0900_AI_CI,
+            315 => CollationId::UTF8MB4_SR_LATN_0900_AS_CS,
+            316 => CollationId::UTF8MB4_BS_0900_AI_CI,
+            317 => CollationId::UTF8MB4_BS_0900_AS_CS,
+            318 => CollationId::UTF8MB4_BG_0900_AI_CI,
+            319 => CollationId::UTF8MB4_BG_0900_AS_CS,
+            320 => CollationId::UTF8MB4_GL_0900_AI_CI,
+            321 => CollationId::UTF8MB4_GL_0900_AS_CS,
+            322 => CollationId::UTF8MB4_MN_CYRL_0900_AI_CI,
+            323 => CollationId::UTF8MB4_MN_CYRL_0900_AS_CS,
+            _ => CollationId::UNKNOWN_COLLATION_ID,
         }
     }
 }
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PadAttribute {
     PadZero,
@@ -603,7 +616,7 @@ pub enum PadAttribute {
 /// MySQL server collation
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Collation<'a> {
-    pub id: CollationID,
+    pub id: CollationId,
     pub charset: &'a str,
     pub collation: &'a str,
     pub is_default: bool,
@@ -615,7 +628,7 @@ pub struct Collation<'a> {
 
 impl<'a> Collation<'a> {
     /// Get the collation ID.
-    pub fn id(&self) -> CollationID {
+    pub fn id(&self) -> CollationId {
         self.id
     }
 
@@ -655,16 +668,32 @@ impl<'a> Collation<'a> {
     }
 }
 
-impl<'a> From<CollationID> for Collation<'a> {
+impl From<CollationId> for Collation<'static> {
     /// Convert a collation ID to a collation.
+    ///
     /// Collected via:
+    ///
     /// ```sql
-    /// SELECT CONCAT(     'CollationID::',     UPPER(COLLATION_NAME),     '=> Collation {',     'id: CollationID::',     UPPER(COLLATION_NAME),     ',',     'charset: "',     CHARACTER_SET_NAME,     '",',     'collation: "',     COLLATION_NAME,     '",',     'is_default: ',     IF(IS_DEFAULT = 'Yes', 'true', 'false'),     ',',     'padding: PadAttribute::',     IF(PAD_ATTRIBUTE = 'PAD SPACE', 'PadSpace', 'PadZero'),     ',',     'is_compiled: ',     IF(IS_COMPILED = 'Yes', 'true', 'false'),     ',',     'sort_len: ',     SORTLEN,     ',',     'max_len: ',     MAXLEN,     '},' ) FROM INFORMATION_SCHEMA.COLLATIONS JOIN INFORMATION_SCHEMA.CHARACTER_SETS USING(CHARACTER_SET_NAME) ORDER BY ID;
+    /// SELECT CONCAT(
+    ///     'CollationId::', UPPER(COLLATION_NAME), '=> Collation {',
+    ///         'id: CollationId::', UPPER(COLLATION_NAME), ',',
+    ///         'charset: "', CHARACTER_SET_NAME, '",',
+    ///         'collation: "', COLLATION_NAME, '",',
+    ///         'is_default: ', IF(IS_DEFAULT = 'Yes', 'true', 'false'), ',',
+    ///         'padding: PadAttribute::', IF(PAD_ATTRIBUTE = 'PAD SPACE', 'PadSpace', 'PadZero'), ',',
+    ///         'is_compiled: ', IF(IS_COMPILED = 'Yes', 'true', 'false'), ',',
+    ///         'sort_len: ', SORTLEN, ',',
+    ///         'max_len: ', MAXLEN,
+    ///     '},'
+    /// )
+    /// FROM INFORMATION_SCHEMA.COLLATIONS
+    /// JOIN INFORMATION_SCHEMA.CHARACTER_SETS USING(CHARACTER_SET_NAME)
+    /// ORDER BY ID;
     /// ```
-    fn from(value: CollationID) -> Self {
+    fn from(value: CollationId) -> Self {
         match value {
-            CollationID::UNKNOWN_COLLATION_ID => Collation {
-                id: CollationID::UNKNOWN_COLLATION_ID,
+            CollationId::UNKNOWN_COLLATION_ID => Collation {
+                id: CollationId::UNKNOWN_COLLATION_ID,
                 charset: "unknown",
                 collation: "unknown",
                 is_default: false,
@@ -673,8 +702,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 0,
                 max_len: 0,
             },
-            CollationID::BIG5_CHINESE_CI => Collation {
-                id: CollationID::BIG5_CHINESE_CI,
+            CollationId::BIG5_CHINESE_CI => Collation {
+                id: CollationId::BIG5_CHINESE_CI,
                 charset: "big5",
                 collation: "big5_chinese_ci",
                 is_default: true,
@@ -683,8 +712,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 2,
             },
-            CollationID::LATIN2_CZECH_CS => Collation {
-                id: CollationID::LATIN2_CZECH_CS,
+            CollationId::LATIN2_CZECH_CS => Collation {
+                id: CollationId::LATIN2_CZECH_CS,
                 charset: "latin2",
                 collation: "latin2_czech_cs",
                 is_default: false,
@@ -693,8 +722,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 4,
                 max_len: 1,
             },
-            CollationID::DEC8_SWEDISH_CI => Collation {
-                id: CollationID::DEC8_SWEDISH_CI,
+            CollationId::DEC8_SWEDISH_CI => Collation {
+                id: CollationId::DEC8_SWEDISH_CI,
                 charset: "dec8",
                 collation: "dec8_swedish_ci",
                 is_default: true,
@@ -703,8 +732,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 1,
             },
-            CollationID::CP850_GENERAL_CI => Collation {
-                id: CollationID::CP850_GENERAL_CI,
+            CollationId::CP850_GENERAL_CI => Collation {
+                id: CollationId::CP850_GENERAL_CI,
                 charset: "cp850",
                 collation: "cp850_general_ci",
                 is_default: true,
@@ -713,8 +742,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 1,
             },
-            CollationID::LATIN1_GERMAN1_CI => Collation {
-                id: CollationID::LATIN1_GERMAN1_CI,
+            CollationId::LATIN1_GERMAN1_CI => Collation {
+                id: CollationId::LATIN1_GERMAN1_CI,
                 charset: "latin1",
                 collation: "latin1_german1_ci",
                 is_default: false,
@@ -723,8 +752,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 1,
             },
-            CollationID::HP8_ENGLISH_CI => Collation {
-                id: CollationID::HP8_ENGLISH_CI,
+            CollationId::HP8_ENGLISH_CI => Collation {
+                id: CollationId::HP8_ENGLISH_CI,
                 charset: "hp8",
                 collation: "hp8_english_ci",
                 is_default: true,
@@ -733,8 +762,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 1,
             },
-            CollationID::KOI8R_GENERAL_CI => Collation {
-                id: CollationID::KOI8R_GENERAL_CI,
+            CollationId::KOI8R_GENERAL_CI => Collation {
+                id: CollationId::KOI8R_GENERAL_CI,
                 charset: "koi8r",
                 collation: "koi8r_general_ci",
                 is_default: true,
@@ -743,8 +772,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 1,
             },
-            CollationID::LATIN1_SWEDISH_CI => Collation {
-                id: CollationID::LATIN1_SWEDISH_CI,
+            CollationId::LATIN1_SWEDISH_CI => Collation {
+                id: CollationId::LATIN1_SWEDISH_CI,
                 charset: "latin1",
                 collation: "latin1_swedish_ci",
                 is_default: true,
@@ -753,8 +782,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 1,
             },
-            CollationID::LATIN2_GENERAL_CI => Collation {
-                id: CollationID::LATIN2_GENERAL_CI,
+            CollationId::LATIN2_GENERAL_CI => Collation {
+                id: CollationId::LATIN2_GENERAL_CI,
                 charset: "latin2",
                 collation: "latin2_general_ci",
                 is_default: true,
@@ -763,8 +792,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 1,
             },
-            CollationID::SWE7_SWEDISH_CI => Collation {
-                id: CollationID::SWE7_SWEDISH_CI,
+            CollationId::SWE7_SWEDISH_CI => Collation {
+                id: CollationId::SWE7_SWEDISH_CI,
                 charset: "swe7",
                 collation: "swe7_swedish_ci",
                 is_default: true,
@@ -773,8 +802,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 1,
             },
-            CollationID::ASCII_GENERAL_CI => Collation {
-                id: CollationID::ASCII_GENERAL_CI,
+            CollationId::ASCII_GENERAL_CI => Collation {
+                id: CollationId::ASCII_GENERAL_CI,
                 charset: "ascii",
                 collation: "ascii_general_ci",
                 is_default: true,
@@ -783,8 +812,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 1,
             },
-            CollationID::UJIS_JAPANESE_CI => Collation {
-                id: CollationID::UJIS_JAPANESE_CI,
+            CollationId::UJIS_JAPANESE_CI => Collation {
+                id: CollationId::UJIS_JAPANESE_CI,
                 charset: "ujis",
                 collation: "ujis_japanese_ci",
                 is_default: true,
@@ -793,8 +822,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 3,
             },
-            CollationID::SJIS_JAPANESE_CI => Collation {
-                id: CollationID::SJIS_JAPANESE_CI,
+            CollationId::SJIS_JAPANESE_CI => Collation {
+                id: CollationId::SJIS_JAPANESE_CI,
                 charset: "sjis",
                 collation: "sjis_japanese_ci",
                 is_default: true,
@@ -803,8 +832,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 2,
             },
-            CollationID::CP1251_BULGARIAN_CI => Collation {
-                id: CollationID::CP1251_BULGARIAN_CI,
+            CollationId::CP1251_BULGARIAN_CI => Collation {
+                id: CollationId::CP1251_BULGARIAN_CI,
                 charset: "cp1251",
                 collation: "cp1251_bulgarian_ci",
                 is_default: false,
@@ -813,8 +842,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 1,
             },
-            CollationID::LATIN1_DANISH_CI => Collation {
-                id: CollationID::LATIN1_DANISH_CI,
+            CollationId::LATIN1_DANISH_CI => Collation {
+                id: CollationId::LATIN1_DANISH_CI,
                 charset: "latin1",
                 collation: "latin1_danish_ci",
                 is_default: false,
@@ -823,8 +852,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 1,
             },
-            CollationID::HEBREW_GENERAL_CI => Collation {
-                id: CollationID::HEBREW_GENERAL_CI,
+            CollationId::HEBREW_GENERAL_CI => Collation {
+                id: CollationId::HEBREW_GENERAL_CI,
                 charset: "hebrew",
                 collation: "hebrew_general_ci",
                 is_default: true,
@@ -833,8 +862,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 1,
             },
-            CollationID::TIS620_THAI_CI => Collation {
-                id: CollationID::TIS620_THAI_CI,
+            CollationId::TIS620_THAI_CI => Collation {
+                id: CollationId::TIS620_THAI_CI,
                 charset: "tis620",
                 collation: "tis620_thai_ci",
                 is_default: true,
@@ -843,8 +872,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 4,
                 max_len: 1,
             },
-            CollationID::EUCKR_KOREAN_CI => Collation {
-                id: CollationID::EUCKR_KOREAN_CI,
+            CollationId::EUCKR_KOREAN_CI => Collation {
+                id: CollationId::EUCKR_KOREAN_CI,
                 charset: "euckr",
                 collation: "euckr_korean_ci",
                 is_default: true,
@@ -853,8 +882,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 2,
             },
-            CollationID::LATIN7_ESTONIAN_CS => Collation {
-                id: CollationID::LATIN7_ESTONIAN_CS,
+            CollationId::LATIN7_ESTONIAN_CS => Collation {
+                id: CollationId::LATIN7_ESTONIAN_CS,
                 charset: "latin7",
                 collation: "latin7_estonian_cs",
                 is_default: false,
@@ -863,8 +892,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 1,
             },
-            CollationID::LATIN2_HUNGARIAN_CI => Collation {
-                id: CollationID::LATIN2_HUNGARIAN_CI,
+            CollationId::LATIN2_HUNGARIAN_CI => Collation {
+                id: CollationId::LATIN2_HUNGARIAN_CI,
                 charset: "latin2",
                 collation: "latin2_hungarian_ci",
                 is_default: false,
@@ -873,8 +902,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 1,
             },
-            CollationID::KOI8U_GENERAL_CI => Collation {
-                id: CollationID::KOI8U_GENERAL_CI,
+            CollationId::KOI8U_GENERAL_CI => Collation {
+                id: CollationId::KOI8U_GENERAL_CI,
                 charset: "koi8u",
                 collation: "koi8u_general_ci",
                 is_default: true,
@@ -883,8 +912,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 1,
             },
-            CollationID::CP1251_UKRAINIAN_CI => Collation {
-                id: CollationID::CP1251_UKRAINIAN_CI,
+            CollationId::CP1251_UKRAINIAN_CI => Collation {
+                id: CollationId::CP1251_UKRAINIAN_CI,
                 charset: "cp1251",
                 collation: "cp1251_ukrainian_ci",
                 is_default: false,
@@ -893,8 +922,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 1,
             },
-            CollationID::GB2312_CHINESE_CI => Collation {
-                id: CollationID::GB2312_CHINESE_CI,
+            CollationId::GB2312_CHINESE_CI => Collation {
+                id: CollationId::GB2312_CHINESE_CI,
                 charset: "gb2312",
                 collation: "gb2312_chinese_ci",
                 is_default: true,
@@ -903,8 +932,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 2,
             },
-            CollationID::GREEK_GENERAL_CI => Collation {
-                id: CollationID::GREEK_GENERAL_CI,
+            CollationId::GREEK_GENERAL_CI => Collation {
+                id: CollationId::GREEK_GENERAL_CI,
                 charset: "greek",
                 collation: "greek_general_ci",
                 is_default: true,
@@ -913,8 +942,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 1,
             },
-            CollationID::CP1250_GENERAL_CI => Collation {
-                id: CollationID::CP1250_GENERAL_CI,
+            CollationId::CP1250_GENERAL_CI => Collation {
+                id: CollationId::CP1250_GENERAL_CI,
                 charset: "cp1250",
                 collation: "cp1250_general_ci",
                 is_default: true,
@@ -923,8 +952,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 1,
             },
-            CollationID::LATIN2_CROATIAN_CI => Collation {
-                id: CollationID::LATIN2_CROATIAN_CI,
+            CollationId::LATIN2_CROATIAN_CI => Collation {
+                id: CollationId::LATIN2_CROATIAN_CI,
                 charset: "latin2",
                 collation: "latin2_croatian_ci",
                 is_default: false,
@@ -933,8 +962,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 1,
             },
-            CollationID::GBK_CHINESE_CI => Collation {
-                id: CollationID::GBK_CHINESE_CI,
+            CollationId::GBK_CHINESE_CI => Collation {
+                id: CollationId::GBK_CHINESE_CI,
                 charset: "gbk",
                 collation: "gbk_chinese_ci",
                 is_default: true,
@@ -943,8 +972,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 2,
             },
-            CollationID::CP1257_LITHUANIAN_CI => Collation {
-                id: CollationID::CP1257_LITHUANIAN_CI,
+            CollationId::CP1257_LITHUANIAN_CI => Collation {
+                id: CollationId::CP1257_LITHUANIAN_CI,
                 charset: "cp1257",
                 collation: "cp1257_lithuanian_ci",
                 is_default: false,
@@ -953,8 +982,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 1,
             },
-            CollationID::LATIN5_TURKISH_CI => Collation {
-                id: CollationID::LATIN5_TURKISH_CI,
+            CollationId::LATIN5_TURKISH_CI => Collation {
+                id: CollationId::LATIN5_TURKISH_CI,
                 charset: "latin5",
                 collation: "latin5_turkish_ci",
                 is_default: true,
@@ -963,8 +992,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 1,
             },
-            CollationID::LATIN1_GERMAN2_CI => Collation {
-                id: CollationID::LATIN1_GERMAN2_CI,
+            CollationId::LATIN1_GERMAN2_CI => Collation {
+                id: CollationId::LATIN1_GERMAN2_CI,
                 charset: "latin1",
                 collation: "latin1_german2_ci",
                 is_default: false,
@@ -973,8 +1002,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 2,
                 max_len: 1,
             },
-            CollationID::ARMSCII8_GENERAL_CI => Collation {
-                id: CollationID::ARMSCII8_GENERAL_CI,
+            CollationId::ARMSCII8_GENERAL_CI => Collation {
+                id: CollationId::ARMSCII8_GENERAL_CI,
                 charset: "armscii8",
                 collation: "armscii8_general_ci",
                 is_default: true,
@@ -983,8 +1012,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 1,
             },
-            CollationID::UTF8MB3_GENERAL_CI => Collation {
-                id: CollationID::UTF8MB3_GENERAL_CI,
+            CollationId::UTF8MB3_GENERAL_CI => Collation {
+                id: CollationId::UTF8MB3_GENERAL_CI,
                 charset: "utf8mb3",
                 collation: "utf8mb3_general_ci",
                 is_default: true,
@@ -993,8 +1022,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 3,
             },
-            CollationID::CP1250_CZECH_CS => Collation {
-                id: CollationID::CP1250_CZECH_CS,
+            CollationId::CP1250_CZECH_CS => Collation {
+                id: CollationId::CP1250_CZECH_CS,
                 charset: "cp1250",
                 collation: "cp1250_czech_cs",
                 is_default: false,
@@ -1003,8 +1032,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 2,
                 max_len: 1,
             },
-            CollationID::UCS2_GENERAL_CI => Collation {
-                id: CollationID::UCS2_GENERAL_CI,
+            CollationId::UCS2_GENERAL_CI => Collation {
+                id: CollationId::UCS2_GENERAL_CI,
                 charset: "ucs2",
                 collation: "ucs2_general_ci",
                 is_default: true,
@@ -1013,8 +1042,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 2,
             },
-            CollationID::CP866_GENERAL_CI => Collation {
-                id: CollationID::CP866_GENERAL_CI,
+            CollationId::CP866_GENERAL_CI => Collation {
+                id: CollationId::CP866_GENERAL_CI,
                 charset: "cp866",
                 collation: "cp866_general_ci",
                 is_default: true,
@@ -1023,8 +1052,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 1,
             },
-            CollationID::KEYBCS2_GENERAL_CI => Collation {
-                id: CollationID::KEYBCS2_GENERAL_CI,
+            CollationId::KEYBCS2_GENERAL_CI => Collation {
+                id: CollationId::KEYBCS2_GENERAL_CI,
                 charset: "keybcs2",
                 collation: "keybcs2_general_ci",
                 is_default: true,
@@ -1033,8 +1062,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 1,
             },
-            CollationID::MACCE_GENERAL_CI => Collation {
-                id: CollationID::MACCE_GENERAL_CI,
+            CollationId::MACCE_GENERAL_CI => Collation {
+                id: CollationId::MACCE_GENERAL_CI,
                 charset: "macce",
                 collation: "macce_general_ci",
                 is_default: true,
@@ -1043,8 +1072,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 1,
             },
-            CollationID::MACROMAN_GENERAL_CI => Collation {
-                id: CollationID::MACROMAN_GENERAL_CI,
+            CollationId::MACROMAN_GENERAL_CI => Collation {
+                id: CollationId::MACROMAN_GENERAL_CI,
                 charset: "macroman",
                 collation: "macroman_general_ci",
                 is_default: true,
@@ -1053,8 +1082,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 1,
             },
-            CollationID::CP852_GENERAL_CI => Collation {
-                id: CollationID::CP852_GENERAL_CI,
+            CollationId::CP852_GENERAL_CI => Collation {
+                id: CollationId::CP852_GENERAL_CI,
                 charset: "cp852",
                 collation: "cp852_general_ci",
                 is_default: true,
@@ -1063,8 +1092,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 1,
             },
-            CollationID::LATIN7_GENERAL_CI => Collation {
-                id: CollationID::LATIN7_GENERAL_CI,
+            CollationId::LATIN7_GENERAL_CI => Collation {
+                id: CollationId::LATIN7_GENERAL_CI,
                 charset: "latin7",
                 collation: "latin7_general_ci",
                 is_default: true,
@@ -1073,8 +1102,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 1,
             },
-            CollationID::LATIN7_GENERAL_CS => Collation {
-                id: CollationID::LATIN7_GENERAL_CS,
+            CollationId::LATIN7_GENERAL_CS => Collation {
+                id: CollationId::LATIN7_GENERAL_CS,
                 charset: "latin7",
                 collation: "latin7_general_cs",
                 is_default: false,
@@ -1083,8 +1112,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 1,
             },
-            CollationID::MACCE_BIN => Collation {
-                id: CollationID::MACCE_BIN,
+            CollationId::MACCE_BIN => Collation {
+                id: CollationId::MACCE_BIN,
                 charset: "macce",
                 collation: "macce_bin",
                 is_default: false,
@@ -1093,8 +1122,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 1,
             },
-            CollationID::CP1250_CROATIAN_CI => Collation {
-                id: CollationID::CP1250_CROATIAN_CI,
+            CollationId::CP1250_CROATIAN_CI => Collation {
+                id: CollationId::CP1250_CROATIAN_CI,
                 charset: "cp1250",
                 collation: "cp1250_croatian_ci",
                 is_default: false,
@@ -1103,8 +1132,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 1,
             },
-            CollationID::UTF8MB4_GENERAL_CI => Collation {
-                id: CollationID::UTF8MB4_GENERAL_CI,
+            CollationId::UTF8MB4_GENERAL_CI => Collation {
+                id: CollationId::UTF8MB4_GENERAL_CI,
                 charset: "utf8mb4",
                 collation: "utf8mb4_general_ci",
                 is_default: false,
@@ -1113,8 +1142,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 4,
             },
-            CollationID::UTF8MB4_BIN => Collation {
-                id: CollationID::UTF8MB4_BIN,
+            CollationId::UTF8MB4_BIN => Collation {
+                id: CollationId::UTF8MB4_BIN,
                 charset: "utf8mb4",
                 collation: "utf8mb4_bin",
                 is_default: false,
@@ -1123,8 +1152,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 4,
             },
-            CollationID::LATIN1_BIN => Collation {
-                id: CollationID::LATIN1_BIN,
+            CollationId::LATIN1_BIN => Collation {
+                id: CollationId::LATIN1_BIN,
                 charset: "latin1",
                 collation: "latin1_bin",
                 is_default: false,
@@ -1133,8 +1162,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 1,
             },
-            CollationID::LATIN1_GENERAL_CI => Collation {
-                id: CollationID::LATIN1_GENERAL_CI,
+            CollationId::LATIN1_GENERAL_CI => Collation {
+                id: CollationId::LATIN1_GENERAL_CI,
                 charset: "latin1",
                 collation: "latin1_general_ci",
                 is_default: false,
@@ -1143,8 +1172,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 1,
             },
-            CollationID::LATIN1_GENERAL_CS => Collation {
-                id: CollationID::LATIN1_GENERAL_CS,
+            CollationId::LATIN1_GENERAL_CS => Collation {
+                id: CollationId::LATIN1_GENERAL_CS,
                 charset: "latin1",
                 collation: "latin1_general_cs",
                 is_default: false,
@@ -1153,8 +1182,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 1,
             },
-            CollationID::CP1251_BIN => Collation {
-                id: CollationID::CP1251_BIN,
+            CollationId::CP1251_BIN => Collation {
+                id: CollationId::CP1251_BIN,
                 charset: "cp1251",
                 collation: "cp1251_bin",
                 is_default: false,
@@ -1163,8 +1192,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 1,
             },
-            CollationID::CP1251_GENERAL_CI => Collation {
-                id: CollationID::CP1251_GENERAL_CI,
+            CollationId::CP1251_GENERAL_CI => Collation {
+                id: CollationId::CP1251_GENERAL_CI,
                 charset: "cp1251",
                 collation: "cp1251_general_ci",
                 is_default: true,
@@ -1173,8 +1202,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 1,
             },
-            CollationID::CP1251_GENERAL_CS => Collation {
-                id: CollationID::CP1251_GENERAL_CS,
+            CollationId::CP1251_GENERAL_CS => Collation {
+                id: CollationId::CP1251_GENERAL_CS,
                 charset: "cp1251",
                 collation: "cp1251_general_cs",
                 is_default: false,
@@ -1183,8 +1212,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 1,
             },
-            CollationID::MACROMAN_BIN => Collation {
-                id: CollationID::MACROMAN_BIN,
+            CollationId::MACROMAN_BIN => Collation {
+                id: CollationId::MACROMAN_BIN,
                 charset: "macroman",
                 collation: "macroman_bin",
                 is_default: false,
@@ -1193,8 +1222,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 1,
             },
-            CollationID::UTF16_GENERAL_CI => Collation {
-                id: CollationID::UTF16_GENERAL_CI,
+            CollationId::UTF16_GENERAL_CI => Collation {
+                id: CollationId::UTF16_GENERAL_CI,
                 charset: "utf16",
                 collation: "utf16_general_ci",
                 is_default: true,
@@ -1203,8 +1232,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 4,
             },
-            CollationID::UTF16_BIN => Collation {
-                id: CollationID::UTF16_BIN,
+            CollationId::UTF16_BIN => Collation {
+                id: CollationId::UTF16_BIN,
                 charset: "utf16",
                 collation: "utf16_bin",
                 is_default: false,
@@ -1213,8 +1242,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 4,
             },
-            CollationID::UTF16LE_GENERAL_CI => Collation {
-                id: CollationID::UTF16LE_GENERAL_CI,
+            CollationId::UTF16LE_GENERAL_CI => Collation {
+                id: CollationId::UTF16LE_GENERAL_CI,
                 charset: "utf16le",
                 collation: "utf16le_general_ci",
                 is_default: true,
@@ -1223,8 +1252,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 4,
             },
-            CollationID::CP1256_GENERAL_CI => Collation {
-                id: CollationID::CP1256_GENERAL_CI,
+            CollationId::CP1256_GENERAL_CI => Collation {
+                id: CollationId::CP1256_GENERAL_CI,
                 charset: "cp1256",
                 collation: "cp1256_general_ci",
                 is_default: true,
@@ -1233,8 +1262,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 1,
             },
-            CollationID::CP1257_BIN => Collation {
-                id: CollationID::CP1257_BIN,
+            CollationId::CP1257_BIN => Collation {
+                id: CollationId::CP1257_BIN,
                 charset: "cp1257",
                 collation: "cp1257_bin",
                 is_default: false,
@@ -1243,8 +1272,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 1,
             },
-            CollationID::CP1257_GENERAL_CI => Collation {
-                id: CollationID::CP1257_GENERAL_CI,
+            CollationId::CP1257_GENERAL_CI => Collation {
+                id: CollationId::CP1257_GENERAL_CI,
                 charset: "cp1257",
                 collation: "cp1257_general_ci",
                 is_default: true,
@@ -1253,8 +1282,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 1,
             },
-            CollationID::UTF32_GENERAL_CI => Collation {
-                id: CollationID::UTF32_GENERAL_CI,
+            CollationId::UTF32_GENERAL_CI => Collation {
+                id: CollationId::UTF32_GENERAL_CI,
                 charset: "utf32",
                 collation: "utf32_general_ci",
                 is_default: true,
@@ -1263,8 +1292,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 4,
             },
-            CollationID::UTF32_BIN => Collation {
-                id: CollationID::UTF32_BIN,
+            CollationId::UTF32_BIN => Collation {
+                id: CollationId::UTF32_BIN,
                 charset: "utf32",
                 collation: "utf32_bin",
                 is_default: false,
@@ -1273,8 +1302,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 4,
             },
-            CollationID::UTF16LE_BIN => Collation {
-                id: CollationID::UTF16LE_BIN,
+            CollationId::UTF16LE_BIN => Collation {
+                id: CollationId::UTF16LE_BIN,
                 charset: "utf16le",
                 collation: "utf16le_bin",
                 is_default: false,
@@ -1283,8 +1312,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 4,
             },
-            CollationID::BINARY => Collation {
-                id: CollationID::BINARY,
+            CollationId::BINARY => Collation {
+                id: CollationId::BINARY,
                 charset: "binary",
                 collation: "binary",
                 is_default: true,
@@ -1293,8 +1322,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 1,
             },
-            CollationID::ARMSCII8_BIN => Collation {
-                id: CollationID::ARMSCII8_BIN,
+            CollationId::ARMSCII8_BIN => Collation {
+                id: CollationId::ARMSCII8_BIN,
                 charset: "armscii8",
                 collation: "armscii8_bin",
                 is_default: false,
@@ -1303,8 +1332,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 1,
             },
-            CollationID::ASCII_BIN => Collation {
-                id: CollationID::ASCII_BIN,
+            CollationId::ASCII_BIN => Collation {
+                id: CollationId::ASCII_BIN,
                 charset: "ascii",
                 collation: "ascii_bin",
                 is_default: false,
@@ -1313,8 +1342,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 1,
             },
-            CollationID::CP1250_BIN => Collation {
-                id: CollationID::CP1250_BIN,
+            CollationId::CP1250_BIN => Collation {
+                id: CollationId::CP1250_BIN,
                 charset: "cp1250",
                 collation: "cp1250_bin",
                 is_default: false,
@@ -1323,8 +1352,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 1,
             },
-            CollationID::CP1256_BIN => Collation {
-                id: CollationID::CP1256_BIN,
+            CollationId::CP1256_BIN => Collation {
+                id: CollationId::CP1256_BIN,
                 charset: "cp1256",
                 collation: "cp1256_bin",
                 is_default: false,
@@ -1333,8 +1362,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 1,
             },
-            CollationID::CP866_BIN => Collation {
-                id: CollationID::CP866_BIN,
+            CollationId::CP866_BIN => Collation {
+                id: CollationId::CP866_BIN,
                 charset: "cp866",
                 collation: "cp866_bin",
                 is_default: false,
@@ -1343,8 +1372,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 1,
             },
-            CollationID::DEC8_BIN => Collation {
-                id: CollationID::DEC8_BIN,
+            CollationId::DEC8_BIN => Collation {
+                id: CollationId::DEC8_BIN,
                 charset: "dec8",
                 collation: "dec8_bin",
                 is_default: false,
@@ -1353,8 +1382,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 1,
             },
-            CollationID::GREEK_BIN => Collation {
-                id: CollationID::GREEK_BIN,
+            CollationId::GREEK_BIN => Collation {
+                id: CollationId::GREEK_BIN,
                 charset: "greek",
                 collation: "greek_bin",
                 is_default: false,
@@ -1363,8 +1392,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 1,
             },
-            CollationID::HEBREW_BIN => Collation {
-                id: CollationID::HEBREW_BIN,
+            CollationId::HEBREW_BIN => Collation {
+                id: CollationId::HEBREW_BIN,
                 charset: "hebrew",
                 collation: "hebrew_bin",
                 is_default: false,
@@ -1373,8 +1402,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 1,
             },
-            CollationID::HP8_BIN => Collation {
-                id: CollationID::HP8_BIN,
+            CollationId::HP8_BIN => Collation {
+                id: CollationId::HP8_BIN,
                 charset: "hp8",
                 collation: "hp8_bin",
                 is_default: false,
@@ -1383,8 +1412,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 1,
             },
-            CollationID::KEYBCS2_BIN => Collation {
-                id: CollationID::KEYBCS2_BIN,
+            CollationId::KEYBCS2_BIN => Collation {
+                id: CollationId::KEYBCS2_BIN,
                 charset: "keybcs2",
                 collation: "keybcs2_bin",
                 is_default: false,
@@ -1393,8 +1422,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 1,
             },
-            CollationID::KOI8R_BIN => Collation {
-                id: CollationID::KOI8R_BIN,
+            CollationId::KOI8R_BIN => Collation {
+                id: CollationId::KOI8R_BIN,
                 charset: "koi8r",
                 collation: "koi8r_bin",
                 is_default: false,
@@ -1403,8 +1432,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 1,
             },
-            CollationID::KOI8U_BIN => Collation {
-                id: CollationID::KOI8U_BIN,
+            CollationId::KOI8U_BIN => Collation {
+                id: CollationId::KOI8U_BIN,
                 charset: "koi8u",
                 collation: "koi8u_bin",
                 is_default: false,
@@ -1413,8 +1442,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 1,
             },
-            CollationID::UTF8MB3_TOLOWER_CI => Collation {
-                id: CollationID::UTF8MB3_TOLOWER_CI,
+            CollationId::UTF8MB3_TOLOWER_CI => Collation {
+                id: CollationId::UTF8MB3_TOLOWER_CI,
                 charset: "utf8mb3",
                 collation: "utf8mb3_tolower_ci",
                 is_default: false,
@@ -1423,8 +1452,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 3,
             },
-            CollationID::LATIN2_BIN => Collation {
-                id: CollationID::LATIN2_BIN,
+            CollationId::LATIN2_BIN => Collation {
+                id: CollationId::LATIN2_BIN,
                 charset: "latin2",
                 collation: "latin2_bin",
                 is_default: false,
@@ -1433,8 +1462,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 1,
             },
-            CollationID::LATIN5_BIN => Collation {
-                id: CollationID::LATIN5_BIN,
+            CollationId::LATIN5_BIN => Collation {
+                id: CollationId::LATIN5_BIN,
                 charset: "latin5",
                 collation: "latin5_bin",
                 is_default: false,
@@ -1443,8 +1472,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 1,
             },
-            CollationID::LATIN7_BIN => Collation {
-                id: CollationID::LATIN7_BIN,
+            CollationId::LATIN7_BIN => Collation {
+                id: CollationId::LATIN7_BIN,
                 charset: "latin7",
                 collation: "latin7_bin",
                 is_default: false,
@@ -1453,8 +1482,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 1,
             },
-            CollationID::CP850_BIN => Collation {
-                id: CollationID::CP850_BIN,
+            CollationId::CP850_BIN => Collation {
+                id: CollationId::CP850_BIN,
                 charset: "cp850",
                 collation: "cp850_bin",
                 is_default: false,
@@ -1463,8 +1492,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 1,
             },
-            CollationID::CP852_BIN => Collation {
-                id: CollationID::CP852_BIN,
+            CollationId::CP852_BIN => Collation {
+                id: CollationId::CP852_BIN,
                 charset: "cp852",
                 collation: "cp852_bin",
                 is_default: false,
@@ -1473,8 +1502,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 1,
             },
-            CollationID::SWE7_BIN => Collation {
-                id: CollationID::SWE7_BIN,
+            CollationId::SWE7_BIN => Collation {
+                id: CollationId::SWE7_BIN,
                 charset: "swe7",
                 collation: "swe7_bin",
                 is_default: false,
@@ -1483,8 +1512,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 1,
             },
-            CollationID::UTF8MB3_BIN => Collation {
-                id: CollationID::UTF8MB3_BIN,
+            CollationId::UTF8MB3_BIN => Collation {
+                id: CollationId::UTF8MB3_BIN,
                 charset: "utf8mb3",
                 collation: "utf8mb3_bin",
                 is_default: false,
@@ -1493,8 +1522,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 3,
             },
-            CollationID::BIG5_BIN => Collation {
-                id: CollationID::BIG5_BIN,
+            CollationId::BIG5_BIN => Collation {
+                id: CollationId::BIG5_BIN,
                 charset: "big5",
                 collation: "big5_bin",
                 is_default: false,
@@ -1503,8 +1532,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 2,
             },
-            CollationID::EUCKR_BIN => Collation {
-                id: CollationID::EUCKR_BIN,
+            CollationId::EUCKR_BIN => Collation {
+                id: CollationId::EUCKR_BIN,
                 charset: "euckr",
                 collation: "euckr_bin",
                 is_default: false,
@@ -1513,8 +1542,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 2,
             },
-            CollationID::GB2312_BIN => Collation {
-                id: CollationID::GB2312_BIN,
+            CollationId::GB2312_BIN => Collation {
+                id: CollationId::GB2312_BIN,
                 charset: "gb2312",
                 collation: "gb2312_bin",
                 is_default: false,
@@ -1523,8 +1552,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 2,
             },
-            CollationID::GBK_BIN => Collation {
-                id: CollationID::GBK_BIN,
+            CollationId::GBK_BIN => Collation {
+                id: CollationId::GBK_BIN,
                 charset: "gbk",
                 collation: "gbk_bin",
                 is_default: false,
@@ -1533,8 +1562,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 2,
             },
-            CollationID::SJIS_BIN => Collation {
-                id: CollationID::SJIS_BIN,
+            CollationId::SJIS_BIN => Collation {
+                id: CollationId::SJIS_BIN,
                 charset: "sjis",
                 collation: "sjis_bin",
                 is_default: false,
@@ -1543,8 +1572,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 2,
             },
-            CollationID::TIS620_BIN => Collation {
-                id: CollationID::TIS620_BIN,
+            CollationId::TIS620_BIN => Collation {
+                id: CollationId::TIS620_BIN,
                 charset: "tis620",
                 collation: "tis620_bin",
                 is_default: false,
@@ -1553,8 +1582,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 1,
             },
-            CollationID::UCS2_BIN => Collation {
-                id: CollationID::UCS2_BIN,
+            CollationId::UCS2_BIN => Collation {
+                id: CollationId::UCS2_BIN,
                 charset: "ucs2",
                 collation: "ucs2_bin",
                 is_default: false,
@@ -1563,8 +1592,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 2,
             },
-            CollationID::UJIS_BIN => Collation {
-                id: CollationID::UJIS_BIN,
+            CollationId::UJIS_BIN => Collation {
+                id: CollationId::UJIS_BIN,
                 charset: "ujis",
                 collation: "ujis_bin",
                 is_default: false,
@@ -1573,8 +1602,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 3,
             },
-            CollationID::GEOSTD8_GENERAL_CI => Collation {
-                id: CollationID::GEOSTD8_GENERAL_CI,
+            CollationId::GEOSTD8_GENERAL_CI => Collation {
+                id: CollationId::GEOSTD8_GENERAL_CI,
                 charset: "geostd8",
                 collation: "geostd8_general_ci",
                 is_default: true,
@@ -1583,8 +1612,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 1,
             },
-            CollationID::GEOSTD8_BIN => Collation {
-                id: CollationID::GEOSTD8_BIN,
+            CollationId::GEOSTD8_BIN => Collation {
+                id: CollationId::GEOSTD8_BIN,
                 charset: "geostd8",
                 collation: "geostd8_bin",
                 is_default: false,
@@ -1593,8 +1622,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 1,
             },
-            CollationID::LATIN1_SPANISH_CI => Collation {
-                id: CollationID::LATIN1_SPANISH_CI,
+            CollationId::LATIN1_SPANISH_CI => Collation {
+                id: CollationId::LATIN1_SPANISH_CI,
                 charset: "latin1",
                 collation: "latin1_spanish_ci",
                 is_default: false,
@@ -1603,8 +1632,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 1,
             },
-            CollationID::CP932_JAPANESE_CI => Collation {
-                id: CollationID::CP932_JAPANESE_CI,
+            CollationId::CP932_JAPANESE_CI => Collation {
+                id: CollationId::CP932_JAPANESE_CI,
                 charset: "cp932",
                 collation: "cp932_japanese_ci",
                 is_default: true,
@@ -1613,8 +1642,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 2,
             },
-            CollationID::CP932_BIN => Collation {
-                id: CollationID::CP932_BIN,
+            CollationId::CP932_BIN => Collation {
+                id: CollationId::CP932_BIN,
                 charset: "cp932",
                 collation: "cp932_bin",
                 is_default: false,
@@ -1623,8 +1652,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 2,
             },
-            CollationID::EUCJPMS_JAPANESE_CI => Collation {
-                id: CollationID::EUCJPMS_JAPANESE_CI,
+            CollationId::EUCJPMS_JAPANESE_CI => Collation {
+                id: CollationId::EUCJPMS_JAPANESE_CI,
                 charset: "eucjpms",
                 collation: "eucjpms_japanese_ci",
                 is_default: true,
@@ -1633,8 +1662,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 3,
             },
-            CollationID::EUCJPMS_BIN => Collation {
-                id: CollationID::EUCJPMS_BIN,
+            CollationId::EUCJPMS_BIN => Collation {
+                id: CollationId::EUCJPMS_BIN,
                 charset: "eucjpms",
                 collation: "eucjpms_bin",
                 is_default: false,
@@ -1643,8 +1672,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 3,
             },
-            CollationID::CP1250_POLISH_CI => Collation {
-                id: CollationID::CP1250_POLISH_CI,
+            CollationId::CP1250_POLISH_CI => Collation {
+                id: CollationId::CP1250_POLISH_CI,
                 charset: "cp1250",
                 collation: "cp1250_polish_ci",
                 is_default: false,
@@ -1653,8 +1682,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 1,
             },
-            CollationID::UTF16_UNICODE_CI => Collation {
-                id: CollationID::UTF16_UNICODE_CI,
+            CollationId::UTF16_UNICODE_CI => Collation {
+                id: CollationId::UTF16_UNICODE_CI,
                 charset: "utf16",
                 collation: "utf16_unicode_ci",
                 is_default: false,
@@ -1663,8 +1692,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 4,
             },
-            CollationID::UTF16_ICELANDIC_CI => Collation {
-                id: CollationID::UTF16_ICELANDIC_CI,
+            CollationId::UTF16_ICELANDIC_CI => Collation {
+                id: CollationId::UTF16_ICELANDIC_CI,
                 charset: "utf16",
                 collation: "utf16_icelandic_ci",
                 is_default: false,
@@ -1673,8 +1702,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 4,
             },
-            CollationID::UTF16_LATVIAN_CI => Collation {
-                id: CollationID::UTF16_LATVIAN_CI,
+            CollationId::UTF16_LATVIAN_CI => Collation {
+                id: CollationId::UTF16_LATVIAN_CI,
                 charset: "utf16",
                 collation: "utf16_latvian_ci",
                 is_default: false,
@@ -1683,8 +1712,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 4,
             },
-            CollationID::UTF16_ROMANIAN_CI => Collation {
-                id: CollationID::UTF16_ROMANIAN_CI,
+            CollationId::UTF16_ROMANIAN_CI => Collation {
+                id: CollationId::UTF16_ROMANIAN_CI,
                 charset: "utf16",
                 collation: "utf16_romanian_ci",
                 is_default: false,
@@ -1693,8 +1722,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 4,
             },
-            CollationID::UTF16_SLOVENIAN_CI => Collation {
-                id: CollationID::UTF16_SLOVENIAN_CI,
+            CollationId::UTF16_SLOVENIAN_CI => Collation {
+                id: CollationId::UTF16_SLOVENIAN_CI,
                 charset: "utf16",
                 collation: "utf16_slovenian_ci",
                 is_default: false,
@@ -1703,8 +1732,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 4,
             },
-            CollationID::UTF16_POLISH_CI => Collation {
-                id: CollationID::UTF16_POLISH_CI,
+            CollationId::UTF16_POLISH_CI => Collation {
+                id: CollationId::UTF16_POLISH_CI,
                 charset: "utf16",
                 collation: "utf16_polish_ci",
                 is_default: false,
@@ -1713,8 +1742,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 4,
             },
-            CollationID::UTF16_ESTONIAN_CI => Collation {
-                id: CollationID::UTF16_ESTONIAN_CI,
+            CollationId::UTF16_ESTONIAN_CI => Collation {
+                id: CollationId::UTF16_ESTONIAN_CI,
                 charset: "utf16",
                 collation: "utf16_estonian_ci",
                 is_default: false,
@@ -1723,8 +1752,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 4,
             },
-            CollationID::UTF16_SPANISH_CI => Collation {
-                id: CollationID::UTF16_SPANISH_CI,
+            CollationId::UTF16_SPANISH_CI => Collation {
+                id: CollationId::UTF16_SPANISH_CI,
                 charset: "utf16",
                 collation: "utf16_spanish_ci",
                 is_default: false,
@@ -1733,8 +1762,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 4,
             },
-            CollationID::UTF16_SWEDISH_CI => Collation {
-                id: CollationID::UTF16_SWEDISH_CI,
+            CollationId::UTF16_SWEDISH_CI => Collation {
+                id: CollationId::UTF16_SWEDISH_CI,
                 charset: "utf16",
                 collation: "utf16_swedish_ci",
                 is_default: false,
@@ -1743,8 +1772,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 4,
             },
-            CollationID::UTF16_TURKISH_CI => Collation {
-                id: CollationID::UTF16_TURKISH_CI,
+            CollationId::UTF16_TURKISH_CI => Collation {
+                id: CollationId::UTF16_TURKISH_CI,
                 charset: "utf16",
                 collation: "utf16_turkish_ci",
                 is_default: false,
@@ -1753,8 +1782,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 4,
             },
-            CollationID::UTF16_CZECH_CI => Collation {
-                id: CollationID::UTF16_CZECH_CI,
+            CollationId::UTF16_CZECH_CI => Collation {
+                id: CollationId::UTF16_CZECH_CI,
                 charset: "utf16",
                 collation: "utf16_czech_ci",
                 is_default: false,
@@ -1763,8 +1792,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 4,
             },
-            CollationID::UTF16_DANISH_CI => Collation {
-                id: CollationID::UTF16_DANISH_CI,
+            CollationId::UTF16_DANISH_CI => Collation {
+                id: CollationId::UTF16_DANISH_CI,
                 charset: "utf16",
                 collation: "utf16_danish_ci",
                 is_default: false,
@@ -1773,8 +1802,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 4,
             },
-            CollationID::UTF16_LITHUANIAN_CI => Collation {
-                id: CollationID::UTF16_LITHUANIAN_CI,
+            CollationId::UTF16_LITHUANIAN_CI => Collation {
+                id: CollationId::UTF16_LITHUANIAN_CI,
                 charset: "utf16",
                 collation: "utf16_lithuanian_ci",
                 is_default: false,
@@ -1783,8 +1812,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 4,
             },
-            CollationID::UTF16_SLOVAK_CI => Collation {
-                id: CollationID::UTF16_SLOVAK_CI,
+            CollationId::UTF16_SLOVAK_CI => Collation {
+                id: CollationId::UTF16_SLOVAK_CI,
                 charset: "utf16",
                 collation: "utf16_slovak_ci",
                 is_default: false,
@@ -1793,8 +1822,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 4,
             },
-            CollationID::UTF16_SPANISH2_CI => Collation {
-                id: CollationID::UTF16_SPANISH2_CI,
+            CollationId::UTF16_SPANISH2_CI => Collation {
+                id: CollationId::UTF16_SPANISH2_CI,
                 charset: "utf16",
                 collation: "utf16_spanish2_ci",
                 is_default: false,
@@ -1803,8 +1832,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 4,
             },
-            CollationID::UTF16_ROMAN_CI => Collation {
-                id: CollationID::UTF16_ROMAN_CI,
+            CollationId::UTF16_ROMAN_CI => Collation {
+                id: CollationId::UTF16_ROMAN_CI,
                 charset: "utf16",
                 collation: "utf16_roman_ci",
                 is_default: false,
@@ -1813,8 +1842,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 4,
             },
-            CollationID::UTF16_PERSIAN_CI => Collation {
-                id: CollationID::UTF16_PERSIAN_CI,
+            CollationId::UTF16_PERSIAN_CI => Collation {
+                id: CollationId::UTF16_PERSIAN_CI,
                 charset: "utf16",
                 collation: "utf16_persian_ci",
                 is_default: false,
@@ -1823,8 +1852,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 4,
             },
-            CollationID::UTF16_ESPERANTO_CI => Collation {
-                id: CollationID::UTF16_ESPERANTO_CI,
+            CollationId::UTF16_ESPERANTO_CI => Collation {
+                id: CollationId::UTF16_ESPERANTO_CI,
                 charset: "utf16",
                 collation: "utf16_esperanto_ci",
                 is_default: false,
@@ -1833,8 +1862,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 4,
             },
-            CollationID::UTF16_HUNGARIAN_CI => Collation {
-                id: CollationID::UTF16_HUNGARIAN_CI,
+            CollationId::UTF16_HUNGARIAN_CI => Collation {
+                id: CollationId::UTF16_HUNGARIAN_CI,
                 charset: "utf16",
                 collation: "utf16_hungarian_ci",
                 is_default: false,
@@ -1843,8 +1872,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 4,
             },
-            CollationID::UTF16_SINHALA_CI => Collation {
-                id: CollationID::UTF16_SINHALA_CI,
+            CollationId::UTF16_SINHALA_CI => Collation {
+                id: CollationId::UTF16_SINHALA_CI,
                 charset: "utf16",
                 collation: "utf16_sinhala_ci",
                 is_default: false,
@@ -1853,8 +1882,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 4,
             },
-            CollationID::UTF16_GERMAN2_CI => Collation {
-                id: CollationID::UTF16_GERMAN2_CI,
+            CollationId::UTF16_GERMAN2_CI => Collation {
+                id: CollationId::UTF16_GERMAN2_CI,
                 charset: "utf16",
                 collation: "utf16_german2_ci",
                 is_default: false,
@@ -1863,8 +1892,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 4,
             },
-            CollationID::UTF16_CROATIAN_CI => Collation {
-                id: CollationID::UTF16_CROATIAN_CI,
+            CollationId::UTF16_CROATIAN_CI => Collation {
+                id: CollationId::UTF16_CROATIAN_CI,
                 charset: "utf16",
                 collation: "utf16_croatian_ci",
                 is_default: false,
@@ -1873,8 +1902,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 4,
             },
-            CollationID::UTF16_UNICODE_520_CI => Collation {
-                id: CollationID::UTF16_UNICODE_520_CI,
+            CollationId::UTF16_UNICODE_520_CI => Collation {
+                id: CollationId::UTF16_UNICODE_520_CI,
                 charset: "utf16",
                 collation: "utf16_unicode_520_ci",
                 is_default: false,
@@ -1883,8 +1912,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 4,
             },
-            CollationID::UTF16_VIETNAMESE_CI => Collation {
-                id: CollationID::UTF16_VIETNAMESE_CI,
+            CollationId::UTF16_VIETNAMESE_CI => Collation {
+                id: CollationId::UTF16_VIETNAMESE_CI,
                 charset: "utf16",
                 collation: "utf16_vietnamese_ci",
                 is_default: false,
@@ -1893,8 +1922,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 4,
             },
-            CollationID::UCS2_UNICODE_CI => Collation {
-                id: CollationID::UCS2_UNICODE_CI,
+            CollationId::UCS2_UNICODE_CI => Collation {
+                id: CollationId::UCS2_UNICODE_CI,
                 charset: "ucs2",
                 collation: "ucs2_unicode_ci",
                 is_default: false,
@@ -1903,8 +1932,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 2,
             },
-            CollationID::UCS2_ICELANDIC_CI => Collation {
-                id: CollationID::UCS2_ICELANDIC_CI,
+            CollationId::UCS2_ICELANDIC_CI => Collation {
+                id: CollationId::UCS2_ICELANDIC_CI,
                 charset: "ucs2",
                 collation: "ucs2_icelandic_ci",
                 is_default: false,
@@ -1913,8 +1942,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 2,
             },
-            CollationID::UCS2_LATVIAN_CI => Collation {
-                id: CollationID::UCS2_LATVIAN_CI,
+            CollationId::UCS2_LATVIAN_CI => Collation {
+                id: CollationId::UCS2_LATVIAN_CI,
                 charset: "ucs2",
                 collation: "ucs2_latvian_ci",
                 is_default: false,
@@ -1923,8 +1952,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 2,
             },
-            CollationID::UCS2_ROMANIAN_CI => Collation {
-                id: CollationID::UCS2_ROMANIAN_CI,
+            CollationId::UCS2_ROMANIAN_CI => Collation {
+                id: CollationId::UCS2_ROMANIAN_CI,
                 charset: "ucs2",
                 collation: "ucs2_romanian_ci",
                 is_default: false,
@@ -1933,8 +1962,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 2,
             },
-            CollationID::UCS2_SLOVENIAN_CI => Collation {
-                id: CollationID::UCS2_SLOVENIAN_CI,
+            CollationId::UCS2_SLOVENIAN_CI => Collation {
+                id: CollationId::UCS2_SLOVENIAN_CI,
                 charset: "ucs2",
                 collation: "ucs2_slovenian_ci",
                 is_default: false,
@@ -1943,8 +1972,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 2,
             },
-            CollationID::UCS2_POLISH_CI => Collation {
-                id: CollationID::UCS2_POLISH_CI,
+            CollationId::UCS2_POLISH_CI => Collation {
+                id: CollationId::UCS2_POLISH_CI,
                 charset: "ucs2",
                 collation: "ucs2_polish_ci",
                 is_default: false,
@@ -1953,8 +1982,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 2,
             },
-            CollationID::UCS2_ESTONIAN_CI => Collation {
-                id: CollationID::UCS2_ESTONIAN_CI,
+            CollationId::UCS2_ESTONIAN_CI => Collation {
+                id: CollationId::UCS2_ESTONIAN_CI,
                 charset: "ucs2",
                 collation: "ucs2_estonian_ci",
                 is_default: false,
@@ -1963,8 +1992,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 2,
             },
-            CollationID::UCS2_SPANISH_CI => Collation {
-                id: CollationID::UCS2_SPANISH_CI,
+            CollationId::UCS2_SPANISH_CI => Collation {
+                id: CollationId::UCS2_SPANISH_CI,
                 charset: "ucs2",
                 collation: "ucs2_spanish_ci",
                 is_default: false,
@@ -1973,8 +2002,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 2,
             },
-            CollationID::UCS2_SWEDISH_CI => Collation {
-                id: CollationID::UCS2_SWEDISH_CI,
+            CollationId::UCS2_SWEDISH_CI => Collation {
+                id: CollationId::UCS2_SWEDISH_CI,
                 charset: "ucs2",
                 collation: "ucs2_swedish_ci",
                 is_default: false,
@@ -1983,8 +2012,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 2,
             },
-            CollationID::UCS2_TURKISH_CI => Collation {
-                id: CollationID::UCS2_TURKISH_CI,
+            CollationId::UCS2_TURKISH_CI => Collation {
+                id: CollationId::UCS2_TURKISH_CI,
                 charset: "ucs2",
                 collation: "ucs2_turkish_ci",
                 is_default: false,
@@ -1993,8 +2022,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 2,
             },
-            CollationID::UCS2_CZECH_CI => Collation {
-                id: CollationID::UCS2_CZECH_CI,
+            CollationId::UCS2_CZECH_CI => Collation {
+                id: CollationId::UCS2_CZECH_CI,
                 charset: "ucs2",
                 collation: "ucs2_czech_ci",
                 is_default: false,
@@ -2003,8 +2032,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 2,
             },
-            CollationID::UCS2_DANISH_CI => Collation {
-                id: CollationID::UCS2_DANISH_CI,
+            CollationId::UCS2_DANISH_CI => Collation {
+                id: CollationId::UCS2_DANISH_CI,
                 charset: "ucs2",
                 collation: "ucs2_danish_ci",
                 is_default: false,
@@ -2013,8 +2042,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 2,
             },
-            CollationID::UCS2_LITHUANIAN_CI => Collation {
-                id: CollationID::UCS2_LITHUANIAN_CI,
+            CollationId::UCS2_LITHUANIAN_CI => Collation {
+                id: CollationId::UCS2_LITHUANIAN_CI,
                 charset: "ucs2",
                 collation: "ucs2_lithuanian_ci",
                 is_default: false,
@@ -2023,8 +2052,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 2,
             },
-            CollationID::UCS2_SLOVAK_CI => Collation {
-                id: CollationID::UCS2_SLOVAK_CI,
+            CollationId::UCS2_SLOVAK_CI => Collation {
+                id: CollationId::UCS2_SLOVAK_CI,
                 charset: "ucs2",
                 collation: "ucs2_slovak_ci",
                 is_default: false,
@@ -2033,8 +2062,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 2,
             },
-            CollationID::UCS2_SPANISH2_CI => Collation {
-                id: CollationID::UCS2_SPANISH2_CI,
+            CollationId::UCS2_SPANISH2_CI => Collation {
+                id: CollationId::UCS2_SPANISH2_CI,
                 charset: "ucs2",
                 collation: "ucs2_spanish2_ci",
                 is_default: false,
@@ -2043,8 +2072,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 2,
             },
-            CollationID::UCS2_ROMAN_CI => Collation {
-                id: CollationID::UCS2_ROMAN_CI,
+            CollationId::UCS2_ROMAN_CI => Collation {
+                id: CollationId::UCS2_ROMAN_CI,
                 charset: "ucs2",
                 collation: "ucs2_roman_ci",
                 is_default: false,
@@ -2053,8 +2082,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 2,
             },
-            CollationID::UCS2_PERSIAN_CI => Collation {
-                id: CollationID::UCS2_PERSIAN_CI,
+            CollationId::UCS2_PERSIAN_CI => Collation {
+                id: CollationId::UCS2_PERSIAN_CI,
                 charset: "ucs2",
                 collation: "ucs2_persian_ci",
                 is_default: false,
@@ -2063,8 +2092,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 2,
             },
-            CollationID::UCS2_ESPERANTO_CI => Collation {
-                id: CollationID::UCS2_ESPERANTO_CI,
+            CollationId::UCS2_ESPERANTO_CI => Collation {
+                id: CollationId::UCS2_ESPERANTO_CI,
                 charset: "ucs2",
                 collation: "ucs2_esperanto_ci",
                 is_default: false,
@@ -2073,8 +2102,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 2,
             },
-            CollationID::UCS2_HUNGARIAN_CI => Collation {
-                id: CollationID::UCS2_HUNGARIAN_CI,
+            CollationId::UCS2_HUNGARIAN_CI => Collation {
+                id: CollationId::UCS2_HUNGARIAN_CI,
                 charset: "ucs2",
                 collation: "ucs2_hungarian_ci",
                 is_default: false,
@@ -2083,8 +2112,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 2,
             },
-            CollationID::UCS2_SINHALA_CI => Collation {
-                id: CollationID::UCS2_SINHALA_CI,
+            CollationId::UCS2_SINHALA_CI => Collation {
+                id: CollationId::UCS2_SINHALA_CI,
                 charset: "ucs2",
                 collation: "ucs2_sinhala_ci",
                 is_default: false,
@@ -2093,8 +2122,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 2,
             },
-            CollationID::UCS2_GERMAN2_CI => Collation {
-                id: CollationID::UCS2_GERMAN2_CI,
+            CollationId::UCS2_GERMAN2_CI => Collation {
+                id: CollationId::UCS2_GERMAN2_CI,
                 charset: "ucs2",
                 collation: "ucs2_german2_ci",
                 is_default: false,
@@ -2103,8 +2132,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 2,
             },
-            CollationID::UCS2_CROATIAN_CI => Collation {
-                id: CollationID::UCS2_CROATIAN_CI,
+            CollationId::UCS2_CROATIAN_CI => Collation {
+                id: CollationId::UCS2_CROATIAN_CI,
                 charset: "ucs2",
                 collation: "ucs2_croatian_ci",
                 is_default: false,
@@ -2113,8 +2142,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 2,
             },
-            CollationID::UCS2_UNICODE_520_CI => Collation {
-                id: CollationID::UCS2_UNICODE_520_CI,
+            CollationId::UCS2_UNICODE_520_CI => Collation {
+                id: CollationId::UCS2_UNICODE_520_CI,
                 charset: "ucs2",
                 collation: "ucs2_unicode_520_ci",
                 is_default: false,
@@ -2123,8 +2152,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 2,
             },
-            CollationID::UCS2_VIETNAMESE_CI => Collation {
-                id: CollationID::UCS2_VIETNAMESE_CI,
+            CollationId::UCS2_VIETNAMESE_CI => Collation {
+                id: CollationId::UCS2_VIETNAMESE_CI,
                 charset: "ucs2",
                 collation: "ucs2_vietnamese_ci",
                 is_default: false,
@@ -2133,8 +2162,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 2,
             },
-            CollationID::UCS2_GENERAL_MYSQL500_CI => Collation {
-                id: CollationID::UCS2_GENERAL_MYSQL500_CI,
+            CollationId::UCS2_GENERAL_MYSQL500_CI => Collation {
+                id: CollationId::UCS2_GENERAL_MYSQL500_CI,
                 charset: "ucs2",
                 collation: "ucs2_general_mysql500_ci",
                 is_default: false,
@@ -2143,8 +2172,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 2,
             },
-            CollationID::UTF32_UNICODE_CI => Collation {
-                id: CollationID::UTF32_UNICODE_CI,
+            CollationId::UTF32_UNICODE_CI => Collation {
+                id: CollationId::UTF32_UNICODE_CI,
                 charset: "utf32",
                 collation: "utf32_unicode_ci",
                 is_default: false,
@@ -2153,8 +2182,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 4,
             },
-            CollationID::UTF32_ICELANDIC_CI => Collation {
-                id: CollationID::UTF32_ICELANDIC_CI,
+            CollationId::UTF32_ICELANDIC_CI => Collation {
+                id: CollationId::UTF32_ICELANDIC_CI,
                 charset: "utf32",
                 collation: "utf32_icelandic_ci",
                 is_default: false,
@@ -2163,8 +2192,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 4,
             },
-            CollationID::UTF32_LATVIAN_CI => Collation {
-                id: CollationID::UTF32_LATVIAN_CI,
+            CollationId::UTF32_LATVIAN_CI => Collation {
+                id: CollationId::UTF32_LATVIAN_CI,
                 charset: "utf32",
                 collation: "utf32_latvian_ci",
                 is_default: false,
@@ -2173,8 +2202,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 4,
             },
-            CollationID::UTF32_ROMANIAN_CI => Collation {
-                id: CollationID::UTF32_ROMANIAN_CI,
+            CollationId::UTF32_ROMANIAN_CI => Collation {
+                id: CollationId::UTF32_ROMANIAN_CI,
                 charset: "utf32",
                 collation: "utf32_romanian_ci",
                 is_default: false,
@@ -2183,8 +2212,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 4,
             },
-            CollationID::UTF32_SLOVENIAN_CI => Collation {
-                id: CollationID::UTF32_SLOVENIAN_CI,
+            CollationId::UTF32_SLOVENIAN_CI => Collation {
+                id: CollationId::UTF32_SLOVENIAN_CI,
                 charset: "utf32",
                 collation: "utf32_slovenian_ci",
                 is_default: false,
@@ -2193,8 +2222,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 4,
             },
-            CollationID::UTF32_POLISH_CI => Collation {
-                id: CollationID::UTF32_POLISH_CI,
+            CollationId::UTF32_POLISH_CI => Collation {
+                id: CollationId::UTF32_POLISH_CI,
                 charset: "utf32",
                 collation: "utf32_polish_ci",
                 is_default: false,
@@ -2203,8 +2232,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 4,
             },
-            CollationID::UTF32_ESTONIAN_CI => Collation {
-                id: CollationID::UTF32_ESTONIAN_CI,
+            CollationId::UTF32_ESTONIAN_CI => Collation {
+                id: CollationId::UTF32_ESTONIAN_CI,
                 charset: "utf32",
                 collation: "utf32_estonian_ci",
                 is_default: false,
@@ -2213,8 +2242,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 4,
             },
-            CollationID::UTF32_SPANISH_CI => Collation {
-                id: CollationID::UTF32_SPANISH_CI,
+            CollationId::UTF32_SPANISH_CI => Collation {
+                id: CollationId::UTF32_SPANISH_CI,
                 charset: "utf32",
                 collation: "utf32_spanish_ci",
                 is_default: false,
@@ -2223,8 +2252,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 4,
             },
-            CollationID::UTF32_SWEDISH_CI => Collation {
-                id: CollationID::UTF32_SWEDISH_CI,
+            CollationId::UTF32_SWEDISH_CI => Collation {
+                id: CollationId::UTF32_SWEDISH_CI,
                 charset: "utf32",
                 collation: "utf32_swedish_ci",
                 is_default: false,
@@ -2233,8 +2262,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 4,
             },
-            CollationID::UTF32_TURKISH_CI => Collation {
-                id: CollationID::UTF32_TURKISH_CI,
+            CollationId::UTF32_TURKISH_CI => Collation {
+                id: CollationId::UTF32_TURKISH_CI,
                 charset: "utf32",
                 collation: "utf32_turkish_ci",
                 is_default: false,
@@ -2243,8 +2272,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 4,
             },
-            CollationID::UTF32_CZECH_CI => Collation {
-                id: CollationID::UTF32_CZECH_CI,
+            CollationId::UTF32_CZECH_CI => Collation {
+                id: CollationId::UTF32_CZECH_CI,
                 charset: "utf32",
                 collation: "utf32_czech_ci",
                 is_default: false,
@@ -2253,8 +2282,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 4,
             },
-            CollationID::UTF32_DANISH_CI => Collation {
-                id: CollationID::UTF32_DANISH_CI,
+            CollationId::UTF32_DANISH_CI => Collation {
+                id: CollationId::UTF32_DANISH_CI,
                 charset: "utf32",
                 collation: "utf32_danish_ci",
                 is_default: false,
@@ -2263,8 +2292,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 4,
             },
-            CollationID::UTF32_LITHUANIAN_CI => Collation {
-                id: CollationID::UTF32_LITHUANIAN_CI,
+            CollationId::UTF32_LITHUANIAN_CI => Collation {
+                id: CollationId::UTF32_LITHUANIAN_CI,
                 charset: "utf32",
                 collation: "utf32_lithuanian_ci",
                 is_default: false,
@@ -2273,8 +2302,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 4,
             },
-            CollationID::UTF32_SLOVAK_CI => Collation {
-                id: CollationID::UTF32_SLOVAK_CI,
+            CollationId::UTF32_SLOVAK_CI => Collation {
+                id: CollationId::UTF32_SLOVAK_CI,
                 charset: "utf32",
                 collation: "utf32_slovak_ci",
                 is_default: false,
@@ -2283,8 +2312,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 4,
             },
-            CollationID::UTF32_SPANISH2_CI => Collation {
-                id: CollationID::UTF32_SPANISH2_CI,
+            CollationId::UTF32_SPANISH2_CI => Collation {
+                id: CollationId::UTF32_SPANISH2_CI,
                 charset: "utf32",
                 collation: "utf32_spanish2_ci",
                 is_default: false,
@@ -2293,8 +2322,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 4,
             },
-            CollationID::UTF32_ROMAN_CI => Collation {
-                id: CollationID::UTF32_ROMAN_CI,
+            CollationId::UTF32_ROMAN_CI => Collation {
+                id: CollationId::UTF32_ROMAN_CI,
                 charset: "utf32",
                 collation: "utf32_roman_ci",
                 is_default: false,
@@ -2303,8 +2332,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 4,
             },
-            CollationID::UTF32_PERSIAN_CI => Collation {
-                id: CollationID::UTF32_PERSIAN_CI,
+            CollationId::UTF32_PERSIAN_CI => Collation {
+                id: CollationId::UTF32_PERSIAN_CI,
                 charset: "utf32",
                 collation: "utf32_persian_ci",
                 is_default: false,
@@ -2313,8 +2342,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 4,
             },
-            CollationID::UTF32_ESPERANTO_CI => Collation {
-                id: CollationID::UTF32_ESPERANTO_CI,
+            CollationId::UTF32_ESPERANTO_CI => Collation {
+                id: CollationId::UTF32_ESPERANTO_CI,
                 charset: "utf32",
                 collation: "utf32_esperanto_ci",
                 is_default: false,
@@ -2323,8 +2352,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 4,
             },
-            CollationID::UTF32_HUNGARIAN_CI => Collation {
-                id: CollationID::UTF32_HUNGARIAN_CI,
+            CollationId::UTF32_HUNGARIAN_CI => Collation {
+                id: CollationId::UTF32_HUNGARIAN_CI,
                 charset: "utf32",
                 collation: "utf32_hungarian_ci",
                 is_default: false,
@@ -2333,8 +2362,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 4,
             },
-            CollationID::UTF32_SINHALA_CI => Collation {
-                id: CollationID::UTF32_SINHALA_CI,
+            CollationId::UTF32_SINHALA_CI => Collation {
+                id: CollationId::UTF32_SINHALA_CI,
                 charset: "utf32",
                 collation: "utf32_sinhala_ci",
                 is_default: false,
@@ -2343,8 +2372,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 4,
             },
-            CollationID::UTF32_GERMAN2_CI => Collation {
-                id: CollationID::UTF32_GERMAN2_CI,
+            CollationId::UTF32_GERMAN2_CI => Collation {
+                id: CollationId::UTF32_GERMAN2_CI,
                 charset: "utf32",
                 collation: "utf32_german2_ci",
                 is_default: false,
@@ -2353,8 +2382,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 4,
             },
-            CollationID::UTF32_CROATIAN_CI => Collation {
-                id: CollationID::UTF32_CROATIAN_CI,
+            CollationId::UTF32_CROATIAN_CI => Collation {
+                id: CollationId::UTF32_CROATIAN_CI,
                 charset: "utf32",
                 collation: "utf32_croatian_ci",
                 is_default: false,
@@ -2363,8 +2392,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 4,
             },
-            CollationID::UTF32_UNICODE_520_CI => Collation {
-                id: CollationID::UTF32_UNICODE_520_CI,
+            CollationId::UTF32_UNICODE_520_CI => Collation {
+                id: CollationId::UTF32_UNICODE_520_CI,
                 charset: "utf32",
                 collation: "utf32_unicode_520_ci",
                 is_default: false,
@@ -2373,8 +2402,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 4,
             },
-            CollationID::UTF32_VIETNAMESE_CI => Collation {
-                id: CollationID::UTF32_VIETNAMESE_CI,
+            CollationId::UTF32_VIETNAMESE_CI => Collation {
+                id: CollationId::UTF32_VIETNAMESE_CI,
                 charset: "utf32",
                 collation: "utf32_vietnamese_ci",
                 is_default: false,
@@ -2383,8 +2412,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 4,
             },
-            CollationID::UTF8MB3_UNICODE_CI => Collation {
-                id: CollationID::UTF8MB3_UNICODE_CI,
+            CollationId::UTF8MB3_UNICODE_CI => Collation {
+                id: CollationId::UTF8MB3_UNICODE_CI,
                 charset: "utf8mb3",
                 collation: "utf8mb3_unicode_ci",
                 is_default: false,
@@ -2393,8 +2422,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 3,
             },
-            CollationID::UTF8MB3_ICELANDIC_CI => Collation {
-                id: CollationID::UTF8MB3_ICELANDIC_CI,
+            CollationId::UTF8MB3_ICELANDIC_CI => Collation {
+                id: CollationId::UTF8MB3_ICELANDIC_CI,
                 charset: "utf8mb3",
                 collation: "utf8mb3_icelandic_ci",
                 is_default: false,
@@ -2403,8 +2432,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 3,
             },
-            CollationID::UTF8MB3_LATVIAN_CI => Collation {
-                id: CollationID::UTF8MB3_LATVIAN_CI,
+            CollationId::UTF8MB3_LATVIAN_CI => Collation {
+                id: CollationId::UTF8MB3_LATVIAN_CI,
                 charset: "utf8mb3",
                 collation: "utf8mb3_latvian_ci",
                 is_default: false,
@@ -2413,8 +2442,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 3,
             },
-            CollationID::UTF8MB3_ROMANIAN_CI => Collation {
-                id: CollationID::UTF8MB3_ROMANIAN_CI,
+            CollationId::UTF8MB3_ROMANIAN_CI => Collation {
+                id: CollationId::UTF8MB3_ROMANIAN_CI,
                 charset: "utf8mb3",
                 collation: "utf8mb3_romanian_ci",
                 is_default: false,
@@ -2423,8 +2452,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 3,
             },
-            CollationID::UTF8MB3_SLOVENIAN_CI => Collation {
-                id: CollationID::UTF8MB3_SLOVENIAN_CI,
+            CollationId::UTF8MB3_SLOVENIAN_CI => Collation {
+                id: CollationId::UTF8MB3_SLOVENIAN_CI,
                 charset: "utf8mb3",
                 collation: "utf8mb3_slovenian_ci",
                 is_default: false,
@@ -2433,8 +2462,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 3,
             },
-            CollationID::UTF8MB3_POLISH_CI => Collation {
-                id: CollationID::UTF8MB3_POLISH_CI,
+            CollationId::UTF8MB3_POLISH_CI => Collation {
+                id: CollationId::UTF8MB3_POLISH_CI,
                 charset: "utf8mb3",
                 collation: "utf8mb3_polish_ci",
                 is_default: false,
@@ -2443,8 +2472,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 3,
             },
-            CollationID::UTF8MB3_ESTONIAN_CI => Collation {
-                id: CollationID::UTF8MB3_ESTONIAN_CI,
+            CollationId::UTF8MB3_ESTONIAN_CI => Collation {
+                id: CollationId::UTF8MB3_ESTONIAN_CI,
                 charset: "utf8mb3",
                 collation: "utf8mb3_estonian_ci",
                 is_default: false,
@@ -2453,8 +2482,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 3,
             },
-            CollationID::UTF8MB3_SPANISH_CI => Collation {
-                id: CollationID::UTF8MB3_SPANISH_CI,
+            CollationId::UTF8MB3_SPANISH_CI => Collation {
+                id: CollationId::UTF8MB3_SPANISH_CI,
                 charset: "utf8mb3",
                 collation: "utf8mb3_spanish_ci",
                 is_default: false,
@@ -2463,8 +2492,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 3,
             },
-            CollationID::UTF8MB3_SWEDISH_CI => Collation {
-                id: CollationID::UTF8MB3_SWEDISH_CI,
+            CollationId::UTF8MB3_SWEDISH_CI => Collation {
+                id: CollationId::UTF8MB3_SWEDISH_CI,
                 charset: "utf8mb3",
                 collation: "utf8mb3_swedish_ci",
                 is_default: false,
@@ -2473,8 +2502,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 3,
             },
-            CollationID::UTF8MB3_TURKISH_CI => Collation {
-                id: CollationID::UTF8MB3_TURKISH_CI,
+            CollationId::UTF8MB3_TURKISH_CI => Collation {
+                id: CollationId::UTF8MB3_TURKISH_CI,
                 charset: "utf8mb3",
                 collation: "utf8mb3_turkish_ci",
                 is_default: false,
@@ -2483,8 +2512,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 3,
             },
-            CollationID::UTF8MB3_CZECH_CI => Collation {
-                id: CollationID::UTF8MB3_CZECH_CI,
+            CollationId::UTF8MB3_CZECH_CI => Collation {
+                id: CollationId::UTF8MB3_CZECH_CI,
                 charset: "utf8mb3",
                 collation: "utf8mb3_czech_ci",
                 is_default: false,
@@ -2493,8 +2522,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 3,
             },
-            CollationID::UTF8MB3_DANISH_CI => Collation {
-                id: CollationID::UTF8MB3_DANISH_CI,
+            CollationId::UTF8MB3_DANISH_CI => Collation {
+                id: CollationId::UTF8MB3_DANISH_CI,
                 charset: "utf8mb3",
                 collation: "utf8mb3_danish_ci",
                 is_default: false,
@@ -2503,8 +2532,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 3,
             },
-            CollationID::UTF8MB3_LITHUANIAN_CI => Collation {
-                id: CollationID::UTF8MB3_LITHUANIAN_CI,
+            CollationId::UTF8MB3_LITHUANIAN_CI => Collation {
+                id: CollationId::UTF8MB3_LITHUANIAN_CI,
                 charset: "utf8mb3",
                 collation: "utf8mb3_lithuanian_ci",
                 is_default: false,
@@ -2513,8 +2542,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 3,
             },
-            CollationID::UTF8MB3_SLOVAK_CI => Collation {
-                id: CollationID::UTF8MB3_SLOVAK_CI,
+            CollationId::UTF8MB3_SLOVAK_CI => Collation {
+                id: CollationId::UTF8MB3_SLOVAK_CI,
                 charset: "utf8mb3",
                 collation: "utf8mb3_slovak_ci",
                 is_default: false,
@@ -2523,8 +2552,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 3,
             },
-            CollationID::UTF8MB3_SPANISH2_CI => Collation {
-                id: CollationID::UTF8MB3_SPANISH2_CI,
+            CollationId::UTF8MB3_SPANISH2_CI => Collation {
+                id: CollationId::UTF8MB3_SPANISH2_CI,
                 charset: "utf8mb3",
                 collation: "utf8mb3_spanish2_ci",
                 is_default: false,
@@ -2533,8 +2562,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 3,
             },
-            CollationID::UTF8MB3_ROMAN_CI => Collation {
-                id: CollationID::UTF8MB3_ROMAN_CI,
+            CollationId::UTF8MB3_ROMAN_CI => Collation {
+                id: CollationId::UTF8MB3_ROMAN_CI,
                 charset: "utf8mb3",
                 collation: "utf8mb3_roman_ci",
                 is_default: false,
@@ -2543,8 +2572,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 3,
             },
-            CollationID::UTF8MB3_PERSIAN_CI => Collation {
-                id: CollationID::UTF8MB3_PERSIAN_CI,
+            CollationId::UTF8MB3_PERSIAN_CI => Collation {
+                id: CollationId::UTF8MB3_PERSIAN_CI,
                 charset: "utf8mb3",
                 collation: "utf8mb3_persian_ci",
                 is_default: false,
@@ -2553,8 +2582,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 3,
             },
-            CollationID::UTF8MB3_ESPERANTO_CI => Collation {
-                id: CollationID::UTF8MB3_ESPERANTO_CI,
+            CollationId::UTF8MB3_ESPERANTO_CI => Collation {
+                id: CollationId::UTF8MB3_ESPERANTO_CI,
                 charset: "utf8mb3",
                 collation: "utf8mb3_esperanto_ci",
                 is_default: false,
@@ -2563,8 +2592,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 3,
             },
-            CollationID::UTF8MB3_HUNGARIAN_CI => Collation {
-                id: CollationID::UTF8MB3_HUNGARIAN_CI,
+            CollationId::UTF8MB3_HUNGARIAN_CI => Collation {
+                id: CollationId::UTF8MB3_HUNGARIAN_CI,
                 charset: "utf8mb3",
                 collation: "utf8mb3_hungarian_ci",
                 is_default: false,
@@ -2573,8 +2602,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 3,
             },
-            CollationID::UTF8MB3_SINHALA_CI => Collation {
-                id: CollationID::UTF8MB3_SINHALA_CI,
+            CollationId::UTF8MB3_SINHALA_CI => Collation {
+                id: CollationId::UTF8MB3_SINHALA_CI,
                 charset: "utf8mb3",
                 collation: "utf8mb3_sinhala_ci",
                 is_default: false,
@@ -2583,8 +2612,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 3,
             },
-            CollationID::UTF8MB3_GERMAN2_CI => Collation {
-                id: CollationID::UTF8MB3_GERMAN2_CI,
+            CollationId::UTF8MB3_GERMAN2_CI => Collation {
+                id: CollationId::UTF8MB3_GERMAN2_CI,
                 charset: "utf8mb3",
                 collation: "utf8mb3_german2_ci",
                 is_default: false,
@@ -2593,8 +2622,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 3,
             },
-            CollationID::UTF8MB3_CROATIAN_CI => Collation {
-                id: CollationID::UTF8MB3_CROATIAN_CI,
+            CollationId::UTF8MB3_CROATIAN_CI => Collation {
+                id: CollationId::UTF8MB3_CROATIAN_CI,
                 charset: "utf8mb3",
                 collation: "utf8mb3_croatian_ci",
                 is_default: false,
@@ -2603,8 +2632,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 3,
             },
-            CollationID::UTF8MB3_UNICODE_520_CI => Collation {
-                id: CollationID::UTF8MB3_UNICODE_520_CI,
+            CollationId::UTF8MB3_UNICODE_520_CI => Collation {
+                id: CollationId::UTF8MB3_UNICODE_520_CI,
                 charset: "utf8mb3",
                 collation: "utf8mb3_unicode_520_ci",
                 is_default: false,
@@ -2613,8 +2642,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 3,
             },
-            CollationID::UTF8MB3_VIETNAMESE_CI => Collation {
-                id: CollationID::UTF8MB3_VIETNAMESE_CI,
+            CollationId::UTF8MB3_VIETNAMESE_CI => Collation {
+                id: CollationId::UTF8MB3_VIETNAMESE_CI,
                 charset: "utf8mb3",
                 collation: "utf8mb3_vietnamese_ci",
                 is_default: false,
@@ -2623,8 +2652,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 3,
             },
-            CollationID::UTF8MB3_GENERAL_MYSQL500_CI => Collation {
-                id: CollationID::UTF8MB3_GENERAL_MYSQL500_CI,
+            CollationId::UTF8MB3_GENERAL_MYSQL500_CI => Collation {
+                id: CollationId::UTF8MB3_GENERAL_MYSQL500_CI,
                 charset: "utf8mb3",
                 collation: "utf8mb3_general_mysql500_ci",
                 is_default: false,
@@ -2633,8 +2662,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 3,
             },
-            CollationID::UTF8MB4_UNICODE_CI => Collation {
-                id: CollationID::UTF8MB4_UNICODE_CI,
+            CollationId::UTF8MB4_UNICODE_CI => Collation {
+                id: CollationId::UTF8MB4_UNICODE_CI,
                 charset: "utf8mb4",
                 collation: "utf8mb4_unicode_ci",
                 is_default: false,
@@ -2643,8 +2672,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 4,
             },
-            CollationID::UTF8MB4_ICELANDIC_CI => Collation {
-                id: CollationID::UTF8MB4_ICELANDIC_CI,
+            CollationId::UTF8MB4_ICELANDIC_CI => Collation {
+                id: CollationId::UTF8MB4_ICELANDIC_CI,
                 charset: "utf8mb4",
                 collation: "utf8mb4_icelandic_ci",
                 is_default: false,
@@ -2653,8 +2682,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 4,
             },
-            CollationID::UTF8MB4_LATVIAN_CI => Collation {
-                id: CollationID::UTF8MB4_LATVIAN_CI,
+            CollationId::UTF8MB4_LATVIAN_CI => Collation {
+                id: CollationId::UTF8MB4_LATVIAN_CI,
                 charset: "utf8mb4",
                 collation: "utf8mb4_latvian_ci",
                 is_default: false,
@@ -2663,8 +2692,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 4,
             },
-            CollationID::UTF8MB4_ROMANIAN_CI => Collation {
-                id: CollationID::UTF8MB4_ROMANIAN_CI,
+            CollationId::UTF8MB4_ROMANIAN_CI => Collation {
+                id: CollationId::UTF8MB4_ROMANIAN_CI,
                 charset: "utf8mb4",
                 collation: "utf8mb4_romanian_ci",
                 is_default: false,
@@ -2673,8 +2702,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 4,
             },
-            CollationID::UTF8MB4_SLOVENIAN_CI => Collation {
-                id: CollationID::UTF8MB4_SLOVENIAN_CI,
+            CollationId::UTF8MB4_SLOVENIAN_CI => Collation {
+                id: CollationId::UTF8MB4_SLOVENIAN_CI,
                 charset: "utf8mb4",
                 collation: "utf8mb4_slovenian_ci",
                 is_default: false,
@@ -2683,8 +2712,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 4,
             },
-            CollationID::UTF8MB4_POLISH_CI => Collation {
-                id: CollationID::UTF8MB4_POLISH_CI,
+            CollationId::UTF8MB4_POLISH_CI => Collation {
+                id: CollationId::UTF8MB4_POLISH_CI,
                 charset: "utf8mb4",
                 collation: "utf8mb4_polish_ci",
                 is_default: false,
@@ -2693,8 +2722,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 4,
             },
-            CollationID::UTF8MB4_ESTONIAN_CI => Collation {
-                id: CollationID::UTF8MB4_ESTONIAN_CI,
+            CollationId::UTF8MB4_ESTONIAN_CI => Collation {
+                id: CollationId::UTF8MB4_ESTONIAN_CI,
                 charset: "utf8mb4",
                 collation: "utf8mb4_estonian_ci",
                 is_default: false,
@@ -2703,8 +2732,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 4,
             },
-            CollationID::UTF8MB4_SPANISH_CI => Collation {
-                id: CollationID::UTF8MB4_SPANISH_CI,
+            CollationId::UTF8MB4_SPANISH_CI => Collation {
+                id: CollationId::UTF8MB4_SPANISH_CI,
                 charset: "utf8mb4",
                 collation: "utf8mb4_spanish_ci",
                 is_default: false,
@@ -2713,8 +2742,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 4,
             },
-            CollationID::UTF8MB4_SWEDISH_CI => Collation {
-                id: CollationID::UTF8MB4_SWEDISH_CI,
+            CollationId::UTF8MB4_SWEDISH_CI => Collation {
+                id: CollationId::UTF8MB4_SWEDISH_CI,
                 charset: "utf8mb4",
                 collation: "utf8mb4_swedish_ci",
                 is_default: false,
@@ -2723,8 +2752,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 4,
             },
-            CollationID::UTF8MB4_TURKISH_CI => Collation {
-                id: CollationID::UTF8MB4_TURKISH_CI,
+            CollationId::UTF8MB4_TURKISH_CI => Collation {
+                id: CollationId::UTF8MB4_TURKISH_CI,
                 charset: "utf8mb4",
                 collation: "utf8mb4_turkish_ci",
                 is_default: false,
@@ -2733,8 +2762,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 4,
             },
-            CollationID::UTF8MB4_CZECH_CI => Collation {
-                id: CollationID::UTF8MB4_CZECH_CI,
+            CollationId::UTF8MB4_CZECH_CI => Collation {
+                id: CollationId::UTF8MB4_CZECH_CI,
                 charset: "utf8mb4",
                 collation: "utf8mb4_czech_ci",
                 is_default: false,
@@ -2743,8 +2772,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 4,
             },
-            CollationID::UTF8MB4_DANISH_CI => Collation {
-                id: CollationID::UTF8MB4_DANISH_CI,
+            CollationId::UTF8MB4_DANISH_CI => Collation {
+                id: CollationId::UTF8MB4_DANISH_CI,
                 charset: "utf8mb4",
                 collation: "utf8mb4_danish_ci",
                 is_default: false,
@@ -2753,8 +2782,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 4,
             },
-            CollationID::UTF8MB4_LITHUANIAN_CI => Collation {
-                id: CollationID::UTF8MB4_LITHUANIAN_CI,
+            CollationId::UTF8MB4_LITHUANIAN_CI => Collation {
+                id: CollationId::UTF8MB4_LITHUANIAN_CI,
                 charset: "utf8mb4",
                 collation: "utf8mb4_lithuanian_ci",
                 is_default: false,
@@ -2763,8 +2792,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 4,
             },
-            CollationID::UTF8MB4_SLOVAK_CI => Collation {
-                id: CollationID::UTF8MB4_SLOVAK_CI,
+            CollationId::UTF8MB4_SLOVAK_CI => Collation {
+                id: CollationId::UTF8MB4_SLOVAK_CI,
                 charset: "utf8mb4",
                 collation: "utf8mb4_slovak_ci",
                 is_default: false,
@@ -2773,8 +2802,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 4,
             },
-            CollationID::UTF8MB4_SPANISH2_CI => Collation {
-                id: CollationID::UTF8MB4_SPANISH2_CI,
+            CollationId::UTF8MB4_SPANISH2_CI => Collation {
+                id: CollationId::UTF8MB4_SPANISH2_CI,
                 charset: "utf8mb4",
                 collation: "utf8mb4_spanish2_ci",
                 is_default: false,
@@ -2783,8 +2812,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 4,
             },
-            CollationID::UTF8MB4_ROMAN_CI => Collation {
-                id: CollationID::UTF8MB4_ROMAN_CI,
+            CollationId::UTF8MB4_ROMAN_CI => Collation {
+                id: CollationId::UTF8MB4_ROMAN_CI,
                 charset: "utf8mb4",
                 collation: "utf8mb4_roman_ci",
                 is_default: false,
@@ -2793,8 +2822,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 4,
             },
-            CollationID::UTF8MB4_PERSIAN_CI => Collation {
-                id: CollationID::UTF8MB4_PERSIAN_CI,
+            CollationId::UTF8MB4_PERSIAN_CI => Collation {
+                id: CollationId::UTF8MB4_PERSIAN_CI,
                 charset: "utf8mb4",
                 collation: "utf8mb4_persian_ci",
                 is_default: false,
@@ -2803,8 +2832,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 4,
             },
-            CollationID::UTF8MB4_ESPERANTO_CI => Collation {
-                id: CollationID::UTF8MB4_ESPERANTO_CI,
+            CollationId::UTF8MB4_ESPERANTO_CI => Collation {
+                id: CollationId::UTF8MB4_ESPERANTO_CI,
                 charset: "utf8mb4",
                 collation: "utf8mb4_esperanto_ci",
                 is_default: false,
@@ -2813,8 +2842,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 4,
             },
-            CollationID::UTF8MB4_HUNGARIAN_CI => Collation {
-                id: CollationID::UTF8MB4_HUNGARIAN_CI,
+            CollationId::UTF8MB4_HUNGARIAN_CI => Collation {
+                id: CollationId::UTF8MB4_HUNGARIAN_CI,
                 charset: "utf8mb4",
                 collation: "utf8mb4_hungarian_ci",
                 is_default: false,
@@ -2823,8 +2852,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 4,
             },
-            CollationID::UTF8MB4_SINHALA_CI => Collation {
-                id: CollationID::UTF8MB4_SINHALA_CI,
+            CollationId::UTF8MB4_SINHALA_CI => Collation {
+                id: CollationId::UTF8MB4_SINHALA_CI,
                 charset: "utf8mb4",
                 collation: "utf8mb4_sinhala_ci",
                 is_default: false,
@@ -2833,8 +2862,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 4,
             },
-            CollationID::UTF8MB4_GERMAN2_CI => Collation {
-                id: CollationID::UTF8MB4_GERMAN2_CI,
+            CollationId::UTF8MB4_GERMAN2_CI => Collation {
+                id: CollationId::UTF8MB4_GERMAN2_CI,
                 charset: "utf8mb4",
                 collation: "utf8mb4_german2_ci",
                 is_default: false,
@@ -2843,8 +2872,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 4,
             },
-            CollationID::UTF8MB4_CROATIAN_CI => Collation {
-                id: CollationID::UTF8MB4_CROATIAN_CI,
+            CollationId::UTF8MB4_CROATIAN_CI => Collation {
+                id: CollationId::UTF8MB4_CROATIAN_CI,
                 charset: "utf8mb4",
                 collation: "utf8mb4_croatian_ci",
                 is_default: false,
@@ -2853,8 +2882,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 4,
             },
-            CollationID::UTF8MB4_UNICODE_520_CI => Collation {
-                id: CollationID::UTF8MB4_UNICODE_520_CI,
+            CollationId::UTF8MB4_UNICODE_520_CI => Collation {
+                id: CollationId::UTF8MB4_UNICODE_520_CI,
                 charset: "utf8mb4",
                 collation: "utf8mb4_unicode_520_ci",
                 is_default: false,
@@ -2863,8 +2892,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 4,
             },
-            CollationID::UTF8MB4_VIETNAMESE_CI => Collation {
-                id: CollationID::UTF8MB4_VIETNAMESE_CI,
+            CollationId::UTF8MB4_VIETNAMESE_CI => Collation {
+                id: CollationId::UTF8MB4_VIETNAMESE_CI,
                 charset: "utf8mb4",
                 collation: "utf8mb4_vietnamese_ci",
                 is_default: false,
@@ -2873,8 +2902,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 4,
             },
-            CollationID::GB18030_CHINESE_CI => Collation {
-                id: CollationID::GB18030_CHINESE_CI,
+            CollationId::GB18030_CHINESE_CI => Collation {
+                id: CollationId::GB18030_CHINESE_CI,
                 charset: "gb18030",
                 collation: "gb18030_chinese_ci",
                 is_default: true,
@@ -2883,8 +2912,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 2,
                 max_len: 4,
             },
-            CollationID::GB18030_BIN => Collation {
-                id: CollationID::GB18030_BIN,
+            CollationId::GB18030_BIN => Collation {
+                id: CollationId::GB18030_BIN,
                 charset: "gb18030",
                 collation: "gb18030_bin",
                 is_default: false,
@@ -2893,8 +2922,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 4,
             },
-            CollationID::GB18030_UNICODE_520_CI => Collation {
-                id: CollationID::GB18030_UNICODE_520_CI,
+            CollationId::GB18030_UNICODE_520_CI => Collation {
+                id: CollationId::GB18030_UNICODE_520_CI,
                 charset: "gb18030",
                 collation: "gb18030_unicode_520_ci",
                 is_default: false,
@@ -2903,8 +2932,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 8,
                 max_len: 4,
             },
-            CollationID::UTF8MB4_0900_AI_CI => Collation {
-                id: CollationID::UTF8MB4_0900_AI_CI,
+            CollationId::UTF8MB4_0900_AI_CI => Collation {
+                id: CollationId::UTF8MB4_0900_AI_CI,
                 charset: "utf8mb4",
                 collation: "utf8mb4_0900_ai_ci",
                 is_default: true,
@@ -2913,8 +2942,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 0,
                 max_len: 4,
             },
-            CollationID::UTF8MB4_DE_PB_0900_AI_CI => Collation {
-                id: CollationID::UTF8MB4_DE_PB_0900_AI_CI,
+            CollationId::UTF8MB4_DE_PB_0900_AI_CI => Collation {
+                id: CollationId::UTF8MB4_DE_PB_0900_AI_CI,
                 charset: "utf8mb4",
                 collation: "utf8mb4_de_pb_0900_ai_ci",
                 is_default: false,
@@ -2923,8 +2952,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 0,
                 max_len: 4,
             },
-            CollationID::UTF8MB4_IS_0900_AI_CI => Collation {
-                id: CollationID::UTF8MB4_IS_0900_AI_CI,
+            CollationId::UTF8MB4_IS_0900_AI_CI => Collation {
+                id: CollationId::UTF8MB4_IS_0900_AI_CI,
                 charset: "utf8mb4",
                 collation: "utf8mb4_is_0900_ai_ci",
                 is_default: false,
@@ -2933,8 +2962,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 0,
                 max_len: 4,
             },
-            CollationID::UTF8MB4_LV_0900_AI_CI => Collation {
-                id: CollationID::UTF8MB4_LV_0900_AI_CI,
+            CollationId::UTF8MB4_LV_0900_AI_CI => Collation {
+                id: CollationId::UTF8MB4_LV_0900_AI_CI,
                 charset: "utf8mb4",
                 collation: "utf8mb4_lv_0900_ai_ci",
                 is_default: false,
@@ -2943,8 +2972,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 0,
                 max_len: 4,
             },
-            CollationID::UTF8MB4_RO_0900_AI_CI => Collation {
-                id: CollationID::UTF8MB4_RO_0900_AI_CI,
+            CollationId::UTF8MB4_RO_0900_AI_CI => Collation {
+                id: CollationId::UTF8MB4_RO_0900_AI_CI,
                 charset: "utf8mb4",
                 collation: "utf8mb4_ro_0900_ai_ci",
                 is_default: false,
@@ -2953,8 +2982,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 0,
                 max_len: 4,
             },
-            CollationID::UTF8MB4_SL_0900_AI_CI => Collation {
-                id: CollationID::UTF8MB4_SL_0900_AI_CI,
+            CollationId::UTF8MB4_SL_0900_AI_CI => Collation {
+                id: CollationId::UTF8MB4_SL_0900_AI_CI,
                 charset: "utf8mb4",
                 collation: "utf8mb4_sl_0900_ai_ci",
                 is_default: false,
@@ -2963,8 +2992,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 0,
                 max_len: 4,
             },
-            CollationID::UTF8MB4_PL_0900_AI_CI => Collation {
-                id: CollationID::UTF8MB4_PL_0900_AI_CI,
+            CollationId::UTF8MB4_PL_0900_AI_CI => Collation {
+                id: CollationId::UTF8MB4_PL_0900_AI_CI,
                 charset: "utf8mb4",
                 collation: "utf8mb4_pl_0900_ai_ci",
                 is_default: false,
@@ -2973,8 +3002,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 0,
                 max_len: 4,
             },
-            CollationID::UTF8MB4_ET_0900_AI_CI => Collation {
-                id: CollationID::UTF8MB4_ET_0900_AI_CI,
+            CollationId::UTF8MB4_ET_0900_AI_CI => Collation {
+                id: CollationId::UTF8MB4_ET_0900_AI_CI,
                 charset: "utf8mb4",
                 collation: "utf8mb4_et_0900_ai_ci",
                 is_default: false,
@@ -2983,8 +3012,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 0,
                 max_len: 4,
             },
-            CollationID::UTF8MB4_ES_0900_AI_CI => Collation {
-                id: CollationID::UTF8MB4_ES_0900_AI_CI,
+            CollationId::UTF8MB4_ES_0900_AI_CI => Collation {
+                id: CollationId::UTF8MB4_ES_0900_AI_CI,
                 charset: "utf8mb4",
                 collation: "utf8mb4_es_0900_ai_ci",
                 is_default: false,
@@ -2993,8 +3022,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 0,
                 max_len: 4,
             },
-            CollationID::UTF8MB4_SV_0900_AI_CI => Collation {
-                id: CollationID::UTF8MB4_SV_0900_AI_CI,
+            CollationId::UTF8MB4_SV_0900_AI_CI => Collation {
+                id: CollationId::UTF8MB4_SV_0900_AI_CI,
                 charset: "utf8mb4",
                 collation: "utf8mb4_sv_0900_ai_ci",
                 is_default: false,
@@ -3003,8 +3032,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 0,
                 max_len: 4,
             },
-            CollationID::UTF8MB4_TR_0900_AI_CI => Collation {
-                id: CollationID::UTF8MB4_TR_0900_AI_CI,
+            CollationId::UTF8MB4_TR_0900_AI_CI => Collation {
+                id: CollationId::UTF8MB4_TR_0900_AI_CI,
                 charset: "utf8mb4",
                 collation: "utf8mb4_tr_0900_ai_ci",
                 is_default: false,
@@ -3013,8 +3042,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 0,
                 max_len: 4,
             },
-            CollationID::UTF8MB4_CS_0900_AI_CI => Collation {
-                id: CollationID::UTF8MB4_CS_0900_AI_CI,
+            CollationId::UTF8MB4_CS_0900_AI_CI => Collation {
+                id: CollationId::UTF8MB4_CS_0900_AI_CI,
                 charset: "utf8mb4",
                 collation: "utf8mb4_cs_0900_ai_ci",
                 is_default: false,
@@ -3023,8 +3052,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 0,
                 max_len: 4,
             },
-            CollationID::UTF8MB4_DA_0900_AI_CI => Collation {
-                id: CollationID::UTF8MB4_DA_0900_AI_CI,
+            CollationId::UTF8MB4_DA_0900_AI_CI => Collation {
+                id: CollationId::UTF8MB4_DA_0900_AI_CI,
                 charset: "utf8mb4",
                 collation: "utf8mb4_da_0900_ai_ci",
                 is_default: false,
@@ -3033,8 +3062,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 0,
                 max_len: 4,
             },
-            CollationID::UTF8MB4_LT_0900_AI_CI => Collation {
-                id: CollationID::UTF8MB4_LT_0900_AI_CI,
+            CollationId::UTF8MB4_LT_0900_AI_CI => Collation {
+                id: CollationId::UTF8MB4_LT_0900_AI_CI,
                 charset: "utf8mb4",
                 collation: "utf8mb4_lt_0900_ai_ci",
                 is_default: false,
@@ -3043,8 +3072,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 0,
                 max_len: 4,
             },
-            CollationID::UTF8MB4_SK_0900_AI_CI => Collation {
-                id: CollationID::UTF8MB4_SK_0900_AI_CI,
+            CollationId::UTF8MB4_SK_0900_AI_CI => Collation {
+                id: CollationId::UTF8MB4_SK_0900_AI_CI,
                 charset: "utf8mb4",
                 collation: "utf8mb4_sk_0900_ai_ci",
                 is_default: false,
@@ -3053,8 +3082,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 0,
                 max_len: 4,
             },
-            CollationID::UTF8MB4_ES_TRAD_0900_AI_CI => Collation {
-                id: CollationID::UTF8MB4_ES_TRAD_0900_AI_CI,
+            CollationId::UTF8MB4_ES_TRAD_0900_AI_CI => Collation {
+                id: CollationId::UTF8MB4_ES_TRAD_0900_AI_CI,
                 charset: "utf8mb4",
                 collation: "utf8mb4_es_trad_0900_ai_ci",
                 is_default: false,
@@ -3063,8 +3092,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 0,
                 max_len: 4,
             },
-            CollationID::UTF8MB4_LA_0900_AI_CI => Collation {
-                id: CollationID::UTF8MB4_LA_0900_AI_CI,
+            CollationId::UTF8MB4_LA_0900_AI_CI => Collation {
+                id: CollationId::UTF8MB4_LA_0900_AI_CI,
                 charset: "utf8mb4",
                 collation: "utf8mb4_la_0900_ai_ci",
                 is_default: false,
@@ -3073,8 +3102,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 0,
                 max_len: 4,
             },
-            CollationID::UTF8MB4_EO_0900_AI_CI => Collation {
-                id: CollationID::UTF8MB4_EO_0900_AI_CI,
+            CollationId::UTF8MB4_EO_0900_AI_CI => Collation {
+                id: CollationId::UTF8MB4_EO_0900_AI_CI,
                 charset: "utf8mb4",
                 collation: "utf8mb4_eo_0900_ai_ci",
                 is_default: false,
@@ -3083,8 +3112,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 0,
                 max_len: 4,
             },
-            CollationID::UTF8MB4_HU_0900_AI_CI => Collation {
-                id: CollationID::UTF8MB4_HU_0900_AI_CI,
+            CollationId::UTF8MB4_HU_0900_AI_CI => Collation {
+                id: CollationId::UTF8MB4_HU_0900_AI_CI,
                 charset: "utf8mb4",
                 collation: "utf8mb4_hu_0900_ai_ci",
                 is_default: false,
@@ -3093,8 +3122,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 0,
                 max_len: 4,
             },
-            CollationID::UTF8MB4_HR_0900_AI_CI => Collation {
-                id: CollationID::UTF8MB4_HR_0900_AI_CI,
+            CollationId::UTF8MB4_HR_0900_AI_CI => Collation {
+                id: CollationId::UTF8MB4_HR_0900_AI_CI,
                 charset: "utf8mb4",
                 collation: "utf8mb4_hr_0900_ai_ci",
                 is_default: false,
@@ -3103,8 +3132,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 0,
                 max_len: 4,
             },
-            CollationID::UTF8MB4_VI_0900_AI_CI => Collation {
-                id: CollationID::UTF8MB4_VI_0900_AI_CI,
+            CollationId::UTF8MB4_VI_0900_AI_CI => Collation {
+                id: CollationId::UTF8MB4_VI_0900_AI_CI,
                 charset: "utf8mb4",
                 collation: "utf8mb4_vi_0900_ai_ci",
                 is_default: false,
@@ -3113,8 +3142,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 0,
                 max_len: 4,
             },
-            CollationID::UTF8MB4_0900_AS_CS => Collation {
-                id: CollationID::UTF8MB4_0900_AS_CS,
+            CollationId::UTF8MB4_0900_AS_CS => Collation {
+                id: CollationId::UTF8MB4_0900_AS_CS,
                 charset: "utf8mb4",
                 collation: "utf8mb4_0900_as_cs",
                 is_default: false,
@@ -3123,8 +3152,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 0,
                 max_len: 4,
             },
-            CollationID::UTF8MB4_DE_PB_0900_AS_CS => Collation {
-                id: CollationID::UTF8MB4_DE_PB_0900_AS_CS,
+            CollationId::UTF8MB4_DE_PB_0900_AS_CS => Collation {
+                id: CollationId::UTF8MB4_DE_PB_0900_AS_CS,
                 charset: "utf8mb4",
                 collation: "utf8mb4_de_pb_0900_as_cs",
                 is_default: false,
@@ -3133,8 +3162,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 0,
                 max_len: 4,
             },
-            CollationID::UTF8MB4_IS_0900_AS_CS => Collation {
-                id: CollationID::UTF8MB4_IS_0900_AS_CS,
+            CollationId::UTF8MB4_IS_0900_AS_CS => Collation {
+                id: CollationId::UTF8MB4_IS_0900_AS_CS,
                 charset: "utf8mb4",
                 collation: "utf8mb4_is_0900_as_cs",
                 is_default: false,
@@ -3143,8 +3172,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 0,
                 max_len: 4,
             },
-            CollationID::UTF8MB4_LV_0900_AS_CS => Collation {
-                id: CollationID::UTF8MB4_LV_0900_AS_CS,
+            CollationId::UTF8MB4_LV_0900_AS_CS => Collation {
+                id: CollationId::UTF8MB4_LV_0900_AS_CS,
                 charset: "utf8mb4",
                 collation: "utf8mb4_lv_0900_as_cs",
                 is_default: false,
@@ -3153,8 +3182,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 0,
                 max_len: 4,
             },
-            CollationID::UTF8MB4_RO_0900_AS_CS => Collation {
-                id: CollationID::UTF8MB4_RO_0900_AS_CS,
+            CollationId::UTF8MB4_RO_0900_AS_CS => Collation {
+                id: CollationId::UTF8MB4_RO_0900_AS_CS,
                 charset: "utf8mb4",
                 collation: "utf8mb4_ro_0900_as_cs",
                 is_default: false,
@@ -3163,8 +3192,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 0,
                 max_len: 4,
             },
-            CollationID::UTF8MB4_SL_0900_AS_CS => Collation {
-                id: CollationID::UTF8MB4_SL_0900_AS_CS,
+            CollationId::UTF8MB4_SL_0900_AS_CS => Collation {
+                id: CollationId::UTF8MB4_SL_0900_AS_CS,
                 charset: "utf8mb4",
                 collation: "utf8mb4_sl_0900_as_cs",
                 is_default: false,
@@ -3173,8 +3202,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 0,
                 max_len: 4,
             },
-            CollationID::UTF8MB4_PL_0900_AS_CS => Collation {
-                id: CollationID::UTF8MB4_PL_0900_AS_CS,
+            CollationId::UTF8MB4_PL_0900_AS_CS => Collation {
+                id: CollationId::UTF8MB4_PL_0900_AS_CS,
                 charset: "utf8mb4",
                 collation: "utf8mb4_pl_0900_as_cs",
                 is_default: false,
@@ -3183,8 +3212,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 0,
                 max_len: 4,
             },
-            CollationID::UTF8MB4_ET_0900_AS_CS => Collation {
-                id: CollationID::UTF8MB4_ET_0900_AS_CS,
+            CollationId::UTF8MB4_ET_0900_AS_CS => Collation {
+                id: CollationId::UTF8MB4_ET_0900_AS_CS,
                 charset: "utf8mb4",
                 collation: "utf8mb4_et_0900_as_cs",
                 is_default: false,
@@ -3193,8 +3222,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 0,
                 max_len: 4,
             },
-            CollationID::UTF8MB4_ES_0900_AS_CS => Collation {
-                id: CollationID::UTF8MB4_ES_0900_AS_CS,
+            CollationId::UTF8MB4_ES_0900_AS_CS => Collation {
+                id: CollationId::UTF8MB4_ES_0900_AS_CS,
                 charset: "utf8mb4",
                 collation: "utf8mb4_es_0900_as_cs",
                 is_default: false,
@@ -3203,8 +3232,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 0,
                 max_len: 4,
             },
-            CollationID::UTF8MB4_SV_0900_AS_CS => Collation {
-                id: CollationID::UTF8MB4_SV_0900_AS_CS,
+            CollationId::UTF8MB4_SV_0900_AS_CS => Collation {
+                id: CollationId::UTF8MB4_SV_0900_AS_CS,
                 charset: "utf8mb4",
                 collation: "utf8mb4_sv_0900_as_cs",
                 is_default: false,
@@ -3213,8 +3242,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 0,
                 max_len: 4,
             },
-            CollationID::UTF8MB4_TR_0900_AS_CS => Collation {
-                id: CollationID::UTF8MB4_TR_0900_AS_CS,
+            CollationId::UTF8MB4_TR_0900_AS_CS => Collation {
+                id: CollationId::UTF8MB4_TR_0900_AS_CS,
                 charset: "utf8mb4",
                 collation: "utf8mb4_tr_0900_as_cs",
                 is_default: false,
@@ -3223,8 +3252,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 0,
                 max_len: 4,
             },
-            CollationID::UTF8MB4_CS_0900_AS_CS => Collation {
-                id: CollationID::UTF8MB4_CS_0900_AS_CS,
+            CollationId::UTF8MB4_CS_0900_AS_CS => Collation {
+                id: CollationId::UTF8MB4_CS_0900_AS_CS,
                 charset: "utf8mb4",
                 collation: "utf8mb4_cs_0900_as_cs",
                 is_default: false,
@@ -3233,8 +3262,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 0,
                 max_len: 4,
             },
-            CollationID::UTF8MB4_DA_0900_AS_CS => Collation {
-                id: CollationID::UTF8MB4_DA_0900_AS_CS,
+            CollationId::UTF8MB4_DA_0900_AS_CS => Collation {
+                id: CollationId::UTF8MB4_DA_0900_AS_CS,
                 charset: "utf8mb4",
                 collation: "utf8mb4_da_0900_as_cs",
                 is_default: false,
@@ -3243,8 +3272,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 0,
                 max_len: 4,
             },
-            CollationID::UTF8MB4_LT_0900_AS_CS => Collation {
-                id: CollationID::UTF8MB4_LT_0900_AS_CS,
+            CollationId::UTF8MB4_LT_0900_AS_CS => Collation {
+                id: CollationId::UTF8MB4_LT_0900_AS_CS,
                 charset: "utf8mb4",
                 collation: "utf8mb4_lt_0900_as_cs",
                 is_default: false,
@@ -3253,8 +3282,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 0,
                 max_len: 4,
             },
-            CollationID::UTF8MB4_SK_0900_AS_CS => Collation {
-                id: CollationID::UTF8MB4_SK_0900_AS_CS,
+            CollationId::UTF8MB4_SK_0900_AS_CS => Collation {
+                id: CollationId::UTF8MB4_SK_0900_AS_CS,
                 charset: "utf8mb4",
                 collation: "utf8mb4_sk_0900_as_cs",
                 is_default: false,
@@ -3263,8 +3292,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 0,
                 max_len: 4,
             },
-            CollationID::UTF8MB4_ES_TRAD_0900_AS_CS => Collation {
-                id: CollationID::UTF8MB4_ES_TRAD_0900_AS_CS,
+            CollationId::UTF8MB4_ES_TRAD_0900_AS_CS => Collation {
+                id: CollationId::UTF8MB4_ES_TRAD_0900_AS_CS,
                 charset: "utf8mb4",
                 collation: "utf8mb4_es_trad_0900_as_cs",
                 is_default: false,
@@ -3273,8 +3302,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 0,
                 max_len: 4,
             },
-            CollationID::UTF8MB4_LA_0900_AS_CS => Collation {
-                id: CollationID::UTF8MB4_LA_0900_AS_CS,
+            CollationId::UTF8MB4_LA_0900_AS_CS => Collation {
+                id: CollationId::UTF8MB4_LA_0900_AS_CS,
                 charset: "utf8mb4",
                 collation: "utf8mb4_la_0900_as_cs",
                 is_default: false,
@@ -3283,8 +3312,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 0,
                 max_len: 4,
             },
-            CollationID::UTF8MB4_EO_0900_AS_CS => Collation {
-                id: CollationID::UTF8MB4_EO_0900_AS_CS,
+            CollationId::UTF8MB4_EO_0900_AS_CS => Collation {
+                id: CollationId::UTF8MB4_EO_0900_AS_CS,
                 charset: "utf8mb4",
                 collation: "utf8mb4_eo_0900_as_cs",
                 is_default: false,
@@ -3293,8 +3322,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 0,
                 max_len: 4,
             },
-            CollationID::UTF8MB4_HU_0900_AS_CS => Collation {
-                id: CollationID::UTF8MB4_HU_0900_AS_CS,
+            CollationId::UTF8MB4_HU_0900_AS_CS => Collation {
+                id: CollationId::UTF8MB4_HU_0900_AS_CS,
                 charset: "utf8mb4",
                 collation: "utf8mb4_hu_0900_as_cs",
                 is_default: false,
@@ -3303,8 +3332,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 0,
                 max_len: 4,
             },
-            CollationID::UTF8MB4_HR_0900_AS_CS => Collation {
-                id: CollationID::UTF8MB4_HR_0900_AS_CS,
+            CollationId::UTF8MB4_HR_0900_AS_CS => Collation {
+                id: CollationId::UTF8MB4_HR_0900_AS_CS,
                 charset: "utf8mb4",
                 collation: "utf8mb4_hr_0900_as_cs",
                 is_default: false,
@@ -3313,8 +3342,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 0,
                 max_len: 4,
             },
-            CollationID::UTF8MB4_VI_0900_AS_CS => Collation {
-                id: CollationID::UTF8MB4_VI_0900_AS_CS,
+            CollationId::UTF8MB4_VI_0900_AS_CS => Collation {
+                id: CollationId::UTF8MB4_VI_0900_AS_CS,
                 charset: "utf8mb4",
                 collation: "utf8mb4_vi_0900_as_cs",
                 is_default: false,
@@ -3323,8 +3352,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 0,
                 max_len: 4,
             },
-            CollationID::UTF8MB4_JA_0900_AS_CS => Collation {
-                id: CollationID::UTF8MB4_JA_0900_AS_CS,
+            CollationId::UTF8MB4_JA_0900_AS_CS => Collation {
+                id: CollationId::UTF8MB4_JA_0900_AS_CS,
                 charset: "utf8mb4",
                 collation: "utf8mb4_ja_0900_as_cs",
                 is_default: false,
@@ -3333,8 +3362,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 0,
                 max_len: 4,
             },
-            CollationID::UTF8MB4_JA_0900_AS_CS_KS => Collation {
-                id: CollationID::UTF8MB4_JA_0900_AS_CS_KS,
+            CollationId::UTF8MB4_JA_0900_AS_CS_KS => Collation {
+                id: CollationId::UTF8MB4_JA_0900_AS_CS_KS,
                 charset: "utf8mb4",
                 collation: "utf8mb4_ja_0900_as_cs_ks",
                 is_default: false,
@@ -3343,8 +3372,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 24,
                 max_len: 4,
             },
-            CollationID::UTF8MB4_0900_AS_CI => Collation {
-                id: CollationID::UTF8MB4_0900_AS_CI,
+            CollationId::UTF8MB4_0900_AS_CI => Collation {
+                id: CollationId::UTF8MB4_0900_AS_CI,
                 charset: "utf8mb4",
                 collation: "utf8mb4_0900_as_ci",
                 is_default: false,
@@ -3353,8 +3382,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 0,
                 max_len: 4,
             },
-            CollationID::UTF8MB4_RU_0900_AI_CI => Collation {
-                id: CollationID::UTF8MB4_RU_0900_AI_CI,
+            CollationId::UTF8MB4_RU_0900_AI_CI => Collation {
+                id: CollationId::UTF8MB4_RU_0900_AI_CI,
                 charset: "utf8mb4",
                 collation: "utf8mb4_ru_0900_ai_ci",
                 is_default: false,
@@ -3363,8 +3392,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 0,
                 max_len: 4,
             },
-            CollationID::UTF8MB4_RU_0900_AS_CS => Collation {
-                id: CollationID::UTF8MB4_RU_0900_AS_CS,
+            CollationId::UTF8MB4_RU_0900_AS_CS => Collation {
+                id: CollationId::UTF8MB4_RU_0900_AS_CS,
                 charset: "utf8mb4",
                 collation: "utf8mb4_ru_0900_as_cs",
                 is_default: false,
@@ -3373,8 +3402,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 0,
                 max_len: 4,
             },
-            CollationID::UTF8MB4_ZH_0900_AS_CS => Collation {
-                id: CollationID::UTF8MB4_ZH_0900_AS_CS,
+            CollationId::UTF8MB4_ZH_0900_AS_CS => Collation {
+                id: CollationId::UTF8MB4_ZH_0900_AS_CS,
                 charset: "utf8mb4",
                 collation: "utf8mb4_zh_0900_as_cs",
                 is_default: false,
@@ -3383,8 +3412,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 0,
                 max_len: 4,
             },
-            CollationID::UTF8MB4_0900_BIN => Collation {
-                id: CollationID::UTF8MB4_0900_BIN,
+            CollationId::UTF8MB4_0900_BIN => Collation {
+                id: CollationId::UTF8MB4_0900_BIN,
                 charset: "utf8mb4",
                 collation: "utf8mb4_0900_bin",
                 is_default: false,
@@ -3393,8 +3422,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 1,
                 max_len: 4,
             },
-            CollationID::UTF8MB4_NB_0900_AI_CI => Collation {
-                id: CollationID::UTF8MB4_NB_0900_AI_CI,
+            CollationId::UTF8MB4_NB_0900_AI_CI => Collation {
+                id: CollationId::UTF8MB4_NB_0900_AI_CI,
                 charset: "utf8mb4",
                 collation: "utf8mb4_nb_0900_ai_ci",
                 is_default: false,
@@ -3403,8 +3432,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 0,
                 max_len: 4,
             },
-            CollationID::UTF8MB4_NB_0900_AS_CS => Collation {
-                id: CollationID::UTF8MB4_NB_0900_AS_CS,
+            CollationId::UTF8MB4_NB_0900_AS_CS => Collation {
+                id: CollationId::UTF8MB4_NB_0900_AS_CS,
                 charset: "utf8mb4",
                 collation: "utf8mb4_nb_0900_as_cs",
                 is_default: false,
@@ -3413,8 +3442,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 0,
                 max_len: 4,
             },
-            CollationID::UTF8MB4_NN_0900_AI_CI => Collation {
-                id: CollationID::UTF8MB4_NN_0900_AI_CI,
+            CollationId::UTF8MB4_NN_0900_AI_CI => Collation {
+                id: CollationId::UTF8MB4_NN_0900_AI_CI,
                 charset: "utf8mb4",
                 collation: "utf8mb4_nn_0900_ai_ci",
                 is_default: false,
@@ -3423,8 +3452,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 0,
                 max_len: 4,
             },
-            CollationID::UTF8MB4_NN_0900_AS_CS => Collation {
-                id: CollationID::UTF8MB4_NN_0900_AS_CS,
+            CollationId::UTF8MB4_NN_0900_AS_CS => Collation {
+                id: CollationId::UTF8MB4_NN_0900_AS_CS,
                 charset: "utf8mb4",
                 collation: "utf8mb4_nn_0900_as_cs",
                 is_default: false,
@@ -3433,8 +3462,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 0,
                 max_len: 4,
             },
-            CollationID::UTF8MB4_SR_LATN_0900_AI_CI => Collation {
-                id: CollationID::UTF8MB4_SR_LATN_0900_AI_CI,
+            CollationId::UTF8MB4_SR_LATN_0900_AI_CI => Collation {
+                id: CollationId::UTF8MB4_SR_LATN_0900_AI_CI,
                 charset: "utf8mb4",
                 collation: "utf8mb4_sr_latn_0900_ai_ci",
                 is_default: false,
@@ -3443,8 +3472,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 0,
                 max_len: 4,
             },
-            CollationID::UTF8MB4_SR_LATN_0900_AS_CS => Collation {
-                id: CollationID::UTF8MB4_SR_LATN_0900_AS_CS,
+            CollationId::UTF8MB4_SR_LATN_0900_AS_CS => Collation {
+                id: CollationId::UTF8MB4_SR_LATN_0900_AS_CS,
                 charset: "utf8mb4",
                 collation: "utf8mb4_sr_latn_0900_as_cs",
                 is_default: false,
@@ -3453,8 +3482,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 0,
                 max_len: 4,
             },
-            CollationID::UTF8MB4_BS_0900_AI_CI => Collation {
-                id: CollationID::UTF8MB4_BS_0900_AI_CI,
+            CollationId::UTF8MB4_BS_0900_AI_CI => Collation {
+                id: CollationId::UTF8MB4_BS_0900_AI_CI,
                 charset: "utf8mb4",
                 collation: "utf8mb4_bs_0900_ai_ci",
                 is_default: false,
@@ -3463,8 +3492,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 0,
                 max_len: 4,
             },
-            CollationID::UTF8MB4_BS_0900_AS_CS => Collation {
-                id: CollationID::UTF8MB4_BS_0900_AS_CS,
+            CollationId::UTF8MB4_BS_0900_AS_CS => Collation {
+                id: CollationId::UTF8MB4_BS_0900_AS_CS,
                 charset: "utf8mb4",
                 collation: "utf8mb4_bs_0900_as_cs",
                 is_default: false,
@@ -3473,8 +3502,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 0,
                 max_len: 4,
             },
-            CollationID::UTF8MB4_BG_0900_AI_CI => Collation {
-                id: CollationID::UTF8MB4_BG_0900_AI_CI,
+            CollationId::UTF8MB4_BG_0900_AI_CI => Collation {
+                id: CollationId::UTF8MB4_BG_0900_AI_CI,
                 charset: "utf8mb4",
                 collation: "utf8mb4_bg_0900_ai_ci",
                 is_default: false,
@@ -3483,8 +3512,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 0,
                 max_len: 4,
             },
-            CollationID::UTF8MB4_BG_0900_AS_CS => Collation {
-                id: CollationID::UTF8MB4_BG_0900_AS_CS,
+            CollationId::UTF8MB4_BG_0900_AS_CS => Collation {
+                id: CollationId::UTF8MB4_BG_0900_AS_CS,
                 charset: "utf8mb4",
                 collation: "utf8mb4_bg_0900_as_cs",
                 is_default: false,
@@ -3493,8 +3522,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 0,
                 max_len: 4,
             },
-            CollationID::UTF8MB4_GL_0900_AI_CI => Collation {
-                id: CollationID::UTF8MB4_GL_0900_AI_CI,
+            CollationId::UTF8MB4_GL_0900_AI_CI => Collation {
+                id: CollationId::UTF8MB4_GL_0900_AI_CI,
                 charset: "utf8mb4",
                 collation: "utf8mb4_gl_0900_ai_ci",
                 is_default: false,
@@ -3503,8 +3532,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 0,
                 max_len: 4,
             },
-            CollationID::UTF8MB4_GL_0900_AS_CS => Collation {
-                id: CollationID::UTF8MB4_GL_0900_AS_CS,
+            CollationId::UTF8MB4_GL_0900_AS_CS => Collation {
+                id: CollationId::UTF8MB4_GL_0900_AS_CS,
                 charset: "utf8mb4",
                 collation: "utf8mb4_gl_0900_as_cs",
                 is_default: false,
@@ -3513,8 +3542,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 0,
                 max_len: 4,
             },
-            CollationID::UTF8MB4_MN_CYRL_0900_AI_CI => Collation {
-                id: CollationID::UTF8MB4_MN_CYRL_0900_AI_CI,
+            CollationId::UTF8MB4_MN_CYRL_0900_AI_CI => Collation {
+                id: CollationId::UTF8MB4_MN_CYRL_0900_AI_CI,
                 charset: "utf8mb4",
                 collation: "utf8mb4_mn_cyrl_0900_ai_ci",
                 is_default: false,
@@ -3523,8 +3552,8 @@ impl<'a> From<CollationID> for Collation<'a> {
                 sort_len: 0,
                 max_len: 4,
             },
-            CollationID::UTF8MB4_MN_CYRL_0900_AS_CS => Collation {
-                id: CollationID::UTF8MB4_MN_CYRL_0900_AS_CS,
+            CollationId::UTF8MB4_MN_CYRL_0900_AS_CS => Collation {
+                id: CollationId::UTF8MB4_MN_CYRL_0900_AS_CS,
                 charset: "utf8mb4",
                 collation: "utf8mb4_mn_cyrl_0900_as_cs",
                 is_default: false,

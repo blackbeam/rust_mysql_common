@@ -323,7 +323,7 @@ mod tests {
 
     use crate::{
         binlog::{events::RowsEventData, value::BinlogValue},
-        collations::CollationID,
+        collations::CollationId,
         constants::ColumnFlags,
         proto::MySerialize,
         value::Value,
@@ -786,11 +786,11 @@ mod tests {
                                         }
 
                                         for (col, charset) in columns.iter().zip([
-                                            CollationID::UNKNOWN_COLLATION_ID,
-                                            CollationID::UTF8MB4_GENERAL_CI,
-                                            CollationID::UTF8MB4_GENERAL_CI,
-                                            CollationID::BINARY,
-                                            CollationID::UNKNOWN_COLLATION_ID,
+                                            CollationId::UNKNOWN_COLLATION_ID,
+                                            CollationId::UTF8MB4_GENERAL_CI,
+                                            CollationId::UTF8MB4_GENERAL_CI,
+                                            CollationId::BINARY,
+                                            CollationId::UNKNOWN_COLLATION_ID,
                                         ]) {
                                             assert_eq!(col.character_set(), charset as u16);
                                         }
