@@ -469,6 +469,7 @@ macro_rules! params {
     }
 }
 
+pub mod collations;
 pub mod constants;
 pub mod crypto;
 pub mod io;

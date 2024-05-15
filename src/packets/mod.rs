@@ -17,11 +17,11 @@ use std::{
     borrow::Cow, cmp::max, collections::HashMap, convert::TryFrom, fmt, io, marker::PhantomData,
 };
 
+use crate::collations::CollationId;
 use crate::{
     constants::{
         CapabilityFlags, ColumnFlags, ColumnType, Command, CursorType, SessionStateType,
         StatusFlags, StmtExecuteParamFlags, StmtExecuteParamsFlags, MAX_PAYLOAD_LEN,
-        UTF8MB4_GENERAL_CI, UTF8_GENERAL_CI,
     },
     io::{BufMutExt, ParseBuf},
     misc::{
@@ -2030,9 +2030,9 @@ impl<'a> HandshakeResponse<'a> {
         Self {
             scramble_buf,
             collation: if server_version >= (5, 5, 3) {
-                RawInt::new(UTF8MB4_GENERAL_CI as u8)
+                RawInt::new(CollationId::UTF8MB4_GENERAL_CI as u8)
             } else {
-                RawInt::new(UTF8_GENERAL_CI as u8)
+                RawInt::new(CollationId::UTF8MB3_GENERAL_CI as u8)
             },
             user: user.map(RawBytes::new).unwrap_or_default(),
             db_name: db_name.map(RawBytes::new),
@@ -3414,7 +3414,7 @@ impl<'de> MyDeserialize<'de> for SemiSyncAckPacket<'de> {
 mod test {
     use super::*;
     use crate::{
-        constants::{CapabilityFlags, ColumnFlags, ColumnType, StatusFlags, UTF8_GENERAL_CI},
+        constants::{CapabilityFlags, ColumnFlags, ColumnType, StatusFlags},
         proto::{MyDeserialize, MySerialize},
     };
 
@@ -3670,7 +3670,10 @@ mod test {
         assert_eq!(column.org_table_str(), "org_table");
         assert_eq!(column.name_str(), "name");
         assert_eq!(column.org_name_str(), "org_name");
-        assert_eq!(column.character_set(), UTF8_GENERAL_CI);
+        assert_eq!(
+            column.character_set(),
+            CollationId::UTF8MB3_GENERAL_CI as u16
+        );
         assert_eq!(column.column_length(), 15);
         assert_eq!(column.column_type(), ColumnType::MYSQL_TYPE_DECIMAL);
         assert_eq!(column.flags(), ColumnFlags::NOT_NULL_FLAG);
