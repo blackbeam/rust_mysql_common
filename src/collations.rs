@@ -3846,12 +3846,10 @@ impl<'a> Collation<'a> {
     pub fn max_len(&self) -> u8 {
         self.max_len
     }
-}
 
-impl From<CollationId> for Collation<'static> {
-    /// Convert a collation ID to a collation.
-    fn from(value: CollationId) -> Self {
-        match value {
+    /// Resolve collation id into a collation.
+    pub const fn resolve(id: CollationId) -> Collation<'static> {
+        match id {
             CollationId::UNKNOWN_COLLATION_ID => Self::UNKNOWN_COLLATION,
             CollationId::BIG5_CHINESE_CI => Self::BIG5_CHINESE_CI_COLLATION,
             CollationId::LATIN2_CZECH_CS => Self::LATIN2_CZECH_CS_COLLATION,
@@ -4140,5 +4138,12 @@ impl From<CollationId> for Collation<'static> {
             CollationId::UTF8MB4_MN_CYRL_0900_AI_CI => Self::UTF8MB4_MN_CYRL_0900_AI_CI_COLLATION,
             CollationId::UTF8MB4_MN_CYRL_0900_AS_CS => Self::UTF8MB4_MN_CYRL_0900_AS_CS_COLLATION,
         }
+    }
+}
+
+impl From<CollationId> for Collation<'static> {
+    /// Convert a collation ID to a collation.
+    fn from(value: CollationId) -> Self {
+        Collation::resolve(value)
     }
 }
