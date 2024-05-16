@@ -317,6 +317,11 @@ impl FromStr for Decimal {
             return Err(ParseDecimalError);
         }
 
+        // Skip leading zeros.
+        while from.starts_with("00") {
+            from = &from[1..];
+        }
+
         if from.starts_with('-') {
             out.sign = true;
             from = &from[1..];

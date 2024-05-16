@@ -16,14 +16,14 @@ use std::{
     path::{Path, PathBuf},
 };
 
-const MYSQL_DIR: &str = "mysql-8.0.19";
+const MYSQL_DIR: &str = "mysql-8.0.35";
 
 const LIBSTRINGS: &str = "libstrings.a";
 const LIBWRAPPER: &str = "libwrapper.a";
 
 /// Returns mysql source path.
 fn download_mysql(out_dir: &Path) {
-    const URL: &str = "https://downloads.mysql.com/archives/get/p/23/file/mysql-8.0.19.tar.gz";
+    const URL: &str = "https://downloads.mysql.com/archives/get/p/23/file/mysql-8.0.35.tar.gz";
     {
         Exec::cmd("curl").arg("-s").arg("-L").arg(URL)
             | Exec::cmd("tar").arg("-xz").arg("-C").arg(out_dir)
@@ -122,5 +122,6 @@ fn main() {
         println!("cargo:rustc-link-search=native={}", libdir.display());
         println!("cargo:rustc-link-lib=wrapper");
         println!("cargo:rustc-link-lib=strings");
+        println!("cargo:rustc-link-lib=c++");
     }
 }
