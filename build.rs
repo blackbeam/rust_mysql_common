@@ -122,6 +122,8 @@ fn main() {
         println!("cargo:rustc-link-search=native={}", libdir.display());
         println!("cargo:rustc-link-lib=wrapper");
         println!("cargo:rustc-link-lib=strings");
-        println!("cargo:rustc-link-lib=c++");
+        if cfg!(target_os = "macos") {
+            println!("cargo:rustc-link-lib=c++");
+        }
     }
 }
