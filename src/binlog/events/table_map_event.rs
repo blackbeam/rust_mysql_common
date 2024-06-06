@@ -9,7 +9,7 @@
 use std::{borrow::Cow, cmp::min, convert::TryFrom, io, iter::Peekable};
 
 use bitvec::prelude::*;
-use byteorder::{LittleEndian, ReadBytesExt};
+use byteorder::ReadBytesExt;
 use saturating::Saturating as S;
 
 use crate::{
@@ -18,7 +18,7 @@ use crate::{
         BinlogCtx, BinlogEvent, BinlogStruct,
     },
     constants::{ColumnType, GeometryType, UnknownColumnType},
-    io::ParseBuf,
+    io::{ParseBuf, ReadMysqlExt},
     misc::raw::{
         bytes::{BareBytes, EofBytes, LenEnc, U8Bytes},
         int::*,
@@ -1160,12 +1160,7 @@ impl<'a> OptionalMetadataIter<'a> {
     fn read_tlv(&mut self) -> io::Result<(RawConst<u8, OptionalMetadataFieldType>, &'a [u8])> {
         let t = self.data.read_u8()?;
         // The length is encoded in 1, 3 or 8 bytes (https://github.com/mysql/mysql-server/blob/824e2b4064053f7daf17d7f3f84b7a3ed92e5fb4/libs/mysql/binlog/event/binlog_event.h#L812)
-        let l = match self.data.read_u8()? {
-            252 => self.data.read_u16::<LittleEndian>()? as usize,
-            253 => self.data.read_u24::<LittleEndian>()? as usize,
-            254 => self.data.read_u64::<LittleEndian>()? as usize,
-            t => t as usize,
-        };
+        let l = self.data.read_lenenc_int()? as usize;
         let v = match self.data.get(..l) {
             Some(v) => v,
             None => {
