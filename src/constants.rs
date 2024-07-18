@@ -615,6 +615,7 @@ pub enum ColumnType {
     MYSQL_TYPE_DATETIME2,
     MYSQL_TYPE_TIME2,
     MYSQL_TYPE_TYPED_ARRAY, // Used for replication only
+    MYSQL_TYPE_VECTOR = 242,
     MYSQL_TYPE_UNKNOWN = 243,
     MYSQL_TYPE_JSON = 245,
     MYSQL_TYPE_NEWDECIMAL = 246,
@@ -671,6 +672,10 @@ impl ColumnType {
     pub fn is_geometry_type(&self) -> bool {
         matches!(self, ColumnType::MYSQL_TYPE_GEOMETRY)
     }
+
+    pub fn is_vector_type(&self) -> bool {
+        matches!(self, ColumnType::MYSQL_TYPE_VECTOR)
+    }
 }
 
 impl TryFrom<u8> for ColumnType {
@@ -698,6 +703,7 @@ impl TryFrom<u8> for ColumnType {
             0x12_u8 => Ok(ColumnType::MYSQL_TYPE_DATETIME2),
             0x13_u8 => Ok(ColumnType::MYSQL_TYPE_TIME2),
             0x14_u8 => Ok(ColumnType::MYSQL_TYPE_TYPED_ARRAY),
+            0xf2_u8 => Ok(ColumnType::MYSQL_TYPE_VECTOR),
             0xf3_u8 => Ok(ColumnType::MYSQL_TYPE_UNKNOWN),
             0xf5_u8 => Ok(ColumnType::MYSQL_TYPE_JSON),
             0xf6_u8 => Ok(ColumnType::MYSQL_TYPE_NEWDECIMAL),

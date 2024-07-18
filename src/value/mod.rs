@@ -414,6 +414,7 @@ impl Value {
             | ColumnType::MYSQL_TYPE_BIT
             | ColumnType::MYSQL_TYPE_NEWDECIMAL
             | ColumnType::MYSQL_TYPE_GEOMETRY
+            | ColumnType::MYSQL_TYPE_VECTOR
             | ColumnType::MYSQL_TYPE_JSON => Ok(Bytes(
                 buf.checked_eat_lenenc_str()
                     .ok_or_else(unexpected_buf_eof)?
@@ -576,6 +577,7 @@ mod test {
                 Value::Bytes(b"MYSQL_TYPE_STRING".to_vec()),
                 Value::NULL,
                 Value::Bytes(b"MYSQL_TYPE_GEOMETRY".to_vec()),
+                Value::Bytes(b"MYSQL_TYPE_VECTOR".to_vec()),
             ];
 
             let (body, _) = ComStmtExecuteRequestBuilder::new(0).build(&*values);
@@ -627,6 +629,7 @@ mod test {
                 Value::Bytes(b"MYSQL_TYPE_STRING".to_vec()),
                 Value::NULL,
                 Value::Bytes(b"MYSQL_TYPE_GEOMETRY".to_vec()),
+                Value::Bytes(b"MYSQL_TYPE_VECTOR".to_vec()),
             ];
 
             let (body, _) = ComStmtExecuteRequestBuilder::new(0).build(&*values);
