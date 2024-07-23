@@ -30,7 +30,7 @@ exclude = [
 travis-ci = { repository = "blackbeam/rust_mysql_common" }
 
 [dependencies]
-base64 = "0.21"
+base64 = "0.22"
 bigdecimal02 = { package = "bigdecimal", version = "0.2", features = [
     "serde",
 ], optional = true }
