@@ -326,6 +326,7 @@ impl ColumnType {
 mod tests {
     use std::{
         collections::HashMap,
+        convert::TryFrom,
         io,
         iter::{once, repeat},
     };
@@ -337,10 +338,14 @@ mod tests {
     };
 
     use crate::{
-        binlog::{events::RowsEventData, value::BinlogValue},
+        binlog::{
+            events::{OptionalMetadataField, RowsEventData},
+            value::BinlogValue,
+        },
         collations::CollationId,
         constants::ColumnFlags,
         proto::MySerialize,
+        row::convert::from_row,
         value::Value,
     };
 
@@ -734,10 +739,12 @@ mod tests {
             let file_data = std::fs::read(dbg!(&file_path))?;
             let mut binlog_file = BinlogFile::new(BinlogVersion::Version4, &file_data[..])?;
 
+            let mut i = 0;
             let mut ev_pos = 4;
             let mut table_map_events = HashMap::new();
 
             while let Some(ev) = binlog_file.next() {
+                i += 1;
                 let ev = ev?;
                 let _ = dbg!(ev.header().event_type());
                 let ev_end = ev_pos + ev.header().event_size() as usize;
@@ -844,6 +851,72 @@ mod tests {
                         for meta in optional_meta {
                             meta.unwrap();
                         }
+                    }
+                }
+
+                if file_path.file_name().unwrap() == "vector.binlog" {
+                    let event_data = ev.read_data().unwrap();
+                    match event_data {
+                        Some(EventData::TableMapEvent(ev)) => {
+                            let optional_meta = ev.iter_optional_meta();
+                            match ev.table_name().as_ref() {
+                                "foo" => {
+                                    for meta in optional_meta {
+                                        match meta.unwrap() {
+                                            OptionalMetadataField::Dimensionality(x) => assert_eq!(
+                                                x.iter_dimensionalities()
+                                                    .collect::<Result<Vec<_>, _>>()
+                                                    .unwrap(),
+                                                vec![3],
+                                            ),
+                                            _ => (),
+                                        }
+                                    }
+                                }
+                                "bar" => {
+                                    for meta in optional_meta {
+                                        match meta.unwrap() {
+                                            OptionalMetadataField::Dimensionality(x) => assert_eq!(
+                                                x.iter_dimensionalities()
+                                                    .collect::<Result<Vec<_>, _>>()
+                                                    .unwrap(),
+                                                vec![2, 4],
+                                            ),
+                                            _ => (),
+                                        }
+                                    }
+                                }
+                                _ => (),
+                            }
+                        }
+                        Some(EventData::RowsEvent(ev)) if i == 12 => {
+                            let table_map_event =
+                                binlog_file.reader().get_tme(ev.table_id()).unwrap();
+                            let mut rows = ev.rows(table_map_event);
+
+                            let (None, Some(after)) = rows.next().unwrap().unwrap() else {
+                                panic!("Unexpected data");
+                            };
+                            let (id, vector_column): (u8, Vec<u8>) =
+                                from_row(crate::Row::try_from(after).unwrap());
+                            assert_eq!(id, 1);
+                            assert_eq!(
+                                vector_column,
+                                vec![205, 204, 140, 63, 205, 204, 12, 64, 51, 51, 83, 64]
+                            );
+
+                            let (None, Some(after)) = rows.next().unwrap().unwrap() else {
+                                panic!("Unexpected data");
+                            };
+                            let (id, vector_column): (u8, Vec<u8>) =
+                                from_row(crate::Row::try_from(after).unwrap());
+                            assert_eq!(id, 2);
+                            assert_eq!(
+                                vector_column,
+                                vec![0, 0, 128, 63, 0, 0, 128, 191, 0, 0, 0, 0]
+                            );
+                        }
+                        _ => (),
                     }
                 }
 
