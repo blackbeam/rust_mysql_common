@@ -285,7 +285,8 @@ impl ColumnType {
             | Self::MYSQL_TYPE_TIME2
             | Self::MYSQL_TYPE_DATETIME2
             | Self::MYSQL_TYPE_TIMESTAMP2
-            | Self::MYSQL_TYPE_JSON => ptr.get(..1).map(|x| (x, 1)),
+            | Self::MYSQL_TYPE_JSON
+            | Self::MYSQL_TYPE_VECTOR => ptr.get(..1).map(|x| (x, 1)),
             Self::MYSQL_TYPE_VARCHAR => {
                 if is_array {
                     ptr.get(..3).map(|x| (x, 3))
@@ -302,7 +303,21 @@ impl ColumnType {
                 .ok()?
                 .get_metadata(ptr.get(1..)?, true)
                 .map(|(x, n)| (x, n + 1)),
-            _ => Some((&[], 0)),
+            Self::MYSQL_TYPE_DECIMAL
+            | Self::MYSQL_TYPE_TINY
+            | Self::MYSQL_TYPE_SHORT
+            | Self::MYSQL_TYPE_LONG
+            | Self::MYSQL_TYPE_NULL
+            | Self::MYSQL_TYPE_TIMESTAMP
+            | Self::MYSQL_TYPE_LONGLONG
+            | Self::MYSQL_TYPE_INT24
+            | Self::MYSQL_TYPE_DATE
+            | Self::MYSQL_TYPE_TIME
+            | Self::MYSQL_TYPE_DATETIME
+            | Self::MYSQL_TYPE_YEAR
+            | Self::MYSQL_TYPE_NEWDATE
+            | Self::MYSQL_TYPE_UNKNOWN
+            | Self::MYSQL_TYPE_VAR_STRING => Some((&[], 0)),
         }
     }
 }

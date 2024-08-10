@@ -576,6 +576,8 @@ pub enum OptionalMetadataFieldType {
     ENUM_AND_SET_COLUMN_CHARSET,
     /// A flag that indicates column visibility attribute.
     COLUMN_VISIBILITY,
+    /// Vector column dimensionality.
+    VECTOR_DIMENSIONALITY,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
@@ -605,6 +607,7 @@ impl TryFrom<u8> for OptionalMetadataFieldType {
             10 => Ok(Self::ENUM_AND_SET_DEFAULT_CHARSET),
             11 => Ok(Self::ENUM_AND_SET_COLUMN_CHARSET),
             12 => Ok(Self::COLUMN_VISIBILITY),
+            13 => Ok(Self::VECTOR_DIMENSIONALITY),
             x => Err(UnknownOptionalMetadataFieldType(x)),
         }
     }

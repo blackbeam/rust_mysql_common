@@ -960,6 +960,62 @@ impl MySerialize for GeometryTypes<'_> {
     }
 }
 
+/// Contains a number of dimensions for every vector column.
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct VectorDimensionalities<'a> {
+    dimensionalities: RawBytes<'a, EofBytes>,
+}
+
+impl<'a> VectorDimensionalities<'a> {
+    /// Returns an iterator over dimensionalities.
+    ///
+    /// It will signal an error and stop iteration if field value is malformed.
+    pub fn iter_dimensionalities(&'a self) -> IterVectorDimensionalities<'a> {
+        IterVectorDimensionalities {
+            buf: ParseBuf(self.dimensionalities.as_bytes()),
+        }
+    }
+}
+
+pub struct IterVectorDimensionalities<'a> {
+    buf: ParseBuf<'a>,
+}
+
+impl<'a> Iterator for IterVectorDimensionalities<'a> {
+    type Item = io::Result<u64>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.buf.is_empty() {
+            None
+        } else {
+            match self.buf.parse::<RawInt<LenEnc>>(()) {
+                Ok(x) => Some(Ok(x.0)),
+                Err(e) => {
+                    self.buf = ParseBuf(b"");
+                    Some(Err(e))
+                }
+            }
+        }
+    }
+}
+
+impl<'de> MyDeserialize<'de> for VectorDimensionalities<'de> {
+    const SIZE: Option<usize> = None;
+    type Ctx = ();
+
+    fn deserialize((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+        Ok(Self {
+            dimensionalities: buf.parse(())?,
+        })
+    }
+}
+
+impl MySerialize for VectorDimensionalities<'_> {
+    fn serialize(&self, buf: &mut Vec<u8>) {
+        self.dimensionalities.serialize(buf);
+    }
+}
+
 /// Contains a sequence of PK column indexes where PK doesn't have a prefix.
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct SimplePrimaryKey<'a> {
@@ -1146,6 +1202,8 @@ pub enum OptionalMetadataField<'a> {
         /// Flags indicating visibility for every numeric column.
         &'a BitSlice<u8, Msb0>,
     ),
+    /// See [`OptionalMetadataFieldType::VECTOR_DIMENSIONALITY`].
+    Dimensionality(VectorDimensionalities<'a>),
 }
 
 /// Iterator over fields of an optional metadata.
@@ -1260,6 +1318,9 @@ impl<'a> Iterator for OptionalMetadataIter<'a> {
                             let flags = &flags[..num_columns];
                             Ok(OptionalMetadataField::ColumnVisibility(flags))
                         }
+                        VECTOR_DIMENSIONALITY => {
+                            Ok(OptionalMetadataField::Dimensionality(v.parse(())?))
+                        }
                     },
                     Err(_) => Err(io::Error::new(
                         io::ErrorKind::InvalidData,
@@ -1325,6 +1386,7 @@ impl<'a> OptionalMetaExtractor<'a> {
                     this.enum_and_set_column_charset = Some(x);
                 }
                 OptionalMetadataField::ColumnVisibility(_) => (),
+                OptionalMetadataField::Dimensionality(_) => (),
             }
         }
 
