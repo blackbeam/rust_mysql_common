@@ -40,6 +40,7 @@ use crate::{
     proto::{MyDeserialize, MySerialize},
     value::{ClientSide, SerializationSide, Value},
 };
+use crate::scramble::createResponseForEd25519;
 
 use self::session_state_change::SessionStateChange;
 
@@ -1086,6 +1087,7 @@ const MYSQL_OLD_PASSWORD_PLUGIN_NAME: &[u8] = b"mysql_old_password";
 const MYSQL_NATIVE_PASSWORD_PLUGIN_NAME: &[u8] = b"mysql_native_password";
 const CACHING_SHA2_PASSWORD_PLUGIN_NAME: &[u8] = b"caching_sha2_password";
 const MYSQL_CLEAR_PASSWORD_PLUGIN_NAME: &[u8] = b"mysql_clear_password";
+const ED25519_PLUGIN_NAME: &[u8] = b"client_ed25519";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AuthPluginData<'a> {
@@ -1097,6 +1099,8 @@ pub enum AuthPluginData<'a> {
     Sha2([u8; 32]),
     /// Clear password for `mysql_clear_password` plugin.
     Clear(Cow<'a, [u8]>),
+    /// Auth data for MariaDB's `client_ed25519` plugin.
+    Ed25519([u8; 64]),
 }
 
 impl<'a> AuthPluginData<'a> {
@@ -1106,6 +1110,7 @@ impl<'a> AuthPluginData<'a> {
             AuthPluginData::Native(x) => AuthPluginData::Native(x),
             AuthPluginData::Sha2(x) => AuthPluginData::Sha2(x),
             AuthPluginData::Clear(x) => AuthPluginData::Clear(Cow::Owned(x.into_owned())),
+            AuthPluginData::Ed25519(x) => AuthPluginData::Ed25519(x),
         }
     }
 }
@@ -1119,6 +1124,7 @@ impl std::ops::Deref for AuthPluginData<'_> {
             Self::Native(x) => &x[..],
             Self::Old(x) => &x[..],
             Self::Clear(x) => &x[..],
+            Self::Ed25519(x) => &x[..],
         }
     }
 }
@@ -1136,6 +1142,7 @@ impl MySerialize for AuthPluginData<'_> {
                 buf.put_slice(x);
                 buf.push(0);
             }
+            Self::Ed25519(x) => buf.put_slice(&x[..]),
         }
     }
 }
@@ -1151,6 +1158,8 @@ pub enum AuthPlugin<'a> {
     MysqlNativePassword,
     /// Default since MySql v8.0.4
     CachingSha2Password,
+    /// MariaDB's Ed25519 based authentication
+    Ed25519,
     Other(Cow<'a, [u8]>),
 }
 
@@ -1182,6 +1191,7 @@ impl<'a> AuthPlugin<'a> {
             MYSQL_NATIVE_PASSWORD_PLUGIN_NAME => AuthPlugin::MysqlNativePassword,
             MYSQL_OLD_PASSWORD_PLUGIN_NAME => AuthPlugin::MysqlOldPassword,
             MYSQL_CLEAR_PASSWORD_PLUGIN_NAME => AuthPlugin::MysqlClearPassword,
+            ED25519_PLUGIN_NAME => AuthPlugin::Ed25519,
             name => AuthPlugin::Other(Cow::Borrowed(name)),
         }
     }
@@ -1192,6 +1202,7 @@ impl<'a> AuthPlugin<'a> {
             AuthPlugin::MysqlNativePassword => MYSQL_NATIVE_PASSWORD_PLUGIN_NAME,
             AuthPlugin::MysqlOldPassword => MYSQL_OLD_PASSWORD_PLUGIN_NAME,
             AuthPlugin::MysqlClearPassword => MYSQL_CLEAR_PASSWORD_PLUGIN_NAME,
+            AuthPlugin::Ed25519 => ED25519_PLUGIN_NAME,
             AuthPlugin::Other(name) => name,
         }
     }
@@ -1202,6 +1213,7 @@ impl<'a> AuthPlugin<'a> {
             AuthPlugin::MysqlNativePassword => AuthPlugin::MysqlNativePassword,
             AuthPlugin::MysqlOldPassword => AuthPlugin::MysqlOldPassword,
             AuthPlugin::MysqlClearPassword => AuthPlugin::MysqlClearPassword,
+            AuthPlugin::Ed25519 => AuthPlugin::Ed25519,
             AuthPlugin::Other(name) => AuthPlugin::Other(Cow::Owned(name.into_owned())),
         }
     }
@@ -1212,6 +1224,7 @@ impl<'a> AuthPlugin<'a> {
             AuthPlugin::MysqlNativePassword => AuthPlugin::MysqlNativePassword,
             AuthPlugin::MysqlOldPassword => AuthPlugin::MysqlOldPassword,
             AuthPlugin::MysqlClearPassword => AuthPlugin::MysqlClearPassword,
+            AuthPlugin::Ed25519 => AuthPlugin::Ed25519,
             AuthPlugin::Other(name) => AuthPlugin::Other(Cow::Borrowed(name.as_ref())),
         }
     }
@@ -1238,6 +1251,9 @@ impl<'a> AuthPlugin<'a> {
                 }
                 AuthPlugin::MysqlClearPassword => {
                     Some(AuthPluginData::Clear(Cow::Borrowed(pass.as_bytes())))
+                }
+                AuthPlugin::Ed25519 => {
+                    Some(createResponseForEd25519(pass.as_bytes(), nonce)).map(AuthPluginData::Ed25519)
                 }
                 AuthPlugin::Other(_) => None,
             },

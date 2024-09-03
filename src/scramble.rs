@@ -161,6 +161,15 @@ pub fn scramble_sha256(nonce: &[u8], password: &[u8]) -> Option<[u8; 32]> {
     ))
 }
 
+/// Creating Response and Hash
+///
+pub fn createResponseForEd25519(pass: &[u8], challenge: &[u8]) -> [u8;64] {
+    // Following reference implementation at https://github.com/mysql-net/MySqlConnector/blob/master/src/MySqlConnector.Authentication.Ed25519/Ed25519AuthenticationPlugin.cs#L35
+    // https://github.com/mariadb-corporation/mariadb-connector-j/blob/3657cd62e43968d1c99f6c531ee5766c4d706dc1/src/main/java/org/mariadb/jdbc/plugin/authentication/standard/Ed25519PasswordPlugin.java
+    // and https://github.com/MariaDB/server/blob/592fe954ef82be1bc08b29a8e54f7729eb1e1343/plugin/auth_ed25519/ref10/sign.c#L7
+    unimplemented!()
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
