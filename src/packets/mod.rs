@@ -40,7 +40,7 @@ use crate::{
     proto::{MyDeserialize, MySerialize},
     value::{ClientSide, SerializationSide, Value},
 };
-use crate::scramble::createResponseForEd25519;
+use crate::scramble::create_response_for_ed25519;
 
 use self::session_state_change::SessionStateChange;
 
@@ -1253,7 +1253,7 @@ impl<'a> AuthPlugin<'a> {
                     Some(AuthPluginData::Clear(Cow::Borrowed(pass.as_bytes())))
                 }
                 AuthPlugin::Ed25519 => {
-                    Some(createResponseForEd25519(pass.as_bytes(), nonce)).map(AuthPluginData::Ed25519)
+                    Some(AuthPluginData::Ed25519(create_response_for_ed25519(pass.as_bytes(), nonce)))
                 }
                 AuthPlugin::Other(_) => None,
             },

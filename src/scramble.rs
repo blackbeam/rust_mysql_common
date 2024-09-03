@@ -6,8 +6,11 @@
 // option. All files in the project carrying such notice may not be copied,
 // modified, or distributed except according to those terms.
 
+use std::convert::TryInto;
+use curve25519_dalek::{EdwardsPoint, Scalar};
+use curve25519_dalek::scalar::clamp_integer;
 use sha1::Sha1;
-use sha2::{Digest, Sha256};
+use sha2::{Digest, Sha256, Sha512};
 
 fn xor<T, U>(mut left: T, right: U) -> T
 where
@@ -161,13 +164,64 @@ pub fn scramble_sha256(nonce: &[u8], password: &[u8]) -> Option<[u8; 32]> {
     ))
 }
 
-/// Creating Response and Hash
-///
-pub fn createResponseForEd25519(pass: &[u8], challenge: &[u8]) -> [u8;64] {
+/// Crafting a signature according to EdDSA for message using the pass
+pub fn create_response_for_ed25519(pass: &[u8], message: &[u8]) -> [u8;64] {
     // Following reference implementation at https://github.com/mysql-net/MySqlConnector/blob/master/src/MySqlConnector.Authentication.Ed25519/Ed25519AuthenticationPlugin.cs#L35
-    // https://github.com/mariadb-corporation/mariadb-connector-j/blob/3657cd62e43968d1c99f6c531ee5766c4d706dc1/src/main/java/org/mariadb/jdbc/plugin/authentication/standard/Ed25519PasswordPlugin.java
-    // and https://github.com/MariaDB/server/blob/592fe954ef82be1bc08b29a8e54f7729eb1e1343/plugin/auth_ed25519/ref10/sign.c#L7
-    unimplemented!()
+    // with additional guidance from https://www.rfc-editor.org/rfc/rfc8032#section-5.1.5
+    // Relying on functions provided by curve25519_dalek
+
+    // hash the provided password
+    let hashed_pass = Sha512::default()
+        .chain_update(pass)
+        .finalize();
+
+    // the hashed password is split into secret and hash_prefix
+    let secret: &[u8;32] = &hashed_pass[..32].try_into().unwrap();
+    let hash_prefix: &[u8;32] = &hashed_pass[32..].try_into().unwrap();
+
+    // The public key A is the encoding of the point [s]B, where s is the clamped secret
+    let small_s = clamp_integer(*secret);
+    let reduced_small_s = Scalar::from_bytes_mod_order(small_s);
+    let capital_a = EdwardsPoint::mul_base(&reduced_small_s).compress();
+
+    // Compute SHA-512(dom2(F, C) || prefix || PH(M)),
+    // dom2 is the empty string,
+    // PH(M) = M is the provided message
+    let small_r = Sha512::default()
+        .chain_update(hash_prefix)
+        .chain_update(message)
+        .finalize();
+
+    // Interpret the 64-octet digest as a little-endian integer r.
+    let reduced_small_r = Scalar::from_bytes_mod_order_wide(small_r.as_ref());
+
+    // Let R be the encoding of the point [r]B
+    let capital_r = EdwardsPoint::mul_base(&reduced_small_r).compress();
+
+    // Compute SHA512(dom2(F, C) || R || A || PH(M))
+    // dom2 is the empty string,
+    // PH(M) = M is the provided message
+    let small_k = Sha512::default()
+        .chain_update(&capital_r.to_bytes())
+        .chain_update(&capital_a.to_bytes())
+        .chain_update(message)
+        .finalize();
+
+    // interpret the 64-octet-digest as a little-endian integer k.
+    let reduced_small_k = Scalar::from_bytes_mod_order_wide(small_k.as_ref());
+
+    let capital_s = reduced_small_k * reduced_small_s;
+    let capital_s = capital_s + reduced_small_r;
+
+    // Form the signature of the concatenation of R (32 octets) and the
+    // little-endian encoding of S (32 octets; the three most
+    // significant bits of the final octet are always zero).
+
+    let mut result = [0;64];
+    result[..32].copy_from_slice(capital_r.as_bytes());
+    result[32..].copy_from_slice(capital_s.as_bytes());
+
+    result
 }
 
 #[cfg(test)]
