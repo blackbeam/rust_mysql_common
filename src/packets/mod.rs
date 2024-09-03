@@ -18,6 +18,7 @@ use std::{
 };
 
 use crate::collations::CollationId;
+use crate::scramble::create_response_for_ed25519;
 use crate::{
     constants::{
         CapabilityFlags, ColumnFlags, ColumnType, Command, CursorType, SessionStateType,
@@ -40,7 +41,6 @@ use crate::{
     proto::{MyDeserialize, MySerialize},
     value::{ClientSide, SerializationSide, Value},
 };
-use crate::scramble::create_response_for_ed25519;
 
 use self::session_state_change::SessionStateChange;
 
@@ -1252,9 +1252,10 @@ impl<'a> AuthPlugin<'a> {
                 AuthPlugin::MysqlClearPassword => {
                     Some(AuthPluginData::Clear(Cow::Borrowed(pass.as_bytes())))
                 }
-                AuthPlugin::Ed25519 => {
-                    Some(AuthPluginData::Ed25519(create_response_for_ed25519(pass.as_bytes(), nonce)))
-                }
+                AuthPlugin::Ed25519 => Some(AuthPluginData::Ed25519(create_response_for_ed25519(
+                    pass.as_bytes(),
+                    nonce,
+                ))),
                 AuthPlugin::Other(_) => None,
             },
             _ => None,

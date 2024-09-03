@@ -6,11 +6,11 @@
 // option. All files in the project carrying such notice may not be copied,
 // modified, or distributed except according to those terms.
 
-use std::convert::TryInto;
-use curve25519_dalek::{EdwardsPoint, Scalar};
 use curve25519_dalek::scalar::clamp_integer;
+use curve25519_dalek::{EdwardsPoint, Scalar};
 use sha1::Sha1;
 use sha2::{Digest, Sha256, Sha512};
+use std::convert::TryInto;
 
 fn xor<T, U>(mut left: T, right: U) -> T
 where
@@ -165,19 +165,17 @@ pub fn scramble_sha256(nonce: &[u8], password: &[u8]) -> Option<[u8; 32]> {
 }
 
 /// Crafting a signature according to EdDSA for message using the pass
-pub fn create_response_for_ed25519(pass: &[u8], message: &[u8]) -> [u8;64] {
+pub fn create_response_for_ed25519(pass: &[u8], message: &[u8]) -> [u8; 64] {
     // Following reference implementation at https://github.com/mysql-net/MySqlConnector/blob/master/src/MySqlConnector.Authentication.Ed25519/Ed25519AuthenticationPlugin.cs#L35
     // with additional guidance from https://www.rfc-editor.org/rfc/rfc8032#section-5.1.5
     // Relying on functions provided by curve25519_dalek
 
     // hash the provided password
-    let hashed_pass = Sha512::default()
-        .chain_update(pass)
-        .finalize();
+    let hashed_pass = Sha512::default().chain_update(pass).finalize();
 
     // the hashed password is split into secret and hash_prefix
-    let secret: &[u8;32] = &hashed_pass[..32].try_into().unwrap();
-    let hash_prefix: &[u8;32] = &hashed_pass[32..].try_into().unwrap();
+    let secret: &[u8; 32] = &hashed_pass[..32].try_into().unwrap();
+    let hash_prefix: &[u8; 32] = &hashed_pass[32..].try_into().unwrap();
 
     // The public key A is the encoding of the point [s]B, where s is the clamped secret
     let small_s = clamp_integer(*secret);
@@ -217,7 +215,7 @@ pub fn create_response_for_ed25519(pass: &[u8], message: &[u8]) -> [u8;64] {
     // little-endian encoding of S (32 octets; the three most
     // significant bits of the final octet are always zero).
 
-    let mut result = [0;64];
+    let mut result = [0; 64];
     result[..32].copy_from_slice(capital_r.as_bytes());
     result[32..].copy_from_slice(capital_s.as_bytes());
 
