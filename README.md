@@ -242,6 +242,9 @@ Supported derivations:
 *  `#[mysql(rename = "some_name")]` – overrides column name of a field
 *  `#[mysql(json)]` - column will be interpreted as a JSON string containing
    a value of a field type
+*  `#[mysql(with = path::to::convert_fn)]` – `convert_fn` will be used to deserialize
+   a field value (expects a function with a signature that mimics
+   `TryFrom<Value, Error=FromValueError>``)
 
 #### Example
 

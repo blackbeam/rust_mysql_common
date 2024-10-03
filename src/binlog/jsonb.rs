@@ -10,11 +10,16 @@
 
 use std::{
     borrow::Cow,
+    collections::BTreeMap,
     convert::{TryFrom, TryInto},
     fmt, io,
+    iter::FromIterator,
     marker::PhantomData,
     str::{from_utf8, Utf8Error},
 };
+
+use base64::{prelude::BASE64_STANDARD, Engine};
+use serde_json::Number;
 
 use crate::{
     constants::ColumnType,
@@ -25,6 +30,8 @@ use crate::{
     },
     proto::{MyDeserialize, MySerialize},
 };
+
+use super::{decimal::Decimal, time::MysqlTime};
 
 impl fmt::Debug for Value<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -119,6 +126,10 @@ impl<'a> JsonbString<'a> {
     pub fn into_owned(self) -> JsonbString<'static> {
         JsonbString(self.0.into_owned())
     }
+
+    pub fn into_raw(self) -> Cow<'a, [u8]> {
+        self.0 .0
+    }
 }
 
 impl fmt::Debug for JsonbString<'_> {
@@ -207,7 +218,7 @@ impl<'a, T, U> ComplexValue<'a, T, U> {
         }
     }
 
-    /// Returns the number of lements.
+    /// Returns the number of elements.
     pub fn element_count(&self) -> u32 {
         self.element_count
     }
@@ -275,8 +286,8 @@ impl<'a, T: StorageFormat> ComplexValue<'a, T, Array> {
 impl<'a, T: StorageFormat, U: ComplexType> ComplexValue<'a, T, U> {
     /// Returns an element at the given position.
     ///
-    /// * for arrays returns an element at the given position in an arrary,
-    /// * for objects returns an element with the given key index.
+    /// * for arrays  — returns an element at the given position,
+    /// * for objects — returns an element with the given key index.
     ///
     /// Returns `None` if `pos >= self.element_count()`.
     pub fn elem_at(&'a self, pos: u32) -> io::Result<Option<Value<'a>>> {
@@ -416,9 +427,140 @@ impl<'a> OpaqueValue<'a> {
             data: self.data.into_owned(),
         }
     }
+
+    pub fn into_data(self) -> Cow<'a, [u8]> {
+        self.data.0
+    }
 }
 
-/// Jsonb Value.
+/// Structured in-memory representation of a JSON value.
+///
+/// You can get this value using [`Value::parse`].
+///
+/// You can convert this into a [`serde_json::Value`] (using [`From`] impl). Opaque values will
+/// be handled as follows:
+///
+/// *   [`ColumnType::MYSQL_TYPE_NEWDECIMAL`] — will be converted to string
+/// *   [`ColumnType::MYSQL_TYPE_DATE`] — will be converted to 'YYYY-MM-DD' string
+/// *   [`ColumnType::MYSQL_TYPE_TIME`] — will be converted to '[-][h]hh:mm::ss.µµµµµµ' string
+/// *   [`ColumnType::MYSQL_TYPE_DATETIME`] and [`ColumnType::MYSQL_TYPE_TIMESTAMP`]
+///     — will be converted to 'YYYY-MM-DD hh:mm::ss.µµµµµµ' string
+/// *   other opaque values will be represented as strings in the form `base64:type<id>:<data>`
+///     where:
+///     -   `<id>` — [`ColumnType`] integer value
+///     -   `<data>` — base64-encoded opaque data
+#[derive(Debug, Clone, PartialEq)]
+pub enum JsonDom {
+    Container(JsonContainer),
+    Scalar(JsonScalar),
+}
+
+impl From<JsonDom> for serde_json::Value {
+    fn from(value: JsonDom) -> Self {
+        match value {
+            JsonDom::Container(json_container) => json_container.into(),
+            JsonDom::Scalar(json_scalar) => json_scalar.into(),
+        }
+    }
+}
+
+/// [`JsonDom`] container.
+#[derive(Debug, Clone, PartialEq)]
+pub enum JsonContainer {
+    Array(Vec<JsonDom>),
+    Object(BTreeMap<String, JsonDom>),
+}
+
+impl From<JsonContainer> for serde_json::Value {
+    fn from(value: JsonContainer) -> Self {
+        match value {
+            JsonContainer::Array(vec) => {
+                serde_json::Value::Array(Vec::from_iter(vec.into_iter().map(|x| x.into())))
+            }
+            JsonContainer::Object(btree_map) => serde_json::Value::Object(
+                serde_json::Map::from_iter(btree_map.into_iter().map(|(k, v)| (k, v.into()))),
+            ),
+        }
+    }
+}
+
+/// [`JsonDom`] scalar value.
+#[derive(Debug, Clone, PartialEq)]
+pub enum JsonScalar {
+    Boolean(bool),
+    DateTime(MysqlTime),
+    Null,
+    Number(JsonNumber),
+    Opaque(JsonOpaque),
+    String(String),
+}
+
+impl From<JsonScalar> for serde_json::Value {
+    fn from(value: JsonScalar) -> Self {
+        match value {
+            JsonScalar::Boolean(x) => serde_json::Value::Bool(x),
+            JsonScalar::DateTime(mysql_time) => {
+                serde_json::Value::String(format!("{:.6}", mysql_time))
+            }
+            JsonScalar::Null => serde_json::Value::Null,
+            JsonScalar::Number(json_number) => json_number.into(),
+            JsonScalar::Opaque(json_opaque) => json_opaque.into(),
+            JsonScalar::String(x) => serde_json::Value::String(x),
+        }
+    }
+}
+
+/// [`JsonDom`] number.
+#[derive(Debug, Clone, PartialEq)]
+pub enum JsonNumber {
+    Decimal(Decimal),
+    Double(f64),
+    Int(i64),
+    Uint(u64),
+}
+
+impl From<JsonNumber> for serde_json::Value {
+    fn from(value: JsonNumber) -> Self {
+        match value {
+            JsonNumber::Decimal(decimal) => serde_json::Value::String(decimal.to_string()),
+            JsonNumber::Double(x) => serde_json::Value::Number(
+                Number::from_f64(x)
+                    // infinities an NaN are rendered as `0`
+                    .unwrap_or_else(|| Number::from(0_u64)),
+            ),
+            JsonNumber::Int(x) => serde_json::Value::Number(Number::from(x)),
+            JsonNumber::Uint(x) => serde_json::Value::Number(Number::from(x)),
+        }
+    }
+}
+
+/// [`JsonDom`] opaque value.
+#[derive(Debug, Clone, PartialEq)]
+pub struct JsonOpaque {
+    field_type: ColumnType,
+    value: Vec<u8>,
+}
+
+impl fmt::Display for JsonOpaque {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "base64:type{}:{}",
+            self.field_type as u8,
+            BASE64_STANDARD.encode(&self.value)
+        )
+    }
+}
+
+impl From<JsonOpaque> for serde_json::Value {
+    fn from(value: JsonOpaque) -> Self {
+        serde_json::Value::String(value.to_string())
+    }
+}
+
+/// Deserialized Jsonb value.
+///
+/// You can [`Value::parse`] it to a structured [`JsonDom`] value.
 #[derive(Clone, PartialEq)]
 pub enum Value<'a> {
     Null,
@@ -537,7 +679,9 @@ impl<'a> Value<'a> {
         matches!(self, Value::F64(_))
     }
 
-    /// Returns the number of lements in array or buffer.
+    /// Returns the number of elements in array or object.
+    ///
+    /// Returns `None` on none-array/non-object values.
     pub fn element_count(&self) -> Option<u32> {
         match self {
             Value::SmallArray(x) => Some(x.element_count()),
@@ -549,10 +693,137 @@ impl<'a> Value<'a> {
     }
 
     /// Returns the field type of an opaque value.
+    ///
+    /// Returns `None` on non-opaque values.
     pub fn field_type(&self) -> Option<ColumnType> {
         match self {
             Value::Opaque(OpaqueValue { value_type, .. }) => Some(**value_type),
             _ => None,
+        }
+    }
+
+    /// Parse this value to a structured representation.
+    pub fn parse(self) -> io::Result<JsonDom> {
+        match self {
+            Value::Null => Ok(JsonDom::Scalar(JsonScalar::Null)),
+            Value::Bool(value) => Ok(JsonDom::Scalar(JsonScalar::Boolean(value))),
+            Value::I16(x) => Ok(JsonDom::Scalar(JsonScalar::Number(JsonNumber::Int(
+                x as i64,
+            )))),
+            Value::U16(x) => Ok(JsonDom::Scalar(JsonScalar::Number(JsonNumber::Uint(
+                x as u64,
+            )))),
+            Value::I32(x) => Ok(JsonDom::Scalar(JsonScalar::Number(JsonNumber::Int(
+                x as i64,
+            )))),
+            Value::U32(x) => Ok(JsonDom::Scalar(JsonScalar::Number(JsonNumber::Uint(
+                x as u64,
+            )))),
+            Value::I64(x) => Ok(JsonDom::Scalar(JsonScalar::Number(JsonNumber::Int(x)))),
+            Value::U64(x) => Ok(JsonDom::Scalar(JsonScalar::Number(JsonNumber::Uint(x)))),
+            Value::F64(x) => Ok(JsonDom::Scalar(JsonScalar::Number(JsonNumber::Double(x)))),
+            Value::String(jsonb_string) => {
+                let s = match jsonb_string.into_raw() {
+                    Cow::Borrowed(x) => Cow::Borrowed(
+                        std::str::from_utf8(x)
+                            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?,
+                    ),
+                    Cow::Owned(x) => Cow::Owned(
+                        String::from_utf8(x)
+                            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?,
+                    ),
+                };
+                Ok(JsonDom::Scalar(JsonScalar::String(s.into_owned())))
+            }
+            Value::SmallArray(complex_value) => {
+                let mut elements = Vec::with_capacity(complex_value.element_count() as usize);
+                for i in 0.. {
+                    if let Some(value) = complex_value.elem_at(i)? {
+                        let y = value.parse()?;
+                        elements.push(y);
+                    } else {
+                        break;
+                    }
+                }
+                Ok(JsonDom::Container(JsonContainer::Array(elements)))
+            }
+            Value::LargeArray(complex_value) => {
+                let mut elements = Vec::with_capacity(complex_value.element_count() as usize);
+                for value in complex_value.iter() {
+                    elements.push(value?.parse()?);
+                }
+                Ok(JsonDom::Container(JsonContainer::Array(elements)))
+            }
+            Value::SmallObject(complex_value) => {
+                let mut elements = BTreeMap::new();
+                for value in complex_value.iter() {
+                    let (key, value) = value?;
+                    elements.insert(key.value().into_owned(), value.parse()?);
+                }
+                Ok(JsonDom::Container(JsonContainer::Object(elements)))
+            }
+            Value::LargeObject(complex_value) => {
+                let mut elements = BTreeMap::new();
+                for value in complex_value.iter() {
+                    let (key, value) = value?;
+                    elements.insert(key.value().into_owned(), value.parse()?);
+                }
+                Ok(JsonDom::Container(JsonContainer::Object(elements)))
+            }
+            Value::Opaque(opaque_value) => match opaque_value.value_type() {
+                ColumnType::MYSQL_TYPE_NEWDECIMAL => {
+                    let data = opaque_value.data_raw();
+
+                    Ok(JsonDom::Scalar(JsonScalar::Number(JsonNumber::Decimal(
+                        Decimal::read_packed(data, false)?,
+                    ))))
+                }
+                ColumnType::MYSQL_TYPE_DATE => {
+                    let packed_value =
+                        opaque_value.data_raw().first_chunk::<8>().ok_or_else(|| {
+                            io::Error::new(
+                                io::ErrorKind::InvalidData,
+                                "not enough data to decode MYSQL_TYPE_DATE",
+                            )
+                        })?;
+                    let packed_value = i64::from_le_bytes(*packed_value);
+                    Ok(JsonDom::Scalar(JsonScalar::DateTime(
+                        MysqlTime::from_int64_date_packed(packed_value),
+                    )))
+                }
+                ColumnType::MYSQL_TYPE_TIME => {
+                    let packed_value = dbg!(opaque_value.data_raw())
+                        .first_chunk::<8>()
+                        .ok_or_else(|| {
+                            io::Error::new(
+                                io::ErrorKind::InvalidData,
+                                "not enough data to decode MYSQL_TYPE_TIME",
+                            )
+                        })?;
+                    let packed_value = dbg!(i64::from_le_bytes(*packed_value));
+                    Ok(JsonDom::Scalar(JsonScalar::DateTime(
+                        MysqlTime::from_int64_time_packed(packed_value),
+                    )))
+                }
+                ColumnType::MYSQL_TYPE_DATETIME | ColumnType::MYSQL_TYPE_TIMESTAMP => {
+                    let packed_value =
+                        opaque_value.data_raw().first_chunk::<8>().ok_or_else(|| {
+                            io::Error::new(
+                                io::ErrorKind::InvalidData,
+                                "not enough data to decode MYSQL_TYPE_DATETIME",
+                            )
+                        })?;
+                    let packed_value = i64::from_le_bytes(*packed_value);
+                    Ok(JsonDom::Scalar(JsonScalar::DateTime(
+                        MysqlTime::from_int64_datetime_packed(packed_value),
+                    )))
+                }
+
+                field_type => Ok(JsonDom::Scalar(JsonScalar::Opaque(JsonOpaque {
+                    field_type,
+                    value: opaque_value.data.0.into_owned(),
+                }))),
+            },
         }
     }
 }

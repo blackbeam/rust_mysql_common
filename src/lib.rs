@@ -333,7 +333,7 @@
 
 // The `test` feature is required to compile tests.
 // It'll bind test binaries to an official C++ impl of MySql decimals (see build.rs)
-// The idea is to test our rust impl agaist C++ impl.
+// The idea is to test our rust impl against C++ impl.
 #[cfg(all(not(feature = "test"), test))]
 compile_error!("Please invoke `cargo test` with `--features test` flags");
 
