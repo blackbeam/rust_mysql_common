@@ -135,7 +135,7 @@ proptest! {
         let num = dbg!(&num);
 
         // test string2decimal
-        let dec = dbg!(super::Decimal::parse_bytes(num.as_bytes()).unwrap());
+        let dec = dbg!(super::Decimal::parse_str_bytes(num.as_bytes()).unwrap());
         let mysql_dec = dbg!(decimal_t::rust_string2decimal(num).unwrap());
         assert_eq!(dec.intg, mysql_dec.intg as usize);
         assert_eq!(dec.frac, mysql_dec.frac as usize);

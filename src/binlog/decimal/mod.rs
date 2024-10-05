@@ -49,7 +49,7 @@ pub const POWERS_10: [i32; DIG_PER_DEC + 1] = [
 ///
 /// *   serialization/deserialization to/from binary format
 ///     (see `read_bin` and `write_bin` functions);
-/// *   parsing from decimal string/buffer (see `Decimal::parse_bytes`, `FromStr` impl);
+/// *   parsing from decimal string/buffer (see `Decimal::parse_str_bytes`, `FromStr` impl);
 /// *   conversion to decimal string (using `Display`).
 ///
 /// # Notes
@@ -58,7 +58,7 @@ pub const POWERS_10: [i32; DIG_PER_DEC + 1] = [
 ///     i.e. both `rhs` and `lhs` will be serialized into temporary buffers;
 /// *   even though MySql's `string2decimal` function allows scientific notation,
 ///     this implementation denies it.
-#[derive(Default, Debug, Eq)]
+#[derive(Default, Debug, Eq, Clone)]
 pub struct Decimal {
     /// The number of *decimal* digits (NOT number of `Digit`s!) before the point.
     intg: usize,
@@ -75,11 +75,31 @@ impl Decimal {
         decimal_bin_size(self.intg + self.frac, self.frac)
     }
 
+    /// See [`Decimal::parse_str_bytes`].
+    #[deprecated = "use parse_str_bytes"]
     pub fn parse_bytes(bytes: &[u8]) -> Result<Self, ParseDecimalError> {
         match std::str::from_utf8(bytes) {
             Ok(string) => Decimal::from_str(string),
             Err(_) => Err(ParseDecimalError),
         }
+    }
+
+    /// Runs `Decimal::from_str` on the given bytes.
+    pub fn parse_str_bytes(bytes: &[u8]) -> Result<Self, ParseDecimalError> {
+        macro_rules! decimal_str {
+            ($x:ident) => {
+                if $x
+                    .iter()
+                    .all(|x| x.is_ascii_digit() || *x == b'+' || matches!(x, b'-'..=b'.'))
+                {
+                    // SAFETY: UTF-8 is asserted by the if condition
+                    Some(unsafe { std::str::from_utf8_unchecked($x) })
+                } else {
+                    None
+                }
+            };
+        }
+        Decimal::from_str(decimal_str!(bytes).ok_or(ParseDecimalError)?)
     }
 
     pub fn write_bin<T: Write>(&self, mut output: T) -> io::Result<()> {
@@ -139,6 +159,27 @@ impl Decimal {
         output.write_all(&out_buf)
     }
 
+    /// Reads packed representation of a [`Decimal`].
+    ///
+    /// Packed representation is:
+    ///
+    /// 1. precision (u8)
+    /// 2. scale (u8)
+    /// 3. serialized decimal value (see [`Decimal::read_bin`])
+    pub fn read_packed<T: Read>(mut input: T, keep_precision: bool) -> io::Result<Self> {
+        let mut precision_and_scale = [0_u8, 0_u8];
+        input.read_exact(&mut precision_and_scale)?;
+        Self::read_bin(
+            input,
+            precision_and_scale[0] as usize,
+            precision_and_scale[1] as usize,
+            keep_precision,
+        )
+    }
+
+    /// Reads serialized representation of a decimal value.
+    ///
+    /// The value is usually written in the packed form (see [`Decimal::read_packed`]).
     pub fn read_bin<T: Read>(
         mut input: T,
         precision: usize,
@@ -158,10 +199,10 @@ impl Decimal {
 
         // is it negative or not
         let mask = if buffer.first().copied().unwrap_or(0) & 0x80 == 0 {
-            // positive, so mask should do noghing
+            // positive, so mask should do nothing
             0
         } else {
-            // negative, so mask snould invert bits
+            // negative, so mask should invert bits
             -1
         };
 

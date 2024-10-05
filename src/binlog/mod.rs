@@ -45,6 +45,7 @@ pub mod jsonb;
 pub mod jsondiff;
 pub mod misc;
 pub mod row;
+pub mod time;
 pub mod value;
 
 pub struct BinlogCtx<'a> {
@@ -851,6 +852,82 @@ mod tests {
                         for meta in optional_meta {
                             meta.unwrap();
                         }
+                    }
+                }
+
+                if file_path.file_name().unwrap() == "json-opaque.binlog" {
+                    let event_data = ev.read_data().unwrap();
+
+                    /// Extracts first column of the binlog row after-image as a Jsonb::Value
+                    /// then parses it into the structured representation and compares with
+                    /// the expected value.
+                    macro_rules! extract_cmp {
+                        ($row:expr, $expected:tt) => {
+                            let mut after = $row.1.unwrap().unwrap();
+                            let a = dbg!(after.pop().unwrap());
+                            let super::value::BinlogValue::Jsonb(a) = a else {
+                                panic!("BinlogValue::Jsonb(_) expected");
+                            };
+                            assert_eq!(
+                                serde_json::json!($expected),
+                                serde_json::Value::from(a.parse().unwrap())
+                            );
+                        };
+                    }
+
+                    match event_data {
+                        Some(EventData::RowsEvent(ev)) if i == 10 => {
+                            let table_map_event =
+                                binlog_file.reader().get_tme(ev.table_id()).unwrap();
+                            let mut rows = ev.rows(table_map_event);
+                            extract_cmp!(rows.next().unwrap().unwrap(), {"a": "base64:type15:VQ=="});
+                        }
+                        Some(EventData::RowsEvent(ev)) if i == 12 => {
+                            let table_map_event =
+                                binlog_file.reader().get_tme(ev.table_id()).unwrap();
+                            let mut rows = ev.rows(table_map_event);
+                            extract_cmp!(rows.next().unwrap().unwrap(), {"b": "2012-03-18"});
+                        }
+                        Some(EventData::RowsEvent(ev)) if i == 14 => {
+                            let table_map_event =
+                                binlog_file.reader().get_tme(ev.table_id()).unwrap();
+                            let mut rows = ev.rows(table_map_event);
+                            extract_cmp!(rows.next().unwrap().unwrap(), {"c": "2012-03-18 11:30:45.000000"});
+                        }
+                        Some(EventData::RowsEvent(ev)) if i == 16 => {
+                            let table_map_event =
+                                binlog_file.reader().get_tme(ev.table_id()).unwrap();
+                            let mut rows = ev.rows(table_map_event);
+                            extract_cmp!(rows.next().unwrap().unwrap(), {"c": "87:31:46.654321"});
+                        }
+                        Some(EventData::RowsEvent(ev)) if i == 18 => {
+                            let table_map_event =
+                                binlog_file.reader().get_tme(ev.table_id()).unwrap();
+                            let mut rows = ev.rows(table_map_event);
+                            extract_cmp!(rows.next().unwrap().unwrap(), {"d": "123.456"});
+                        }
+                        Some(EventData::RowsEvent(ev)) if i == 20 => {
+                            let table_map_event =
+                                binlog_file.reader().get_tme(ev.table_id()).unwrap();
+                            let mut rows = ev.rows(table_map_event);
+                            extract_cmp!(rows.next().unwrap().unwrap(), {"e": "9.00"});
+                        }
+                        Some(EventData::RowsEvent(ev)) if i == 22 => {
+                            let table_map_event =
+                                binlog_file.reader().get_tme(ev.table_id()).unwrap();
+                            let mut rows = ev.rows(table_map_event);
+                            extract_cmp!(rows.next().unwrap().unwrap(), {"e": [0, 1, true, false]});
+                        }
+                        Some(EventData::RowsEvent(ev)) if i == 24 => {
+                            let table_map_event =
+                                binlog_file.reader().get_tme(ev.table_id()).unwrap();
+                            let mut rows = ev.rows(table_map_event);
+                            extract_cmp!(rows.next().unwrap().unwrap(), {"e": null});
+                        }
+                        Some(EventData::RowsEvent(ev)) => {
+                            panic!("no more events expected i={}, {:?}", i, ev);
+                        }
+                        _ => (),
                     }
                 }
 
