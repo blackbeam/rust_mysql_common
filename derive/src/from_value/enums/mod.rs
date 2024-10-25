@@ -7,7 +7,7 @@ use attrs::{
 use darling::{FromAttributes, FromMeta};
 use num_bigint::BigInt;
 use proc_macro2::{Span, TokenStream};
-use proc_macro_error::abort;
+use proc_macro_error2::abort;
 use quote::{ToTokens, TokenStreamExt};
 use syn::spanned::Spanned;
 

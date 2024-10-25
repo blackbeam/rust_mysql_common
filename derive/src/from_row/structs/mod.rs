@@ -1,6 +1,6 @@
 use darling::FromAttributes;
 use proc_macro2::{Span, TokenStream};
-use proc_macro_error::abort;
+use proc_macro_error2::abort;
 use quote::{ToTokens, TokenStreamExt};
 use syn::ext::IdentExt;
 use syn::spanned::Spanned;

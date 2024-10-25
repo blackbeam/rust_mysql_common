@@ -1,5 +1,5 @@
 use proc_macro2::Span;
-use proc_macro_error::{Diagnostic, Level};
+use proc_macro_error2::{Diagnostic, Level};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
