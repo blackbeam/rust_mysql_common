@@ -10,11 +10,14 @@
 
 #![cfg(feature = "frunk")]
 
+use std::sync::Arc;
+
 use frunk::{hlist::h_cons, prelude::HList};
 pub use frunk::{HCons, HNil};
 
 use super::{FromRow, FromRowError};
 use crate::{
+    packets::Column,
     row::{new_row_raw, Row},
     value::{
         convert::{FromValue, FromValueError},
@@ -40,79 +43,49 @@ impl<H, T> FromRow for HCons<H, T>
 where
     H: FromValue,
     H::Intermediate: Into<Value>,
-    T: FromRow + sealed::HlistFromRow,
+    T: FromRow,
     T: HList,
 {
     fn from_row_opt(row: Row) -> Result<Self, FromRowError>
     where
         Self: Sized,
     {
-        use sealed::HlistFromRow;
-
         if row.len() != Self::LEN {
             return Err(FromRowError(row));
         }
 
         let columns = row.columns();
-        let values = row.unwrap_raw();
+        let mut values = row.unwrap_raw();
 
-        Self::hlist_from_row_opt(values)
-            .map_err(|values| FromRowError(new_row_raw(values, columns)))
-    }
-}
+        debug_assert_eq!(values.len(), Self::LEN);
 
-mod sealed {
-    use super::*;
+        let Some(head) = values[0].take() else {
+            return Err(FromRowError(new_row_raw(values, columns)));
+        };
 
-    /// Helper trait for `FromRow for HList`.
-    pub trait HlistFromRow: Sized {
-        fn hlist_from_row_opt(values: Vec<Option<Value>>) -> Result<Self, Vec<Option<Value>>>;
-    }
-
-    impl HlistFromRow for HNil {
-        fn hlist_from_row_opt(values: Vec<Option<Value>>) -> Result<Self, Vec<Option<Value>>> {
-            debug_assert_eq!(values.len(), Self::LEN);
-            Ok(HNil)
-        }
-    }
-
-    impl<H, T> HlistFromRow for HCons<H, T>
-    where
-        H: FromValue,
-        H::Intermediate: Into<Value>,
-        T: HlistFromRow,
-        T: HList,
-    {
-        fn hlist_from_row_opt(mut values: Vec<Option<Value>>) -> Result<Self, Vec<Option<Value>>>
-        where
-            Self: Sized,
-        {
-            debug_assert_eq!(values.len(), Self::LEN);
-
-            if values[0].is_none() {
-                return Err(values);
+        let ir = match H::get_intermediate(head) {
+            Ok(ir) => ir,
+            Err(FromValueError(value)) => {
+                values[0] = Some(value);
+                return Err(FromRowError(new_row_raw(values, columns)));
             }
+        };
 
-            let head = values.remove(0).expect("must be here");
+        // TODO: Avoid cloning columns here by using something like `owning_ref::ArcRef`
+        let columns_tail: Arc<[Column]> =
+            columns.iter().skip(1).cloned().collect::<Vec<_>>().into();
+        values.remove(0);
 
-            let ir = match H::get_intermediate(head) {
-                Ok(ir) => ir,
-                Err(FromValueError(value)) => {
-                    values.insert(0, Some(value));
-                    return Err(values);
-                }
-            };
+        let tail = match T::from_row_opt(new_row_raw(values, columns_tail)) {
+            Ok(x) => x,
+            Err(FromRowError(row)) => {
+                let mut values = row.unwrap_raw();
+                values.insert(0, Some(ir.into()));
+                return Err(FromRowError(new_row_raw(values, columns)));
+            }
+        };
 
-            let tail = match T::hlist_from_row_opt(values) {
-                Ok(t) => t,
-                Err(mut values) => {
-                    values.insert(0, Some(Into::<Value>::into(ir)));
-                    return Err(values);
-                }
-            };
-
-            Ok(h_cons(Into::<H>::into(ir), tail))
-        }
+        Ok(h_cons(Into::<H>::into(ir), tail))
     }
 }
 
