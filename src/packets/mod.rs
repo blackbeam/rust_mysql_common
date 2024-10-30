@@ -9,10 +9,10 @@
 use btoi::btoi;
 use bytes::BufMut;
 use regex::bytes::Regex;
-use smallvec::SmallVec;
 use uuid::Uuid;
 
 use std::str::FromStr;
+use std::sync::Arc;
 use std::{
     borrow::Cow, cmp::max, collections::HashMap, convert::TryFrom, fmt, io, marker::PhantomData,
 };
@@ -110,15 +110,112 @@ define_const!(
     0x0c
 );
 
+/// Dynamically-sized column metadata — a part of the [`Column`] packet.
+#[derive(Debug, Default, Clone, Eq, PartialEq)]
+struct ColumnMeta<'a> {
+    schema: RawBytes<'a, LenEnc>,
+    table: RawBytes<'a, LenEnc>,
+    org_table: RawBytes<'a, LenEnc>,
+    name: RawBytes<'a, LenEnc>,
+    org_name: RawBytes<'a, LenEnc>,
+}
+
+impl<'a> ColumnMeta<'a> {
+    pub fn into_owned(self) -> ColumnMeta<'static> {
+        ColumnMeta {
+            schema: self.schema.into_owned(),
+            table: self.table.into_owned(),
+            org_table: self.org_table.into_owned(),
+            name: self.name.into_owned(),
+            org_name: self.org_name.into_owned(),
+        }
+    }
+
+    /// Returns the value of the [`ColumnMeta::schema`] field as a byte slice.
+    pub fn schema_ref(&self) -> &[u8] {
+        self.schema.as_bytes()
+    }
+
+    /// Returns the value of the [`ColumnMeta::schema`] field as a string (lossy converted).
+    pub fn schema_str(&self) -> Cow<'_, str> {
+        String::from_utf8_lossy(self.schema_ref())
+    }
+
+    /// Returns the value of the [`ColumnMeta::table`] field as a byte slice.
+    pub fn table_ref(&self) -> &[u8] {
+        self.table.as_bytes()
+    }
+
+    /// Returns the value of the [`ColumnMeta::table`] field as a string (lossy converted).
+    pub fn table_str(&self) -> Cow<'_, str> {
+        String::from_utf8_lossy(self.table_ref())
+    }
+
+    /// Returns the value of the [`ColumnMeta::org_table`] field as a byte slice.
+    ///
+    /// "org_table" is for original table name.
+    pub fn org_table_ref(&self) -> &[u8] {
+        self.org_table.as_bytes()
+    }
+
+    /// Returns the value of the [`ColumnMeta::org_table`] field as a string (lossy converted).
+    pub fn org_table_str(&self) -> Cow<'_, str> {
+        String::from_utf8_lossy(self.org_table_ref())
+    }
+
+    /// Returns the value of the [`ColumnMeta::name`] field as a byte slice.
+    pub fn name_ref(&self) -> &[u8] {
+        self.name.as_bytes()
+    }
+
+    /// Returns the value of the [`ColumnMeta::name`] field as a string (lossy converted).
+    pub fn name_str(&self) -> Cow<'_, str> {
+        String::from_utf8_lossy(self.name_ref())
+    }
+
+    /// Returns the value of the [`ColumnMeta::org_name`] field as a byte slice.
+    ///
+    /// "org_name" is for original column name.
+    pub fn org_name_ref(&self) -> &[u8] {
+        self.org_name.as_bytes()
+    }
+
+    /// Returns value of the [`ColumnMeta::org_name`] field as a string (lossy converted).
+    pub fn org_name_str(&self) -> Cow<'_, str> {
+        String::from_utf8_lossy(self.org_name_ref())
+    }
+}
+
+impl<'de> MyDeserialize<'de> for ColumnMeta<'de> {
+    const SIZE: Option<usize> = None;
+    type Ctx = ();
+
+    fn deserialize(_ctx: Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+        Ok(Self {
+            schema: buf.parse_unchecked(())?,
+            table: buf.parse_unchecked(())?,
+            org_table: buf.parse_unchecked(())?,
+            name: buf.parse_unchecked(())?,
+            org_name: buf.parse_unchecked(())?,
+        })
+    }
+}
+
+impl MySerialize for ColumnMeta<'_> {
+    fn serialize(&self, buf: &mut Vec<u8>) {
+        self.schema.serialize(&mut *buf);
+        self.table.serialize(&mut *buf);
+        self.org_table.serialize(&mut *buf);
+        self.name.serialize(&mut *buf);
+        self.org_name.serialize(&mut *buf);
+    }
+}
+
 /// Represents MySql Column (column packet).
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct Column {
     catalog: ColumnDefinitionCatalog,
-    schema: SmallVec<[u8; 16]>,
-    table: SmallVec<[u8; 16]>,
-    org_table: SmallVec<[u8; 16]>,
-    name: SmallVec<[u8; 16]>,
-    org_name: SmallVec<[u8; 16]>,
+    meta: Arc<ColumnMeta<'static>>,
     fixed_length_fields_len: FixedLengthFieldsLen,
     column_length: RawInt<LeU32>,
     character_set: RawInt<LeU16>,
@@ -135,20 +232,12 @@ impl<'de> MyDeserialize<'de> for Column {
 
     fn deserialize((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
         let catalog = buf.parse(())?;
-        let schema = buf.parse_unchecked(())?;
-        let table = buf.parse_unchecked(())?;
-        let org_table = buf.parse_unchecked(())?;
-        let name = buf.parse_unchecked(())?;
-        let org_name = buf.parse_unchecked(())?;
+        let meta = Arc::new(buf.parse::<ColumnMeta>(())?.into_owned());
         let mut buf: ParseBuf = buf.parse(13)?;
 
         Ok(Column {
             catalog,
-            schema,
-            table,
-            org_table,
-            name,
-            org_name,
+            meta,
             fixed_length_fields_len: buf.parse_unchecked(())?,
             character_set: buf.parse_unchecked(())?,
             column_length: buf.parse_unchecked(())?,
@@ -163,11 +252,7 @@ impl<'de> MyDeserialize<'de> for Column {
 impl MySerialize for Column {
     fn serialize(&self, buf: &mut Vec<u8>) {
         self.catalog.serialize(&mut *buf);
-        self.schema.serialize(&mut *buf);
-        self.table.serialize(&mut *buf);
-        self.org_table.serialize(&mut *buf);
-        self.name.serialize(&mut *buf);
-        self.org_name.serialize(&mut *buf);
+        self.meta.serialize(&mut *buf);
         self.fixed_length_fields_len.serialize(&mut *buf);
         self.column_length.serialize(&mut *buf);
         self.character_set.serialize(&mut *buf);
@@ -182,11 +267,7 @@ impl Column {
     pub fn new(column_type: ColumnType) -> Self {
         Self {
             catalog: Default::default(),
-            schema: Default::default(),
-            table: Default::default(),
-            org_table: Default::default(),
-            name: Default::default(),
-            org_name: Default::default(),
+            meta: Default::default(),
             fixed_length_fields_len: Default::default(),
             column_length: Default::default(),
             character_set: Default::default(),
@@ -198,27 +279,27 @@ impl Column {
     }
 
     pub fn with_schema(mut self, schema: &[u8]) -> Self {
-        self.schema = schema.into();
+        Arc::make_mut(&mut self.meta).schema = RawBytes::new(schema).into_owned();
         self
     }
 
     pub fn with_table(mut self, table: &[u8]) -> Self {
-        self.table = table.into();
+        Arc::make_mut(&mut self.meta).table = RawBytes::new(table).into_owned();
         self
     }
 
     pub fn with_org_table(mut self, org_table: &[u8]) -> Self {
-        self.org_table = org_table.into();
+        Arc::make_mut(&mut self.meta).org_table = RawBytes::new(org_table).into_owned();
         self
     }
 
     pub fn with_name(mut self, name: &[u8]) -> Self {
-        self.name = name.into();
+        Arc::make_mut(&mut self.meta).name = RawBytes::new(name).into_owned();
         self
     }
 
     pub fn with_org_name(mut self, org_name: &[u8]) -> Self {
-        self.org_name = org_name.into();
+        Arc::make_mut(&mut self.meta).org_name = RawBytes::new(org_name).into_owned();
         self
     }
 
@@ -276,57 +357,67 @@ impl Column {
     }
 
     /// Returns value of the schema field of a column packet as a byte slice.
+    #[inline(always)]
     pub fn schema_ref(&self) -> &[u8] {
-        &self.schema
+        self.meta.schema_ref()
     }
 
     /// Returns value of the schema field of a column packet as a string (lossy converted).
+    #[inline(always)]
     pub fn schema_str(&self) -> Cow<'_, str> {
-        String::from_utf8_lossy(self.schema_ref())
+        self.meta.schema_str()
     }
 
     /// Returns value of the table field of a column packet as a byte slice.
+    #[inline(always)]
     pub fn table_ref(&self) -> &[u8] {
-        &self.table
+        self.meta.table_ref()
     }
 
     /// Returns value of the table field of a column packet as a string (lossy converted).
+    #[inline(always)]
     pub fn table_str(&self) -> Cow<'_, str> {
-        String::from_utf8_lossy(self.table_ref())
+        self.meta.table_str()
     }
 
     /// Returns value of the org_table field of a column packet as a byte slice.
     ///
     /// "org_table" is for original table name.
+    #[inline(always)]
     pub fn org_table_ref(&self) -> &[u8] {
-        &self.org_table
+        self.meta.org_table_ref()
     }
 
     /// Returns value of the org_table field of a column packet as a string (lossy converted).
+    #[inline(always)]
     pub fn org_table_str(&self) -> Cow<'_, str> {
-        String::from_utf8_lossy(self.org_table_ref())
+        self.meta.org_table_str()
     }
 
     /// Returns value of the name field of a column packet as a byte slice.
+    #[inline(always)]
     pub fn name_ref(&self) -> &[u8] {
-        &self.name
+        self.meta.name_ref()
     }
 
     /// Returns value of the name field of a column packet as a string (lossy converted).
+    #[inline(always)]
     pub fn name_str(&self) -> Cow<'_, str> {
-        String::from_utf8_lossy(self.name_ref())
+        self.meta.name_str()
     }
 
     /// Returns value of the org_name field of a column packet as a byte slice.
     ///
     /// "org_name" is for original column name.
+    #[inline(always)]
     pub fn org_name_ref(&self) -> &[u8] {
-        &self.org_name
+        self.meta.org_name_ref()
     }
 
     /// Returns value of the org_name field of a column packet as a string (lossy converted).
+    #[inline(always)]
     pub fn org_name_str(&self) -> Cow<'_, str> {
-        String::from_utf8_lossy(self.org_name_ref())
+        self.meta.org_name_str()
     }
 }
 

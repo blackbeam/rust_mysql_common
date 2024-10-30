@@ -146,6 +146,7 @@ pub fn impl_from_value_for_enum(
         } else if min_discriminant >= BigInt::default()
             && max_discriminant <= BigInt::from(u16::MAX)
             && !matches!(repr.0, EnumRepr::U8(_))
+            && !item_attrs.allow_suboptimal_repr
         {
             crate::warn::print_warning(
                 "enum representation is suboptimal. Consider the following annotation:",
