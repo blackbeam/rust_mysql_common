@@ -11,14 +11,12 @@
 use std::io;
 
 use ::bytes::BufMut;
-use smallvec::{Array, SmallVec};
 
 use crate::{
     io::ParseBuf,
     proto::{MyDeserialize, MySerialize},
 };
 
-use self::bytes::LenEnc;
 pub use self::{
     _const::{Const, RawConst},
     bytes::RawBytes,
@@ -93,31 +91,6 @@ impl<'de> MyDeserialize<'de> for ParseBuf<'de> {
 
     fn deserialize(len: Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
         buf.checked_eat_buf(len).ok_or_else(unexpected_buf_eof)
-    }
-}
-
-/// This ad-hock impl parses length-encoded string into a `SmallVec`.
-impl<'de, const LEN: usize> MyDeserialize<'de> for SmallVec<[u8; LEN]>
-where
-    [u8; LEN]: Array<Item = u8>,
-{
-    const SIZE: Option<usize> = None;
-    type Ctx = ();
-
-    fn deserialize((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
-        let mut small_vec = SmallVec::new();
-        let s: RawBytes<'de, LenEnc> = buf.parse(())?;
-        small_vec.extend_from_slice(s.as_bytes());
-        Ok(small_vec)
-    }
-}
-
-impl<const LEN: usize> MySerialize for SmallVec<[u8; LEN]>
-where
-    [u8; LEN]: Array<Item = u8>,
-{
-    fn serialize(&self, buf: &mut Vec<u8>) {
-        buf.put_slice(self)
     }
 }
 
