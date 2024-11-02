@@ -52,9 +52,7 @@ column and protocol type correspondence:
 | `mysql_common::Deserialized<T : DeserializeOwned>` | MySql bytes parsed using `serde_json::from_str` |
 | `Option<T: FromValue>`               | Must be used for nullable columns to avoid errors         |
 | [`decimal::Decimal`]                 | MySql int, uint or bytes parsed using `Decimal::from_str`.<br>⚠️ Note that this type doesn't support full range of MySql `DECIMAL` type. |
-| [`bigdecimal::BigDecimal`] (v0.2.x)  | MySql int, uint, floats or bytes parsed using `BigDecimal::parse_bytes`.<br>⚠️ Note that range of this type is greater than supported by MySql `DECIMAL` type but it'll be serialized anyway. |
-| [`bigdecimal::BigDecimal`] (v0.3.x)  | MySql int, uint, floats or bytes parsed using `BigDecimal::parse_bytes`.<br>⚠️ Note that range of this type is greater than supported by MySql `DECIMAL` type but it'll be serialized anyway. |
-| [`bigdecimal::BigDecimal`] (v0.4.x)  | MySql int, uint, floats or bytes parsed using `BigDecimal::parse_bytes`.<br>⚠️ Note that range of this type is greater than supported by MySql `DECIMAL` type but it'll be serialized anyway. |
+| [`bigdecimal::BigDecimal`]           | MySql int, uint, floats or bytes parsed using `BigDecimal::parse_bytes`.<br>⚠️ Note that range of this type is greater than supported by MySql `DECIMAL` type but it'll be serialized anyway. |
 | `num_bigint::{BigInt, BigUint}`      | MySql int, uint or bytes parsed using `_::parse_bytes`.<br>⚠️ Note that range of this type is greater than supported by MySql integer types but it'll be serialized anyway (as decimal bytes string). |
 
 Also crate provides from-row convertion for the following list of types (see `FromRow` trait):
@@ -70,16 +68,13 @@ Also crate provides from-row convertion for the following list of types (see `Fr
 
 | Feature        | Description                                          | Default |
 | -------------- | ---------------------------------------------------- | ------- |
-| `bigdecimal02` | Enables `bigdecimal` v0.2.x types support            | 🔴      |
-| `bigdecimal03` | Enables `bigdecimal` v0.3.x types support            | 🔴      |
-| `bigdecimal`   | Enables `bigdecimal` v0.4.x types support            | 🟢      |
+| `bigdecimal`   | Enables `bigdecimal` >=0.3.x, <0.5.x types support   | 🔴      |
 | `chrono`       | Enables `chrono` types support                       | 🔴      |
-| `rust_decimal` | Enables `rust_decimal` types support                 | 🟢      |
-| `time02`       | Enables `time` v0.2.x types support                  | 🔴      |
-| `time`         | Enables `time` v0.3.x types support                  | 🟢      |
-| `frunk`        | Enables `FromRow` for `frunk::Hlist!` types          | 🟢      |
+| `rust_decimal` | Enables `rust_decimal` types support                 | 🔴      |
+| `time`         | Enables `time` v0.3.x types support                  | 🔴      |
+| `frunk`        | Enables `FromRow` for `frunk::Hlist!` types          | 🔴      |
 | `derive`       | Enables [`FromValue` and `FromRow` derive macros][2] | 🟢      |
-| `binlog`       | Binlog-related functionality                         | 🟢      |
+| `binlog`       | Binlog-related functionality                         | 🔴      |
 
 ## Derive Macros
 
