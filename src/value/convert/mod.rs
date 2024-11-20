@@ -28,6 +28,7 @@ pub mod chrono;
 pub mod decimal;
 pub mod time;
 pub mod uuid;
+pub mod unic_langid;
 
 lazy_static::lazy_static! {
     static ref DATETIME_RE_YMD: Regex = Regex::new(r"^\d{4}-\d{2}-\d{2}$").unwrap();
