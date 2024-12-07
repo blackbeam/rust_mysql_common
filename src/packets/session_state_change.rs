@@ -31,7 +31,7 @@ pub enum SessionStateChange<'a> {
     Unsupported(Unsupported<'a>),
 }
 
-impl<'a> SessionStateChange<'a> {
+impl SessionStateChange<'_> {
     pub fn into_owned(self) -> SessionStateChange<'static> {
         match self {
             SessionStateChange::SystemVariables(x) => SessionStateChange::SystemVariables(

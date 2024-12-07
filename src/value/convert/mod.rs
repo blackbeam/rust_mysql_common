@@ -44,7 +44,7 @@ lazy_static::lazy_static! {
 }
 
 /// Returns (year, month, day, hour, minute, second, micros)
-#[cfg(any(feature = "chrono"))]
+#[cfg(feature = "chrono")]
 fn parse_mysql_datetime_string(bytes: &[u8]) -> Option<(u32, u32, u32, u32, u32, u32, u32)> {
     let len = bytes.len();
 

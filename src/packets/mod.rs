@@ -120,7 +120,7 @@ struct ColumnMeta<'a> {
     org_name: RawBytes<'a, LenEnc>,
 }
 
-impl<'a> ColumnMeta<'a> {
+impl ColumnMeta<'_> {
     pub fn into_owned(self) -> ColumnMeta<'static> {
         ColumnMeta {
             schema: self.schema.into_owned(),
@@ -428,7 +428,7 @@ pub struct SessionStateInfo<'a> {
     data: RawBytes<'a, LenEnc>,
 }
 
-impl<'a> SessionStateInfo<'a> {
+impl SessionStateInfo<'_> {
     pub fn into_owned(self) -> SessionStateInfo<'static> {
         let SessionStateInfo { data_type, data } = self;
         SessionStateInfo {
@@ -678,7 +678,7 @@ pub struct OkPacket<'a> {
     session_state_info: Option<RawBytes<'a, LenEnc>>,
 }
 
-impl<'a> OkPacket<'a> {
+impl OkPacket<'_> {
     pub fn into_owned(self) -> OkPacket<'static> {
         OkPacket {
             affected_rows: self.affected_rows,
@@ -864,7 +864,7 @@ impl MySerialize for ProgressReport<'_> {
     }
 }
 
-impl<'a> fmt::Display for ProgressReport<'a> {
+impl fmt::Display for ProgressReport<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
@@ -892,7 +892,7 @@ pub enum ErrPacket<'a> {
     Progress(ProgressReport<'a>),
 }
 
-impl<'a> ErrPacket<'a> {
+impl ErrPacket<'_> {
     /// Returns false if this error packet contains progress report.
     pub fn is_error(&self) -> bool {
         matches!(self, ErrPacket::Error { .. })
@@ -957,7 +957,7 @@ impl MySerialize for ErrPacket<'_> {
     }
 }
 
-impl<'a> fmt::Display for ErrPacket<'a> {
+impl fmt::Display for ErrPacket<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             ErrPacket::Error(server_error) => write!(f, "{}", server_error),
@@ -1190,7 +1190,7 @@ pub enum AuthPluginData<'a> {
     Clear(Cow<'a, [u8]>),
 }
 
-impl<'a> AuthPluginData<'a> {
+impl AuthPluginData<'_> {
     pub fn into_owned(self) -> AuthPluginData<'static> {
         match self {
             AuthPluginData::Old(x) => AuthPluginData::Old(x),
@@ -1667,6 +1667,7 @@ impl MySerialize for HandshakePacket<'_> {
 }
 
 impl<'a> HandshakePacket<'a> {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         protocol_version: u8,
         server_version: impl Into<Cow<'a, [u8]>>,
@@ -1898,6 +1899,12 @@ impl<'a> ComChangeUser<'a> {
     }
 }
 
+impl Default for ComChangeUser<'_> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<'de> MyDeserialize<'de> for ComChangeUser<'de> {
     const SIZE: Option<usize> = None;
 
@@ -2042,7 +2049,7 @@ impl<'de> MyDeserialize<'de> for ComChangeUserMoreData<'de> {
     }
 }
 
-impl<'a> MySerialize for ComChangeUserMoreData<'a> {
+impl MySerialize for ComChangeUserMoreData<'_> {
     fn serialize(&self, buf: &mut Vec<u8>) {
         self.character_set.serialize(&mut *buf);
         if let Some(ref auth_plugin) = self.auth_plugin {
@@ -2075,6 +2082,7 @@ pub struct HandshakeResponse<'a> {
 }
 
 impl<'a> HandshakeResponse<'a> {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         scramble_buf: Option<impl Into<Cow<'a, [u8]>>>,
         server_version: (u16, u16, u16),
@@ -2789,7 +2797,7 @@ impl<'a> ComRegisterSlave<'a> {
     }
 
     /// Returns the raw `hostname` field value.
-    pub fn hostname_raw(&'a self) -> &[u8] {
+    pub fn hostname_raw(&self) -> &[u8] {
         self.hostname.as_bytes()
     }
 
@@ -2799,7 +2807,7 @@ impl<'a> ComRegisterSlave<'a> {
     }
 
     /// Returns the raw `user` field value.
-    pub fn user_raw(&'a self) -> &[u8] {
+    pub fn user_raw(&self) -> &[u8] {
         self.user.as_bytes()
     }
 
@@ -2809,7 +2817,7 @@ impl<'a> ComRegisterSlave<'a> {
     }
 
     /// Returns the raw `password` field value.
-    pub fn password_raw(&'a self) -> &[u8] {
+    pub fn password_raw(&self) -> &[u8] {
         self.password.as_bytes()
     }
 
@@ -3140,7 +3148,7 @@ pub struct Sid<'a> {
     intervals: Seq<'a, GnoInterval, LeU64>,
 }
 
-impl<'a> Sid<'a> {
+impl Sid<'_> {
     /// Creates a new instance.
     pub fn new(uuid: [u8; UUID_LEN]) -> Self {
         Self {
@@ -3217,7 +3225,7 @@ impl Sid<'_> {
     }
 }
 
-impl<'a> FromStr for Sid<'a> {
+impl FromStr for Sid<'_> {
     type Err = io::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {

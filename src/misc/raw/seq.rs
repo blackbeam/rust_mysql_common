@@ -25,7 +25,7 @@ use super::{
 #[repr(transparent)]
 pub struct Seq<'a, T: Clone, U>(pub Cow<'a, [T]>, PhantomData<U>);
 
-impl<'a, T: Clone, U> Deref for Seq<'a, T, U> {
+impl<T: Clone, U> Deref for Seq<'_, T, U> {
     type Target = [T];
 
     fn deref(&self) -> &Self::Target {
@@ -68,7 +68,7 @@ impl<'a, T: Clone, U> Seq<'a, T, U> {
     }
 }
 
-impl<'a, T: Clone, U> Default for Seq<'a, T, U> {
+impl<T: Clone, U> Default for Seq<'_, T, U> {
     fn default() -> Self {
         Seq::new(Vec::new())
     }
@@ -185,7 +185,7 @@ impl<'a, T: IntRepr, U> RawSeq<'a, T, U> {
     }
 }
 
-impl<'a, T: IntRepr, U> RawSeq<'a, T, U>
+impl<T: IntRepr, U> RawSeq<'_, T, U>
 where
     T: Copy,
     U: TryFrom<T::Primitive>,

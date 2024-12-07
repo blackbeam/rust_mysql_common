@@ -213,7 +213,7 @@ impl ColumnIndex for usize {
     }
 }
 
-impl<'a> ColumnIndex for &'a str {
+impl ColumnIndex for &'_ str {
     fn idx(&self, columns: &[Column]) -> Option<usize> {
         for (i, c) in columns.iter().enumerate() {
             if c.name_ref() == self.as_bytes() {

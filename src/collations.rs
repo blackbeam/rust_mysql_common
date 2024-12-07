@@ -648,7 +648,7 @@ pub struct Collation<'a> {
 /// JOIN INFORMATION_SCHEMA.CHARACTER_SETS
 /// USING(CHARACTER_SET_NAME) ORDER BY ID;
 /// ```
-impl<'a> Collation<'a> {
+impl Collation<'_> {
     /// This is a stub.
     const UNKNOWN_COLLATION: Collation<'static> = Collation {
         id: CollationId::UNKNOWN_COLLATION_ID,

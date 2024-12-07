@@ -28,6 +28,12 @@ impl PublicKeyRequest {
     }
 }
 
+impl Default for PublicKeyRequest {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<'de> MyDeserialize<'de> for PublicKeyRequest {
     const SIZE: Option<usize> = None;
     type Ctx = ();
