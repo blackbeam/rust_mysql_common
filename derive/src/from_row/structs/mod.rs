@@ -31,9 +31,22 @@ pub fn impl_from_row_for_struct(
 
     let item_attrs = <attrs::container::Mysql as FromAttributes>::from_attributes(attrs)?;
 
+    let fields_attrs = fields
+        .named
+        .iter()
+        .map(|f| {
+            <attrs::field::Mysql as FromAttributes>::from_attributes(&f.attrs).map_err(Into::into)
+        })
+        .collect::<crate::Result<Vec<_>>>()?;
+
+    for field_attrs in &fields_attrs {
+        field_attrs.validate()?;
+    }
+
     let derived = GenericStruct {
         ident,
         fields,
+        fields_attrs: &fields_attrs,
         item_attrs,
         generics,
     };
@@ -44,6 +57,7 @@ struct GenericStruct<'a> {
     ident: &'a proc_macro2::Ident,
     item_attrs: attrs::container::Mysql,
     fields: &'a syn::FieldsNamed,
+    fields_attrs: &'a [attrs::field::Mysql],
     generics: &'a syn::Generics,
 }
 
@@ -53,6 +67,7 @@ impl ToTokens for GenericStruct<'_> {
             ident,
             item_attrs,
             fields,
+            fields_attrs,
             generics,
         } = self;
 
@@ -96,18 +111,10 @@ impl ToTokens for GenericStruct<'_> {
             quote::quote!(const TABLE_NAME: &'static str = #lit;)
         });
 
-        let fields_attrs = fields
-            .named
-            .iter()
-            .map(|f| <attrs::field::Mysql as FromAttributes>::from_attributes(&f.attrs))
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|e: darling::Error| abort!(crate::Error::from(e)))
-            .unwrap();
-
         let fields_names = fields
             .named
             .iter()
-            .zip(&fields_attrs)
+            .zip(*fields_attrs)
             .map(|(f, attrs)| {
                 let mut name = f.ident.as_ref().unwrap().unraw().to_string();
 
@@ -143,24 +150,30 @@ impl ToTokens for GenericStruct<'_> {
         let take_field = fields
             .named
             .iter()
-            .zip(&fields_attrs)
+            .zip(*fields_attrs)
             .zip(&fields_names)
             .enumerate()
             .map(|(i, ((f, attrs), name))| {
+                attrs.validate()?;
                 let ident = f.ident.as_ref().unwrap();
                 let ty = &f.ty;
                 let lit = syn::LitStr::new(name, ident.span());
 
                 let place = field_ident
                     .iter()
-                    .zip(&fields_attrs)
+                    .zip(*fields_attrs)
                     .zip(&fields_names)
                     .take(i)
                     .map(|((f, attrs), name)| {
                         let lit = syn::LitStr::new(name, f.span());
-                        if attrs.json {
+                        if *attrs.json {
                             quote::quote!(
                                 row.place(*indexes.get(#lit).unwrap(), #f.rollback())
+                            )
+                        } else if let Some(ref path) = attrs.serialize_with {
+                            let path = &**path;
+                            quote::quote!(
+                                row.place(*indexes.get(#lit).unwrap(), #path(#f))
                             )
                         } else {
                             quote::quote!(
@@ -169,20 +182,20 @@ impl ToTokens for GenericStruct<'_> {
                         }
                     });
 
-                let intermediate_ty = if attrs.json {
+                let intermediate_ty = if *attrs.json {
                     quote::quote!(<#crat::Deserialized<#ty> as FromValue>::Intermediate)
                 } else {
                     quote::quote!(<#ty as FromValue>::Intermediate)
                 };
 
-                let try_from = if let Some(ref path) = attrs.with {
-                    let path = &path.0;
+                let try_from = if let Some(ref path) = attrs.deserialize_with {
+                    let path = &**path;
                     quote::quote!( #path(x) )
                 } else {
                     quote::quote!( <#intermediate_ty as std::convert::TryFrom<Value>>::try_from(x) )
                 };
 
-                quote::quote!(
+                Ok(quote::quote!(
                     let #ident = {
                         let val = match row.take_opt::<Value, &str>(#lit) {
                             Some(Ok(x)) => match #try_from {
@@ -203,20 +216,25 @@ impl ToTokens for GenericStruct<'_> {
                             return Err(FromRowError(row));
                         }
                     }
-                )
+                ))
             })
-            .collect::<Vec<_>>();
+            .collect::<Result<Vec<_>, crate::Error>>();
+
+        let take_field = match take_field {
+            Ok(x) => x,
+            Err(error) => abort!(error),
+        };
 
         let set_field = fields
             .named
             .iter()
-            .zip(&fields_attrs)
+            .zip(*fields_attrs)
             .map(|(f, attrs)| {
                 let ident = f.ident.as_ref().unwrap();
                 let ty = &f.ty;
-                if attrs.json {
+                if *attrs.json {
                     quote::quote!(#ident: #ident.commit().0)
-                } else if attrs.with.is_some() {
+                } else if attrs.deserialize_with.is_some() {
                     quote::quote!( #ident )
                 } else {
                     quote::quote!(#ident: <<#ty as FromValue>::Intermediate as std::convert::Into<#ty>>::into(#ident))
@@ -289,11 +307,52 @@ mod tests {
             #[derive(FromRow)]
             #[mysql(crate_name = "mysql_common")]
             struct Foo {
+                #[mysql(
+                    serialize_with = "foo::serialize",
+                    deserialize_with = "foo::deserialize",
+                )]
                 r#type: u64,
             }
         "#;
         let input = syn::parse_str::<syn::DeriveInput>(code).unwrap();
         let derived = super::super::impl_from_row(&input).unwrap();
         eprintln!("{}", derived);
+    }
+
+    #[test]
+    fn derive_struct_conflicting_field_attributes() {
+        let code = r#"
+            #[derive(FromRow)]
+            #[mysql(crate_name = "mysql_common")]
+            struct Foo {
+                #[mysql(
+                    serialize_with = "foo::serialize",
+                    json,
+                )]
+                r#type: u64,
+            }
+        "#;
+        let input = syn::parse_str::<syn::DeriveInput>(code).unwrap();
+        assert!(matches!(
+            super::super::impl_from_row(&input).unwrap_err(),
+            crate::Error::FromRowConflictingAttributes(..)
+        ));
+
+        let code = r#"
+            #[derive(FromRow)]
+            #[mysql(crate_name = "mysql_common")]
+            struct Foo {
+                #[mysql(
+                    deserialize_with = "foo::serialize",
+                    json,
+                )]
+                r#type: u64,
+            }
+        "#;
+        let input = syn::parse_str::<syn::DeriveInput>(code).unwrap();
+        assert!(matches!(
+            super::super::impl_from_row(&input).unwrap_err(),
+            crate::Error::FromRowConflictingAttributes(..)
+        ));
     }
 }

@@ -21,6 +21,8 @@ pub fn impl_from_value_for_enum(
     data_enum: &syn::DataEnum,
 ) -> crate::Result<TokenStream> {
     let item_attrs = <container::Mysql as FromAttributes>::from_attributes(attrs).expect("foo");
+    item_attrs.validate()?;
+
     let meta = attrs.iter().map(|attr| &attr.meta).collect::<Vec<_>>();
 
     let repr = meta
@@ -38,7 +40,7 @@ pub fn impl_from_value_for_enum(
     }
 
     if *item_attrs.is_integer && *item_attrs.is_string {
-        abort!(crate::Error::ConflictingsAttributes(
+        abort!(crate::Error::FromValueConflictingAttributes(
             item_attrs.is_string.span(),
             item_attrs.is_integer.span()
         ));
@@ -407,5 +409,26 @@ mod tests {
         let input = syn::parse_str::<syn::DeriveInput>(code).unwrap();
         let derived = super::super::impl_from_value(&input).unwrap();
         eprintln!("{}", derived);
+    }
+
+    #[test]
+    fn derive_enum_conflicting() {
+        let code = r#"
+            #[derive(FromValue)]
+            #[mysql(is_integer, is_string)]
+            #[repr(u8)]
+            enum Size {
+                A = 1,
+                B,
+                C,
+                D,
+                E,
+            }
+        "#;
+        let input = syn::parse_str::<syn::DeriveInput>(code).unwrap();
+        assert!(matches!(
+            super::super::impl_from_value(&input).unwrap_err(),
+            crate::Error::FromValueConflictingAttributes(..)
+        ));
     }
 }

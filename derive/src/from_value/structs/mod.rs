@@ -47,7 +47,7 @@ pub fn impl_from_value_for_struct(
 
     if let Some(ref x) = item_attrs.serialize_with {
         if item_attrs.deserialize_with.is_none() {
-            abort!(crate::Error::AttributeRequired(
+            abort!(crate::Error::FromValueAttributeRequired(
                 x.span(),
                 "deserialize_with"
             ))
@@ -98,7 +98,7 @@ impl ToTokens for NewTypeNoGenerics<'_> {
 
         let serialize_with = match self.item_attrs.serialize_with {
             Some(ref x) => {
-                let path = &x.0;
+                let path = &**x;
                 Some(quote::quote!(
                     impl From<#ir_name> for #crat::Value
                     {
@@ -119,7 +119,7 @@ impl ToTokens for NewTypeNoGenerics<'_> {
         };
 
         let new_tokens = if let Some(x) = &self.item_attrs.deserialize_with {
-            let path = &x.0;
+            let path = &**x;
             quote::quote!(
                 mod #ir_mod_name {
                     use super::*;
@@ -253,7 +253,7 @@ impl ToTokens for NewType<'_> {
 
         let serialize_with = match self.item_attrs.serialize_with {
             Some(ref x) => {
-                let path = &x.0;
+                let path = &**x;
                 Some(quote::quote!(
                     impl<#impl_generics> From<#ir_name<#ident_generics>> for #crat::Value
                     where
@@ -269,7 +269,7 @@ impl ToTokens for NewType<'_> {
         };
 
         let new_tokens = if let Some(x) = &self.item_attrs.deserialize_with {
-            let path = &x.0;
+            let path = &**x;
             quote::quote!(
                 mod #ir_mod_name {
                     use super::*;

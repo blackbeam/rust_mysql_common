@@ -22,6 +22,19 @@ pub struct Mysql {
     pub is_string: SpannedValue<bool>,
 }
 
+impl Mysql {
+    pub(crate) fn validate(&self) -> Result<(), crate::Error> {
+        if *self.is_integer && *self.is_string {
+            return Err(crate::Error::FromValueConflictingAttributes(
+                self.is_integer.span(),
+                self.is_string.span(),
+            ));
+        }
+
+        Ok(())
+    }
+}
+
 #[derive(Debug)]
 pub enum Crate {
     NotFound,

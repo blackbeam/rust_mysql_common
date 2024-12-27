@@ -30,11 +30,15 @@ pub enum Error {
     #[error(transparent)]
     Darling(#[from] darling::error::Error),
     #[error("conflicting attributes")]
-    ConflictingsAttributes(Span, Span),
+    FromValueConflictingAttributes(Span, Span),
     #[error("representation won't fit into MySql integer")]
     UnsupportedRepresentation(Span),
     #[error("this attribute requires `{}` attribute", 0)]
-    AttributeRequired(Span, &'static str),
+    FromValueAttributeRequired(Span, &'static str),
+    #[error("conflicting attributes")]
+    FromRowConflictingAttributes(Span, Span),
+    #[error("this attribute requires `{}` attribute", 0)]
+    FromRowAttributeRequired(Span, &'static str),
 }
 
 impl From<Error> for Diagnostic {
@@ -60,12 +64,19 @@ impl From<Error> for Diagnostic {
             }
             Error::NoCrateNameFound => Diagnostic::new(Level::Error, format!("FromValue: {x}")),
             Error::MultipleCratesFound => Diagnostic::new(Level::Error, format!("FromValue: {x}")),
-            Error::ConflictingsAttributes(s1, s2) => {
+            Error::FromValueConflictingAttributes(s1, s2) => {
                 Diagnostic::spanned(s1, Level::Error, format!("FromValue: {x}"))
                     .span_error(s2, "conflicting attribute".into())
             }
-            Error::AttributeRequired(s, _) => {
+            Error::FromValueAttributeRequired(s, _) => {
                 Diagnostic::spanned(s, Level::Error, format!("FromValue: {x}"))
+            }
+            Error::FromRowConflictingAttributes(s1, s2) => {
+                Diagnostic::spanned(s1, Level::Error, format!("FromRow: {x}"))
+                    .span_error(s2, "conflicting attribute".into())
+            }
+            Error::FromRowAttributeRequired(s, _) => {
+                Diagnostic::spanned(s, Level::Error, format!("FromRow: {x}"))
             }
         }
     }

@@ -65,6 +65,7 @@ btoi = "0.4.3"
 zstd = "0.13"
 
 [dev-dependencies]
+time = { version = "*", features = ["macros"] }
 proptest = "1.0"
 unic-langid = { version = "0.9.4" }
 
@@ -85,7 +86,7 @@ incremental = false
 
 [features]
 default = ["flate2/zlib", "derive"]
-test = ["derive"]
+test = ["derive", "time"]
 derive = ["mysql-common-derive"]
 binlog = ["bitvec"]
 nightly = ["test"]

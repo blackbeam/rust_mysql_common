@@ -237,22 +237,46 @@ Supported derivations:
 *  `#[mysql(rename = "some_name")]` – overrides column name of a field
 *  `#[mysql(json)]` - column will be interpreted as a JSON string containing
    a value of a field type
-*  `#[mysql(with = path::to::convert_fn)]` – `convert_fn` will be used to deserialize
-   a field value (expects a function with a signature that mimics
-   `TryFrom<Value, Error=FromValueError>``)
+*  `#[mysql(deserialize_with = "some::path")]` – the following function
+   will be used to deserialize the field (instead of `FromValue`). Expected signature is
+   `fn (Value) -> Result<T, FromValueError>`.
+*  `#[mysql(serialize_with = "some::path")]` – the following function
+   will be used to serialize the field (instead of `Into<Value>`). Expected signature is
+   `fn (T) -> Value`.
 
 #### Example
 
 ```rust
+use time::{
+    macros::{datetime, offset}, OffsetDateTime, PrimitiveDateTime, UtcOffset,
+};
 
 /// Note: the `crate_name` attribute should not be necessary.
 #[derive(Debug, PartialEq, Eq, FromRow)]
 #[mysql(table_name = "Foos", crate_name = "mysql_common")]
 struct Foo {
     id: u64,
+    #[mysql(
+        serialize_with = "datetime_to_value",
+        deserialize_with = "value_to_datetime",
+    )]
+    ctime: OffsetDateTime,
     #[mysql(json, rename = "def")]
     definition: Bar,
     child: Option<u64>,
+}
+
+fn value_to_datetime(value: Value) -> Result<OffsetDateTime, FromValueError> {
+    // assume mysql session timezone has been properly set up
+    const OFFSET: UtcOffset = offset!(+3);
+
+    let primitive = PrimitiveDateTime::from_value_opt(value)?;
+    Ok(primitive.assume_offset(OFFSET))
+}
+
+fn datetime_to_value(datetime: OffsetDateTime) -> Value {
+    // assume mysql session timezone has been properly set up
+    PrimitiveDateTime::new(datetime.date(), datetime.time()).into()
 }
 
 #[derive(Debug, serde::Deserialize, PartialEq, Eq)]
@@ -264,11 +288,11 @@ enum Bar {
 /// Returns the following row:
 ///
 /// ```
-/// +----+-----------+-------+
-/// | id | def       | child |
-/// +----+-----------+-------+
-/// | 42 | '"Right"' | NULL  |
-/// +----+-----------+-------+
+/// +----+-----------+-------+------------------------+
+/// | id | def       | child | ctime                  |
+/// +----+-----------+-------+------------------------+
+/// | 42 | '"Right"' | NULL  | '2015-05-15 12:00:00'  |
+/// +----+-----------+-------+------------------------+
 /// ```
 fn get_row() -> Row {
     // ...
@@ -280,7 +304,15 @@ assert_eq!(Foo::DEFINITION_FIELD, "def");
 assert_eq!(Foo::CHILD_FIELD, "child");
 
 let foo = from_row::<Foo>(get_row());
-assert_eq!(foo, Foo { id: 42, definition: Bar::Right, child: None });
+assert_eq!(
+    foo,
+    Foo {
+        id: 42,
+        definition: Bar::Right,
+        child: None,
+        ctime: datetime!(2015-05-15 12:00 +3),
+    }
+);
 ```
 
 [1]: https://dev.mysql.com/doc/internals/en/binary-protocol-value.html
