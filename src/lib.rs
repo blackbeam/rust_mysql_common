@@ -739,7 +739,7 @@ mod tests {
             text_data: String,
             #[mysql(json)]
             json_data: serde_json::Value,
-            #[mysql(with = "from_literal", rename = "custom")]
+            #[mysql(deserialize_with = "from_literal", rename = "custom")]
             custom_bool: bool,
         }
 
