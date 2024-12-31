@@ -65,7 +65,7 @@ btoi = "0.4.3"
 zstd = "0.13"
 
 [dev-dependencies]
-time = { version = "*", features = ["macros"] }
+time = { version = "0.3", features = ["macros"] }
 proptest = "1.0"
 unic-langid = { version = "0.9.4" }
 
