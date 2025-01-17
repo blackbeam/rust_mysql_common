@@ -70,7 +70,9 @@ proptest = "1.0"
 unic-langid = { version = "0.9.4" }
 
 [build-dependencies]
-bindgen = { version = "0", default-features = false, features = ["runtime"] }
+bindgen = { version = "0.70", default-features = false, features = [
+    "runtime",
+], optional = true }
 cc = "1.0"
 cmake = "0.1"
 subprocess = "0.2"
@@ -86,7 +88,7 @@ incremental = false
 
 [features]
 default = ["flate2/zlib", "derive"]
-test = ["derive", "time"]
+test = ["derive", "time", "bindgen"]
 derive = ["mysql-common-derive"]
 binlog = ["bitvec"]
 nightly = ["test"]
