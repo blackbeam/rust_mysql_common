@@ -9,13 +9,28 @@
 use super::der;
 use byteorder::{BigEndian, ByteOrder};
 use num_bigint::BigUint;
-use rand::Rng;
 use sha1::{Digest, Sha1};
 
 /// Padding operation trait.
 pub trait Padding {
     /// Padding operation for `input` bytes, where `k` is the length of modulus in octets.
     fn pub_pad(&mut self, input: impl AsRef<[u8]>, k: usize) -> Vec<u8>;
+}
+
+pub trait FillBytes {
+    type Error: std::fmt::Debug + std::fmt::Display;
+
+    fn fill(&mut self, dest: &mut [u8]) -> Result<(), Self::Error>;
+}
+
+pub struct OsRng;
+
+impl FillBytes for OsRng {
+    type Error = getrandom::Error;
+
+    fn fill(&mut self, dest: &mut [u8]) -> Result<(), Self::Error> {
+        getrandom::fill(dest)
+    }
 }
 
 /// Padding, as described in PKCS #1: RSA Encryption Version 1.5 (rfc2313).
@@ -30,7 +45,7 @@ impl<T> Pkcs1Padding<T> {
     }
 }
 
-impl<T: Rng> Padding for Pkcs1Padding<T> {
+impl<T: FillBytes> Padding for Pkcs1Padding<T> {
     fn pub_pad(&mut self, input: impl AsRef<[u8]>, k: usize) -> Vec<u8> {
         let input = input.as_ref();
         let input_len = input.len();
@@ -46,13 +61,11 @@ impl<T: Rng> Padding for Pkcs1Padding<T> {
         let ps_len = k - 3 - input_len;
 
         for i in 0..ps_len {
-            let x = loop {
-                match self.rng.gen::<u8>() {
-                    0x00 => continue,
-                    x => break x,
-                }
-            };
-            output[i + 2] = x;
+            while output[i + 2] == 0 {
+                self.rng
+                    .fill(&mut output[i + 2..=i + 2])
+                    .expect("rng ran out of entropy while padding");
+            }
         }
 
         output[2 + ps_len] = 0x00;
@@ -104,7 +117,7 @@ impl<T> Pkcs1OaepPadding<T> {
     }
 }
 
-impl<T: Rng> Padding for Pkcs1OaepPadding<T> {
+impl<T: FillBytes> Padding for Pkcs1OaepPadding<T> {
     /// Will pad input according to PKCS #1 v2 with encoding parameters equal to `[]`.
     fn pub_pad(&mut self, input: impl AsRef<[u8]>, k: usize) -> Vec<u8> {
         let input = input.as_ref();
@@ -123,7 +136,8 @@ impl<T: Rng> Padding for Pkcs1OaepPadding<T> {
         //    data block DB as: DB = pHash || PS || 01 || M
         let db = [&*p_hash, &*ps, input].concat();
         // 6. Generate a random octet string seed of length hLen.
-        let seed: Vec<_> = (0..Self::HASH_LEN).map(|_| self.rng.gen()).collect();
+        let mut seed = vec![0; Self::HASH_LEN];
+        self.rng.fill(&mut seed[..]).expect("rng out of entropy");
         // 7. Let dbMask = MGF(seed, emLen-hLen).
         let db_mask = Self::mgf1(&seed, k - Self::HASH_LEN);
         // 8. Let maskedDB = DB \xor dbMask.
@@ -202,7 +216,6 @@ mod tests {
     use std::io::Read;
 
     use super::*;
-    use rand::RngCore;
 
     const SEED: &[u8; 64] = b"\x03\x2e\x45\x32\x6f\xa8\x59\xa7\x2e\xc2\x35\xac\xff\x92\x9b\x15\xd1\
     \x37\x2e\x30\xb2\x07\x25\x5f\x06\x11\xb8\xf7\x85\xd7\x64\x37\x41\x52\xe0\xac\x00\x9e\x50\x9e\
@@ -216,36 +229,13 @@ mod tests {
     \x7a\x25\x19\x29\x85\xa8\x42\xdb\xff\x8e\x13\xef\xee\x5b\x7e\x7e\x55\xbb\xe4\xd3\x89\x64\x7c\
     \x68\x6a\x9a\x9a\xb3\xfb\x88\x9b\x2d\x77\x67\xd3\x83\x7e\xea\x4e\x0a\x2f\x04";
 
-    /// Replacement for the deprecated `rand::ReadRng`.
     struct Seed<'a>(&'a [u8]);
 
-    impl<'a> RngCore for Seed<'a> {
-        fn next_u32(&mut self) -> u32 {
-            let mut buf = [0; 4];
-            self.fill_bytes(&mut buf);
-            u32::from_le_bytes(buf)
-        }
+    impl<'a> FillBytes for Seed<'a> {
+        type Error = std::io::Error;
 
-        fn next_u64(&mut self) -> u64 {
-            let mut buf = [0; 8];
-            self.fill_bytes(&mut buf);
-            u64::from_le_bytes(buf)
-        }
-
-        fn fill_bytes(&mut self, dest: &mut [u8]) {
-            self.try_fill_bytes(dest).unwrap_or_else(|err| {
-                panic!(
-                    "reading random bytes from Read implementation failed; error: {}",
-                    err
-                )
-            });
-        }
-
-        fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), rand::Error> {
-            if dest.is_empty() {
-                return Ok(());
-            }
-            self.0.read_exact(dest).map_err(|e| rand::Error::new(e))
+        fn fill(&mut self, dest: &mut [u8]) -> Result<(), std::io::Error> {
+            self.0.read_exact(dest)
         }
     }
 
@@ -257,7 +247,7 @@ mod tests {
 
     #[test]
     fn rsa_pkcs() {
-        let modulus = vec![
+        let modulus: &[u8] = &[
             0xa8, 0xb3, 0xb2, 0x84, 0xaf, 0x8e, 0xb5, 0x0b, 0x38, 0x70, 0x34, 0xa8, 0x60, 0xf1,
             0x46, 0xc4, 0x91, 0x9f, 0x31, 0x87, 0x63, 0xcd, 0x6c, 0x55, 0x98, 0xc8, 0xae, 0x48,
             0x11, 0xa1, 0xe0, 0xab, 0xc4, 0xc7, 0xe0, 0xb0, 0x82, 0xd6, 0x93, 0xa5, 0xe7, 0xfc,
@@ -269,13 +259,13 @@ mod tests {
             0x76, 0x16, 0xd4, 0xf5, 0xba, 0x10, 0xd4, 0xcf, 0xd2, 0x26, 0xde, 0x88, 0xd3, 0x9f,
             0x16, 0xfb,
         ];
-        let exponent = vec![0x01, 0x00, 0x01];
+        let exponent: &[u8] = &[0x01, 0x00, 0x01];
 
-        let msg1 = vec![
+        let msg1: &[u8] = &[
             0x66, 0x28, 0x19, 0x4e, 0x12, 0x07, 0x3d, 0xb0, 0x3b, 0xa9, 0x4c, 0xda, 0x9e, 0xf9,
             0x53, 0x23, 0x97, 0xd5, 0x0d, 0xba, 0x79, 0xb9, 0x87, 0x00, 0x4a, 0xfe, 0xfe, 0x34,
         ];
-        let seed1 = vec![
+        let seed1: &[u8] = &[
             0x01, 0x00, 0x00, 0x00, 0x73, 0x00, 0x00, 0x00, 0x41, 0x00, 0x00, 0x00, 0xae, 0x00,
             0x00, 0x00, 0x38, 0x00, 0x00, 0x00, 0x75, 0x00, 0x00, 0x00, 0xd5, 0x00, 0x00, 0x00,
             0xf8, 0x00, 0x00, 0x00, 0x71, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0xf8, 0x00,
@@ -319,11 +309,11 @@ mod tests {
         ];
 
         let public_key = PublicKey::new(
-            BigUint::from_bytes_be(&modulus),
-            BigUint::from_bytes_be(&exponent),
+            BigUint::from_bytes_be(modulus),
+            BigUint::from_bytes_be(exponent),
         );
 
-        let rng = Seed(&*seed1);
+        let rng = Seed(seed1);
         let pad = Pkcs1Padding::new(rng);
 
         let cipher_text = public_key.encrypt_block(msg1, pad);
@@ -332,7 +322,7 @@ mod tests {
 
     #[test]
     fn rsa_oaep() {
-        let modulus = vec![
+        let modulus: &[u8] = &[
             0xbb, 0xf8, 0x2f, 0x09, 0x06, 0x82, 0xce, 0x9c, 0x23, 0x38, 0xac, 0x2b, 0x9d, 0xa8,
             0x71, 0xf7, 0x36, 0x8d, 0x07, 0xee, 0xd4, 0x10, 0x43, 0xa4, 0x40, 0xd6, 0xb6, 0xf0,
             0x74, 0x54, 0xf5, 0x1f, 0xb8, 0xdf, 0xba, 0xaf, 0x03, 0x5c, 0x02, 0xab, 0x61, 0xea,
@@ -344,18 +334,14 @@ mod tests {
             0xe2, 0x53, 0x72, 0x98, 0xca, 0x2a, 0x8f, 0x59, 0x46, 0xf8, 0xe5, 0xfd, 0x09, 0x1d,
             0xbd, 0xcb,
         ];
-        let exponent = vec![0x11];
-        let msg = vec![
+        let exponent: &[u8] = &[0x11];
+        let msg: &[u8] = &[
             0xd4, 0x36, 0xe9, 0x95, 0x69, 0xfd, 0x32, 0xa7, 0xc8, 0xa0, 0x5b, 0xbc, 0x90, 0xd3,
             0x2c, 0x49,
         ];
-        let seed: Vec<u8> = vec![
-            0xaa, 0x00, 0x00, 0x00, 0xfd, 0x00, 0x00, 0x00, 0x12, 0x00, 0x00, 0x00, 0xf6, 0x00,
-            0x00, 0x00, 0x59, 0x00, 0x00, 0x00, 0xca, 0x00, 0x00, 0x00, 0xe6, 0x00, 0x00, 0x00,
-            0x34, 0x00, 0x00, 0x00, 0x89, 0x00, 0x00, 0x00, 0xb4, 0x00, 0x00, 0x00, 0x79, 0x00,
-            0x00, 0x00, 0xe5, 0x00, 0x00, 0x00, 0x07, 0x00, 0x00, 0x00, 0x6d, 0x00, 0x00, 0x00,
-            0xde, 0x00, 0x00, 0x00, 0xc2, 0x00, 0x00, 0x00, 0xf0, 0x00, 0x00, 0x00, 0x6c, 0x00,
-            0x00, 0x00, 0xb5, 0x00, 0x00, 0x00, 0x8f, 0x00, 0x00, 0x00,
+        let seed: &[u8] = &[
+            0xaa, 0xfd, 0x12, 0xf6, 0x59, 0xca, 0xe6, 0x34, 0x89, 0xb4, 0x79, 0xe5, 0x07, 0x6d,
+            0xde, 0xc2, 0xf0, 0x6c, 0xb5, 0x8f,
         ];
         let correct_cipher_text = vec![
             0x12, 0x53, 0xe0, 0x4d, 0xc0, 0xa5, 0x39, 0x7b, 0xb4, 0x4a, 0x7a, 0xb8, 0x7e, 0x9b,
@@ -371,11 +357,11 @@ mod tests {
         ];
 
         let public_key = PublicKey::new(
-            BigUint::from_bytes_be(&modulus),
-            BigUint::from_bytes_be(&exponent),
+            BigUint::from_bytes_be(modulus),
+            BigUint::from_bytes_be(exponent),
         );
 
-        let rng = Seed(&*seed);
+        let rng = Seed(seed);
         let pad = Pkcs1OaepPadding::new(rng);
 
         let cipher_text = public_key.encrypt_block(msg, pad);
