@@ -29,7 +29,7 @@ impl From<BinlogVersion> for u16 {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, thiserror::Error)]
-#[error("Unknown binlog version {}", _0)]
+#[error("Unknown binlog version {0}")]
 #[repr(transparent)]
 pub struct UnknownBinlogVersion(pub u16);
 
@@ -122,7 +122,7 @@ pub enum EventType {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, thiserror::Error)]
-#[error("Unknown event type {}", _0)]
+#[error("Unknown event type {0}")]
 #[repr(transparent)]
 pub struct UnknownEventType(pub u8);
 
@@ -185,7 +185,7 @@ impl TryFrom<u8> for EventType {
 
 my_bitflags! {
     EventFlags,
-    #[error("Unknown flags in the raw value of EventFlags (raw={:b})", _0)]
+    #[error("Unknown flags in the raw value of EventFlags (raw={0:b})")]
     UnknownEventFlags,
     u16,
 
@@ -240,7 +240,7 @@ pub enum BinlogChecksumAlg {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, thiserror::Error)]
-#[error("Unknown checksum algorithm {}", _0)]
+#[error("Unknown checksum algorithm {0}")]
 #[repr(transparent)]
 pub struct UnknownChecksumAlg(pub u8);
 
@@ -355,7 +355,7 @@ pub enum StatusVarKey {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, thiserror::Error)]
-#[error("Unknown status var key {}", _0)]
+#[error("Unknown status var key {0}")]
 #[repr(transparent)]
 pub struct UnknownStatusVarKey(pub u8);
 
@@ -391,7 +391,7 @@ impl TryFrom<u8> for StatusVarKey {
 
 my_bitflags! {
     SemiSyncFlags,
-    #[error("Unknown flags in the raw value of SemiSyncFlags (raw={:b})", _0)]
+    #[error("Unknown flags in the raw value of SemiSyncFlags (raw={0:b})")]
     UnknownSemiSyncFlags,
     u8,
 
@@ -421,7 +421,7 @@ impl From<LoadDuplicateHandling> for u8 {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, thiserror::Error)]
-#[error("Unknown duplicate handling variant {}", _0)]
+#[error("Unknown duplicate handling variant {0}")]
 #[repr(transparent)]
 pub struct UnknownDuplicateHandling(pub u8);
 
@@ -581,7 +581,7 @@ pub enum OptionalMetadataFieldType {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
-#[error("Unknown optional metadata field type {}", _0)]
+#[error("Unknown optional metadata field type {0}")]
 pub struct UnknownOptionalMetadataFieldType(pub u8);
 
 impl From<UnknownOptionalMetadataFieldType> for u8 {
@@ -631,7 +631,7 @@ impl From<IncidentType> for u16 {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, thiserror::Error)]
-#[error("Unknown item incident type {}", _0)]
+#[error("Unknown item incident type {0}")]
 #[repr(transparent)]
 pub struct UnknownIncidentType(pub u16);
 
@@ -672,7 +672,7 @@ impl From<IntvarEventType> for u8 {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, thiserror::Error)]
-#[error("Unknown intvar event type {}", _0)]
+#[error("Unknown intvar event type {0}")]
 #[repr(transparent)]
 pub struct UnknownIntvarEventType(pub u8);
 
@@ -697,7 +697,7 @@ impl TryFrom<u8> for IntvarEventType {
 
 my_bitflags! {
     GtidFlags,
-    #[error("Unknown flags in the raw value of GtidFlags (raw={:b})", _0)]
+    #[error("Unknown flags in the raw value of GtidFlags (raw={0:b})")]
     UnknownGtidFlags,
     u8,
 
@@ -727,12 +727,7 @@ impl Gno {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, thiserror::Error)]
-#[error(
-    "Group number {} is out of range [{}, {}]",
-    _0,
-    Gno::MIN_GNO,
-    Gno::MAX_GNO
-)]
+#[error("Group number {0} is out of range [{min}, {max}]", min = Gno::MIN_GNO, max = Gno::MAX_GNO)]
 #[repr(transparent)]
 pub struct InvalidGno(pub u64);
 
@@ -756,7 +751,7 @@ impl TryFrom<u64> for Gno {
 
 my_bitflags! {
     RowsEventFlags,
-    #[error("Unknown flags in the raw value of RowsEventFlags (raw={:b})", _0)]
+    #[error("Unknown flags in the raw value of RowsEventFlags (raw={0:b})")]
     UnknownRowsEventFlags,
     u16,
 
@@ -777,7 +772,7 @@ my_bitflags! {
 
 my_bitflags! {
     UserVarFlags,
-    #[error("Unknown flags in the raw value of UserVarFlags (raw={:b})", _0)]
+    #[error("Unknown flags in the raw value of UserVarFlags (raw={0:b})")]
     UnknownUserVarFlags,
     u8,
 
