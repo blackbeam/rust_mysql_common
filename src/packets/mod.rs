@@ -2964,7 +2964,7 @@ impl<'de> MyDeserialize<'de> for ComTableDump<'de> {
 
 my_bitflags! {
     BinlogDumpFlags,
-    #[error("Unknown flags in the raw value of BinlogDumpFlags (raw={:b})", _0)]
+    #[error("Unknown flags in the raw value of BinlogDumpFlags (raw={0:b})")]
     UnknownBinlogDumpFlags,
     u16,
 

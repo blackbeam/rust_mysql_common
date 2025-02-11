@@ -17,7 +17,7 @@ pub static UTF8MB4_GENERAL_CI: u16 = 45;
 
 my_bitflags! {
     StatusFlags,
-    #[error("Unknown flags in the raw value of StatusFlags (raw={:b})", _0)]
+    #[error("Unknown flags in the raw value of StatusFlags (raw={0:b})")]
     UnknownStatusFlags,
     u16,
 
@@ -80,7 +80,7 @@ my_bitflags! {
 
 my_bitflags! {
     CapabilityFlags,
-    #[error("Unknown flags in the raw value of CapabilityFlags (raw={:b})", _0)]
+    #[error("Unknown flags in the raw value of CapabilityFlags (raw={0:b})")]
     UnknownCapabilityFlags,
     u32,
 
@@ -362,7 +362,7 @@ my_bitflags! {
 
 my_bitflags! {
     CursorType,
-    #[error("Unknown flags in the raw value of CursorType (raw={:b})", _0)]
+    #[error("Unknown flags in the raw value of CursorType (raw={0:b})")]
     UnknownCursorType,
     u8,
 
@@ -378,7 +378,7 @@ my_bitflags! {
 
 my_bitflags! {
     StmtExecuteParamsFlags,
-    #[error("Unknown flags in the raw value of StmtExecuteParamsFlags (raw={:b})", _0)]
+    #[error("Unknown flags in the raw value of StmtExecuteParamsFlags (raw={0:b})")]
     UnknownStmtExecuteParamsFlags,
     u8,
 
@@ -391,7 +391,7 @@ my_bitflags! {
 
 my_bitflags! {
     StmtExecuteParamFlags,
-    #[error("Unknown flags in the raw value of StmtExecuteParamFlags (raw={:b})", _0)]
+    #[error("Unknown flags in the raw value of StmtExecuteParamFlags (raw={0:b})")]
     UnknownStmtExecuteParamFlags,
     u8,
 
@@ -404,7 +404,7 @@ my_bitflags! {
 
 my_bitflags! {
     ColumnFlags,
-    #[error("Unknown flags in the raw value of ColumnFlags (raw={:b})", _0)]
+    #[error("Unknown flags in the raw value of ColumnFlags (raw={0:b})")]
     UnknownColumnFlags,
     u16,
 
@@ -729,7 +729,7 @@ impl From<ColumnType> for u8 {
 
 my_bitflags! {
     Flags2,
-    #[error("Unknown flags in the raw value of Flags2 (raw={:b})", _0)]
+    #[error("Unknown flags in the raw value of Flags2 (raw={0:b})")]
     UnknownFlags2,
     u32,
 
@@ -745,7 +745,7 @@ my_bitflags! {
 
 my_bitflags! {
     SqlMode,
-    #[error("Unknown flags in the raw value of SqlMode (raw={:b})", _0)]
+    #[error("Unknown flags in the raw value of SqlMode (raw={0:b})")]
     UnknownSqlMode,
     u64,
 
