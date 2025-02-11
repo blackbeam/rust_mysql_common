@@ -43,7 +43,6 @@ chrono = { version = "0.4.20", default-features = false, features = [
 crc32fast = "1.2"
 flate2 = { version = "1.0", default-features = false }
 frunk = { version = "0.4", optional = true }
-lazy_static = "1"
 num-bigint = { version = "0.4" }
 num-traits = { version = "0.2", features = ["i128"] }
 rand = "0.8"
