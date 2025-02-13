@@ -16,7 +16,7 @@ use std::{
     convert::{TryFrom, TryInto},
     rc::Rc,
     str::from_utf8,
-    sync::Arc,
+    sync::{Arc, LazyLock},
     time::Duration,
 };
 
@@ -29,19 +29,23 @@ pub mod decimal;
 pub mod time;
 pub mod uuid;
 
-lazy_static::lazy_static! {
-    static ref DATETIME_RE_YMD: Regex = Regex::new(r"^\d{4}-\d{2}-\d{2}$").unwrap();
-    static ref DATETIME_RE_YMD_HMS: Regex =
-        Regex::new(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$").unwrap();
-    static ref DATETIME_RE_YMD_HMS_NS: Regex =
-        Regex::new(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{1,6}$").unwrap();
-    static ref TIME_RE_HH_MM_SS: Regex = Regex::new(r"^\d{2}:[0-5]\d:[0-5]\d$").unwrap();
-    static ref TIME_RE_HH_MM_SS_MS: Regex =
-        Regex::new(r"^\d{2}:[0-5]\d:[0-5]\d\.\d{1,6}$").unwrap();
-    static ref TIME_RE_HHH_MM_SS: Regex = Regex::new(r"^[0-8]\d\d:[0-5]\d:[0-5]\d$").unwrap();
-    static ref TIME_RE_HHH_MM_SS_MS: Regex =
-        Regex::new(r"^[0-8]\d\d:[0-5]\d:[0-5]\d\.\d{1,6}$").unwrap();
-}
+#[cfg(feature = "chrono")]
+static DATETIME_RE_YMD: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^\d{4}-\d{2}-\d{2}$").unwrap());
+#[cfg(feature = "chrono")]
+static DATETIME_RE_YMD_HMS: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$").unwrap());
+#[cfg(feature = "chrono")]
+static DATETIME_RE_YMD_HMS_NS: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{1,6}$").unwrap());
+static TIME_RE_HH_MM_SS: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^\d{2}:[0-5]\d:[0-5]\d$").unwrap());
+static TIME_RE_HH_MM_SS_MS: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^\d{2}:[0-5]\d:[0-5]\d\.\d{1,6}$").unwrap());
+static TIME_RE_HHH_MM_SS: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^[0-8]\d\d:[0-5]\d:[0-5]\d$").unwrap());
+static TIME_RE_HHH_MM_SS_MS: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^[0-8]\d\d:[0-5]\d:[0-5]\d\.\d{1,6}$").unwrap());
 
 /// Returns (year, month, day, hour, minute, second, micros)
 #[cfg(feature = "chrono")]

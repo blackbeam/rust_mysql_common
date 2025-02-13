@@ -12,7 +12,7 @@ use regex::bytes::Regex;
 use uuid::Uuid;
 
 use std::str::FromStr;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 use std::{
     borrow::Cow, cmp::max, collections::HashMap, convert::TryFrom, fmt, io, marker::PhantomData,
 };
@@ -43,11 +43,10 @@ use crate::{
 
 use self::session_state_change::SessionStateChange;
 
-lazy_static::lazy_static! {
-    static ref MARIADB_VERSION_RE: Regex =
-        Regex::new(r"^(?:5.5.5-)?(\d{1,2})\.(\d{1,2})\.(\d{1,3})-MariaDB").unwrap();
-    static ref VERSION_RE: Regex = Regex::new(r"^(\d{1,2})\.(\d{1,2})\.(\d{1,3})(.*)").unwrap();
-}
+static MARIADB_VERSION_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^(?:5.5.5-)?(\d{1,2})\.(\d{1,2})\.(\d{1,3})-MariaDB").unwrap());
+static VERSION_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^(\d{1,2})\.(\d{1,2})\.(\d{1,3})(.*)").unwrap());
 
 macro_rules! define_header {
     ($name:ident, $err:ident($msg:literal), $val:literal) => {

@@ -25,101 +25,109 @@ use crate::value::Value;
 
 use super::{parse_mysql_time_string, FromValue, FromValueError, ParseIr};
 
-lazy_static::lazy_static! {
-    static ref FULL_YEAR: modifier::Year = {
-        let mut year_modifier = modifier::Year::default();
-        year_modifier.padding = modifier::Padding::Zero;
-        year_modifier.repr = modifier::YearRepr::Full;
-        year_modifier.iso_week_based = false;
-        year_modifier.sign_is_mandatory = false;
+static FULL_YEAR: modifier::Year = {
+    let mut year_modifier = modifier::Year::default();
+    year_modifier.padding = modifier::Padding::Zero;
+    year_modifier.repr = modifier::YearRepr::Full;
+    year_modifier.iso_week_based = false;
+    year_modifier.sign_is_mandatory = false;
 
-        year_modifier
-    };
+    year_modifier
+};
 
-    static ref ZERO_PADDED_MONTH: modifier::Month = {
-        let mut month_modifier = modifier::Month::default();
-        month_modifier.padding = modifier::Padding::Zero;
-        month_modifier.repr = modifier::MonthRepr::Numerical;
-        month_modifier.case_sensitive = true;
+static ZERO_PADDED_MONTH: modifier::Month = {
+    let mut month_modifier = modifier::Month::default();
+    month_modifier.padding = modifier::Padding::Zero;
+    month_modifier.repr = modifier::MonthRepr::Numerical;
+    month_modifier.case_sensitive = true;
 
-        month_modifier
-    };
+    month_modifier
+};
 
-    static ref ZERO_PADDED_DAY: modifier::Day = {
-        let mut day_modifier = modifier::Day::default();
-        day_modifier.padding = modifier::Padding::Zero;
+static ZERO_PADDED_DAY: modifier::Day = {
+    let mut day_modifier = modifier::Day::default();
+    day_modifier.padding = modifier::Padding::Zero;
 
-        day_modifier
-    };
+    day_modifier
+};
 
-    static ref ZERO_PADDED_HOUR: modifier::Hour = {
-        let mut hour_modifier = modifier::Hour::default();
-        hour_modifier.padding = modifier::Padding::Zero;
-        hour_modifier.is_12_hour_clock = false;
+static ZERO_PADDED_HOUR: modifier::Hour = {
+    let mut hour_modifier = modifier::Hour::default();
+    hour_modifier.padding = modifier::Padding::Zero;
+    hour_modifier.is_12_hour_clock = false;
 
-        hour_modifier
-    };
+    hour_modifier
+};
 
-    static ref ZERO_PADDED_MINUTE: modifier::Minute = {
-        let mut minute_modifier = modifier::Minute::default();
-        minute_modifier.padding = modifier::Padding::Zero;
+static ZERO_PADDED_MINUTE: modifier::Minute = {
+    let mut minute_modifier = modifier::Minute::default();
+    minute_modifier.padding = modifier::Padding::Zero;
 
-        minute_modifier
-    };
+    minute_modifier
+};
 
-    static ref ZERO_PADDED_SECOND: modifier::Second = {
-        let mut second_modifier = modifier::Second::default();
-        second_modifier.padding = modifier::Padding::Zero;
+static ZERO_PADDED_SECOND: modifier::Second = {
+    let mut second_modifier = modifier::Second::default();
+    second_modifier.padding = modifier::Padding::Zero;
 
-        second_modifier
-    };
+    second_modifier
+};
 
-    static ref DATE_FORMAT: Vec<FormatItem<'static>> = {
-        vec![
-            FormatItem::Component(Component::Year(*FULL_YEAR)),
-            FormatItem::Literal(b"-"),
-            FormatItem::Component(Component::Month(*ZERO_PADDED_MONTH)),
-            FormatItem::Literal(b"-"),
-            FormatItem::Component(Component::Day(*ZERO_PADDED_DAY)),
-        ]
-    };
+static DATE_FORMAT: &[FormatItem<'static>] = &[
+    FormatItem::Component(Component::Year(FULL_YEAR)),
+    FormatItem::Literal(b"-"),
+    FormatItem::Component(Component::Month(ZERO_PADDED_MONTH)),
+    FormatItem::Literal(b"-"),
+    FormatItem::Component(Component::Day(ZERO_PADDED_DAY)),
+];
 
-    static ref TIME_FORMAT: Vec<FormatItem<'static>> = {
-        vec![
-            FormatItem::Component(Component::Hour(*ZERO_PADDED_HOUR)),
-            FormatItem::Literal(b":"),
-            FormatItem::Component(Component::Minute(*ZERO_PADDED_MINUTE)),
-            FormatItem::Literal(b":"),
-            FormatItem::Component(Component::Second(*ZERO_PADDED_SECOND)),
-        ]
-    };
+static TIME_FORMAT: &[FormatItem<'static>] = &[
+    FormatItem::Component(Component::Hour(ZERO_PADDED_HOUR)),
+    FormatItem::Literal(b":"),
+    FormatItem::Component(Component::Minute(ZERO_PADDED_MINUTE)),
+    FormatItem::Literal(b":"),
+    FormatItem::Component(Component::Second(ZERO_PADDED_SECOND)),
+];
 
-    static ref TIME_FORMAT_MICRO: Vec<FormatItem<'static>> = {
-        vec![
-            FormatItem::Component(Component::Hour(*ZERO_PADDED_HOUR)),
-            FormatItem::Literal(b":"),
-            FormatItem::Component(Component::Minute(*ZERO_PADDED_MINUTE)),
-            FormatItem::Literal(b":"),
-            FormatItem::Component(Component::Second(*ZERO_PADDED_SECOND)),
-            FormatItem::Literal(b"."),
-            FormatItem::Component(Component::Subsecond(Subsecond::default())),
-        ]
-    };
+static TIME_FORMAT_MICRO: &[FormatItem<'static>] = &[
+    FormatItem::Component(Component::Hour(ZERO_PADDED_HOUR)),
+    FormatItem::Literal(b":"),
+    FormatItem::Component(Component::Minute(ZERO_PADDED_MINUTE)),
+    FormatItem::Literal(b":"),
+    FormatItem::Component(Component::Second(ZERO_PADDED_SECOND)),
+    FormatItem::Literal(b"."),
+    FormatItem::Component(Component::Subsecond(Subsecond::default())),
+];
 
-    static ref DATE_TIME_FORMAT: Vec<FormatItem<'static>> = {
-        let mut format = DATE_FORMAT.clone();
-        format.push(FormatItem::Literal(b" "));
-        format.extend_from_slice(&TIME_FORMAT);
-        format
-    };
+static DATE_TIME_FORMAT: &[FormatItem<'static>] = &[
+    FormatItem::Component(Component::Year(FULL_YEAR)),
+    FormatItem::Literal(b"-"),
+    FormatItem::Component(Component::Month(ZERO_PADDED_MONTH)),
+    FormatItem::Literal(b"-"),
+    FormatItem::Component(Component::Day(ZERO_PADDED_DAY)),
+    FormatItem::Literal(b" "),
+    FormatItem::Component(Component::Hour(ZERO_PADDED_HOUR)),
+    FormatItem::Literal(b":"),
+    FormatItem::Component(Component::Minute(ZERO_PADDED_MINUTE)),
+    FormatItem::Literal(b":"),
+    FormatItem::Component(Component::Second(ZERO_PADDED_SECOND)),
+];
 
-    static ref DATE_TIME_FORMAT_MICRO: Vec<FormatItem<'static>> = {
-        let mut format = DATE_FORMAT.clone();
-        format.push(FormatItem::Literal(b" "));
-        format.extend_from_slice(&TIME_FORMAT_MICRO);
-        format
-    };
-}
+static DATE_TIME_FORMAT_MICRO: &[FormatItem<'static>] = &[
+    FormatItem::Component(Component::Year(FULL_YEAR)),
+    FormatItem::Literal(b"-"),
+    FormatItem::Component(Component::Month(ZERO_PADDED_MONTH)),
+    FormatItem::Literal(b"-"),
+    FormatItem::Component(Component::Day(ZERO_PADDED_DAY)),
+    FormatItem::Literal(b" "),
+    FormatItem::Component(Component::Hour(ZERO_PADDED_HOUR)),
+    FormatItem::Literal(b":"),
+    FormatItem::Component(Component::Minute(ZERO_PADDED_MINUTE)),
+    FormatItem::Literal(b":"),
+    FormatItem::Component(Component::Second(ZERO_PADDED_SECOND)),
+    FormatItem::Literal(b"."),
+    FormatItem::Component(Component::Subsecond(Subsecond::default())),
+];
 
 #[cfg_attr(docsrs, doc(cfg(feature = "time")))]
 impl TryFrom<Value> for ParseIr<PrimitiveDateTime> {
@@ -180,7 +188,7 @@ impl TryFrom<Value> for ParseIr<Date> {
             Value::Bytes(ref bytes) => {
                 match from_utf8(bytes)
                     .ok()
-                    .and_then(|s| Date::parse(s, &*DATE_FORMAT).ok())
+                    .and_then(|s| Date::parse(s, DATE_FORMAT).ok())
                 {
                     Some(x) => Ok(ParseIr(x, v)),
                     None => Err(FromValueError(v)),
@@ -278,11 +286,11 @@ pub(crate) fn parse_mysql_datetime_string_with_time(
         .map_err(|_| Parse::TryFromParsed(TryFromParsed::InsufficientInformation))
         .and_then(|s| {
             if s.len() > 19 {
-                PrimitiveDateTime::parse(s, &*DATE_TIME_FORMAT_MICRO)
+                PrimitiveDateTime::parse(s, DATE_TIME_FORMAT_MICRO)
             } else if s.len() == 19 {
-                PrimitiveDateTime::parse(&s[..19], &*DATE_TIME_FORMAT)
+                PrimitiveDateTime::parse(&s[..19], DATE_TIME_FORMAT)
             } else if s.len() >= 10 {
-                PrimitiveDateTime::parse(s, &*DATE_FORMAT)
+                PrimitiveDateTime::parse(s, DATE_FORMAT)
             } else {
                 Err(Parse::TryFromParsed(TryFromParsed::InsufficientInformation))
             }
@@ -294,8 +302,8 @@ fn parse_mysql_time_string_with_time(bytes: &[u8]) -> Result<Time, Parse> {
         .map_err(|_| Parse::TryFromParsed(TryFromParsed::InsufficientInformation))
         .and_then(|s| match s.len().cmp(&8) {
             Ordering::Less => Err(Parse::TryFromParsed(TryFromParsed::InsufficientInformation)),
-            Ordering::Equal => Time::parse(s, &*TIME_FORMAT),
-            Ordering::Greater => Time::parse(s, &*TIME_FORMAT_MICRO),
+            Ordering::Equal => Time::parse(s, TIME_FORMAT),
+            Ordering::Greater => Time::parse(s, TIME_FORMAT_MICRO),
         })
 }
 
