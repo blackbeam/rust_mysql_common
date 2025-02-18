@@ -14,6 +14,6 @@ pub mod rsa;
 /// It will use OAEP padding, so MySql versions prior to 8.0.5 are not supported.
 pub fn encrypt(pass: &[u8], key: &[u8]) -> Vec<u8> {
     let pub_key = self::rsa::PublicKey::from_pem(key);
-    let pad = self::rsa::Pkcs1OaepPadding::new(self::rsa::OsRng);
+    let pad = self::rsa::Pkcs1OaepPadding::new(self::rsa::GetRandom);
     pub_key.encrypt_block(pass, pad)
 }

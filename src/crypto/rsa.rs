@@ -17,15 +17,18 @@ pub trait Padding {
     fn pub_pad(&mut self, input: impl AsRef<[u8]>, k: usize) -> Vec<u8>;
 }
 
-pub trait FillBytes {
-    type Error: std::fmt::Debug + std::fmt::Display;
+/// Represents a source of random bytes.
+pub trait Rng {
+    type Error: std::error::Error;
 
+    /// Implementor must fill all the bytes in the `dest`.
     fn fill(&mut self, dest: &mut [u8]) -> Result<(), Self::Error>;
 }
 
-pub struct OsRng;
+/// Randomness source based on the [`getrandom::fill`].
+pub struct GetRandom;
 
-impl FillBytes for OsRng {
+impl Rng for GetRandom {
     type Error = getrandom::Error;
 
     fn fill(&mut self, dest: &mut [u8]) -> Result<(), Self::Error> {
@@ -45,7 +48,7 @@ impl<T> Pkcs1Padding<T> {
     }
 }
 
-impl<T: FillBytes> Padding for Pkcs1Padding<T> {
+impl<T: Rng> Padding for Pkcs1Padding<T> {
     fn pub_pad(&mut self, input: impl AsRef<[u8]>, k: usize) -> Vec<u8> {
         let input = input.as_ref();
         let input_len = input.len();
@@ -117,7 +120,7 @@ impl<T> Pkcs1OaepPadding<T> {
     }
 }
 
-impl<T: FillBytes> Padding for Pkcs1OaepPadding<T> {
+impl<T: Rng> Padding for Pkcs1OaepPadding<T> {
     /// Will pad input according to PKCS #1 v2 with encoding parameters equal to `[]`.
     fn pub_pad(&mut self, input: impl AsRef<[u8]>, k: usize) -> Vec<u8> {
         let input = input.as_ref();
@@ -231,7 +234,7 @@ mod tests {
 
     struct Seed<'a>(&'a [u8]);
 
-    impl<'a> FillBytes for Seed<'a> {
+    impl<'a> Rng for Seed<'a> {
         type Error = std::io::Error;
 
         fn fill(&mut self, dest: &mut [u8]) -> Result<(), std::io::Error> {
