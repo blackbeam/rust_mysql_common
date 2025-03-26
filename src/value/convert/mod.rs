@@ -28,6 +28,7 @@ pub mod chrono;
 pub mod decimal;
 pub mod time;
 pub mod uuid;
+pub mod unic_langid;
 
 #[cfg(feature = "chrono")]
 static DATETIME_RE_YMD: LazyLock<Regex> =
