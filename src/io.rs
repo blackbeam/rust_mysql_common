@@ -150,7 +150,7 @@ impl<'a> ParseBuf<'a> {
     {
         match T::SIZE {
             Some(size) => {
-                let mut buf: ParseBuf = self.parse_unchecked(size)?;
+                let mut buf: ParseBuf<'_> = self.parse_unchecked(size)?;
                 buf.parse_unchecked(ctx)
             }
             None => self.parse_unchecked(ctx),

@@ -251,7 +251,7 @@ impl<'de> MyDeserialize<'de> for GtidEvent {
     type Ctx = BinlogCtx<'de>;
 
     fn deserialize(_ctx: Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
-        let mut sbuf: ParseBuf = buf.parse(1 + Self::ENCODED_SID_LENGTH + 8)?;
+        let mut sbuf: ParseBuf<'_>= buf.parse(1 + Self::ENCODED_SID_LENGTH + 8)?;
         let flags = sbuf.parse_unchecked(())?;
         let sid: [u8; Self::ENCODED_SID_LENGTH] = sbuf.parse_unchecked(())?;
         let gno = sbuf.parse_unchecked(())?;
@@ -270,7 +270,7 @@ impl<'de> MyDeserialize<'de> for GtidEvent {
         if !buf.is_empty() && buf.0[0] == Self::LOGICAL_TIMESTAMP_TYPECODE {
             lc_typecode = Some(buf.parse_unchecked(())?);
 
-            let mut sbuf: ParseBuf = buf.parse(16)?;
+            let mut sbuf: ParseBuf<'_>= buf.parse(16)?;
             last_committed = sbuf.parse_unchecked(())?;
             sequence_number = sbuf.parse_unchecked(())?;
 

@@ -106,7 +106,7 @@ impl IntRepr for i8 {
 }
 
 macro_rules! def_end_repr {
-    ($( $(#[$m:meta])* $name:ident, $t:ty, $size:expr, $ser:ident, $de:ident; )+) => {
+    ($( $(#[$m:meta])* $name:ident, $t:ty, $size:expr_2021, $ser:ident, $de:ident; )+) => {
         $(
             $(#[$m])*
             ///
@@ -130,7 +130,7 @@ macro_rules! def_end_repr {
             }
         )+
     };
-    ($( $(#[$m:meta])* checked $name:ident, $t:ty, $size:expr, $ser:ident, $de:ident; )+) => {
+    ($( $(#[$m:meta])* checked $name:ident, $t:ty, $size:expr_2021, $ser:ident, $de:ident; )+) => {
         $(
             $(#[$m])*
             #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]

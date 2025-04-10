@@ -23,7 +23,7 @@ impl From<io::Error> for PacketCodecError {
 }
 
 impl fmt::Display for PacketCodecError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             PacketCodecError::Io(io_err) => f.write_fmt(format_args!("IO error: `{}'", io_err)),
             PacketCodecError::PacketTooLarge => {

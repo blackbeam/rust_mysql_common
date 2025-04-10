@@ -104,7 +104,7 @@ impl<'de> MyDeserialize<'de> for JsonDiff<'de> {
         let path = buf.parse(())?;
         let value = if *operation != JsonDiffOperation::REMOVE {
             let len: RawInt<LenEnc> = buf.parse(())?;
-            let mut value: ParseBuf = buf.parse(*len as usize)?;
+            let mut value: ParseBuf<'_> = buf.parse(*len as usize)?;
             Some(value.parse(())?)
         } else {
             None

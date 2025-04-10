@@ -259,7 +259,7 @@ impl<'de> MyDeserialize<'de> for ExecuteLoadQueryEvent<'de> {
     type Ctx = BinlogCtx<'de>;
 
     fn deserialize(_: Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
-        let mut sbuf: ParseBuf = buf.parse(26)?;
+        let mut sbuf: ParseBuf<'_>= buf.parse(26)?;
 
         let thread_id = sbuf.parse_unchecked(())?;
         let execution_time = sbuf.parse_unchecked(())?;

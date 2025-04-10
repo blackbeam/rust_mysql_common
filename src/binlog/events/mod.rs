@@ -284,7 +284,7 @@ impl Event {
             USER_VAR_EVENT => EventData::UserVarEvent(self.read_event()?),
             FORMAT_DESCRIPTION_EVENT => {
                 let fde = self
-                    .read_event::<FormatDescriptionEvent>()?
+                    .read_event::<FormatDescriptionEvent<'_>>()?
                     .with_footer(self.footer);
                 EventData::FormatDescriptionEvent(fde)
             }
@@ -456,7 +456,7 @@ impl<'de> MyDeserialize<'de> for BinlogEventHeader {
     type Ctx = ();
 
     fn deserialize((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
-        let mut buf: ParseBuf = buf.parse_unchecked(Self::LEN)?;
+        let mut buf: ParseBuf<'_> = buf.parse_unchecked(Self::LEN)?;
         Ok(Self {
             timestamp: buf.parse_unchecked(())?,
             event_type: buf.parse_unchecked(())?,

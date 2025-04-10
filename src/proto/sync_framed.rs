@@ -24,7 +24,7 @@ use std::{
 
 // stolen from futures-rs
 macro_rules! with_interrupt {
-    ($e:expr) => {
+    ($e:expr_2021) => {
         loop {
             match $e {
                 Ok(x) => {

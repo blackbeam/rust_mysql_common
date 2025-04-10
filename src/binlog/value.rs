@@ -167,7 +167,7 @@ impl<'de> MyDeserialize<'de> for BinlogValue<'de> {
             }
             MYSQL_TYPE_JSON => {
                 length = *buf.parse::<RawInt<LeU32>>(())? as usize;
-                let mut json_value_buf: ParseBuf = buf.parse(length)?;
+                let mut json_value_buf: ParseBuf<'_>= buf.parse(length)?;
                 if is_partial {
                     let mut diffs = Vec::new();
                     while !json_value_buf.is_empty() {

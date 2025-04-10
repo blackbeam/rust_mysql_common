@@ -90,7 +90,7 @@ impl TransactionPayloadInner<'_> {
     fn has_data_left(&mut self) -> io::Result<bool> {
         match self {
             TransactionPayloadInner::Uncompressed(x) => Ok(!x.is_empty()),
-            TransactionPayloadInner::ZstdCompressed(ref mut x) => {
+            TransactionPayloadInner::ZstdCompressed(x) => {
                 x.fill_buf().map(|b| !b.is_empty())
             }
         }
@@ -100,15 +100,15 @@ impl TransactionPayloadInner<'_> {
 impl io::BufRead for TransactionPayloadInner<'_> {
     fn fill_buf(&mut self) -> io::Result<&[u8]> {
         match self {
-            TransactionPayloadInner::Uncompressed(ref mut x) => x.fill_buf(),
-            TransactionPayloadInner::ZstdCompressed(ref mut x) => x.fill_buf(),
+            TransactionPayloadInner::Uncompressed(x) => x.fill_buf(),
+            TransactionPayloadInner::ZstdCompressed(x) => x.fill_buf(),
         }
     }
 
     fn consume(&mut self, amt: usize) {
         match self {
-            TransactionPayloadInner::Uncompressed(ref mut x) => x.consume(amt),
-            TransactionPayloadInner::ZstdCompressed(ref mut x) => x.consume(amt),
+            TransactionPayloadInner::Uncompressed(x) => x.consume(amt),
+            TransactionPayloadInner::ZstdCompressed(x) => x.consume(amt),
         }
     }
 }
@@ -116,8 +116,8 @@ impl io::BufRead for TransactionPayloadInner<'_> {
 impl io::Read for TransactionPayloadInner<'_> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         match self {
-            TransactionPayloadInner::Uncompressed(ref mut x) => x.read(buf),
-            TransactionPayloadInner::ZstdCompressed(ref mut x) => x.read(buf),
+            TransactionPayloadInner::Uncompressed(x) => x.read(buf),
+            TransactionPayloadInner::ZstdCompressed(x) => x.read(buf),
         }
     }
 }
@@ -292,7 +292,7 @@ impl<'de> MyDeserialize<'de> for TransactionPayloadEvent<'de> {
                         ))?;
                     }
                     ob.header_size = original_buf_size - ob.payload_size.0 as usize;
-                    let mut payload_buf: ParseBuf = buf.parse(ob.payload_size.0 as usize)?;
+                    let mut payload_buf: ParseBuf<'_>= buf.parse(ob.payload_size.0 as usize)?;
                     ob.payload = RawBytes::from(payload_buf.eat_all());
                     break;
                 }

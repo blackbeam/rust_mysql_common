@@ -307,7 +307,7 @@ impl Value {
                 Ok(Value::NULL)
             }
             _ => {
-                let bytes: RawBytes<LenEnc> = buf.parse(())?;
+                let bytes: RawBytes<'_, LenEnc> = buf.parse(())?;
                 Ok(Value::Bytes(bytes.0.into_owned()))
             }
         }

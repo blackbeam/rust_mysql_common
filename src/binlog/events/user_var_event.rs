@@ -125,7 +125,7 @@ impl<'de> MyDeserialize<'de> for UserVarEvent<'de> {
             });
         }
 
-        let mut sbuf: ParseBuf = buf.parse(5)?;
+        let mut sbuf: ParseBuf<'_>= buf.parse(5)?;
         let value_type = sbuf.parse_unchecked(())?;
         let charset = sbuf.parse_unchecked(())?;
 

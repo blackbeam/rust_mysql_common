@@ -97,13 +97,13 @@ impl BinlogRow {
     /// by `Row::take` method.
     ///
     /// Non panicking version of `row[usize]`.
-    pub fn as_ref(&self, index: usize) -> Option<&BinlogValue> {
+    pub fn as_ref(&self, index: usize) -> Option<&BinlogValue<'_>> {
         self.values.get(index).and_then(|x| x.as_ref())
     }
 
     /// Will take value of a column with index `index` if it exists and wasn't taken earlier then
     /// will converts it to `T`.
-    pub fn take(&mut self, index: usize) -> Option<BinlogValue> {
+    pub fn take(&mut self, index: usize) -> Option<BinlogValue<'_>> {
         self.values.get_mut(index).and_then(|x| x.take())
     }
 
@@ -259,7 +259,7 @@ impl<'de> MyDeserialize<'de> for BinlogRow {
                     values.push(Some(BinlogValue::Value(Value::NULL)));
                 } else {
                     let ctx = (column_type, column_meta, is_unsigned, is_partial);
-                    values.push(Some(buf.parse::<BinlogValue>(ctx)?.into_owned()));
+                    values.push(Some(buf.parse::<BinlogValue<'_>>(ctx)?.into_owned()));
                 }
 
                 image_idx += 1;

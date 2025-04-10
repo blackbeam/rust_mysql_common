@@ -74,7 +74,7 @@ macro_rules! define_const {
 }
 
 macro_rules! define_const_bytes {
-    ($vname:ident, $name:ident, $err:ident($msg:literal), $val:expr, $len:literal) => {
+    ($vname:ident, $name:ident, $err:ident($msg:literal), $val:expr_2021, $len:literal) => {
         #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, thiserror::Error)]
         #[error($msg)]
         pub struct $err;
@@ -232,8 +232,8 @@ impl<'de> MyDeserialize<'de> for Column {
 
     fn deserialize((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
         let catalog = buf.parse(())?;
-        let meta = Arc::new(buf.parse::<ColumnMeta>(())?.into_owned());
-        let mut buf: ParseBuf = buf.parse(13)?;
+        let meta = Arc::new(buf.parse::<ColumnMeta<'_>>(())?.into_owned());
+        let mut buf: ParseBuf<'_> = buf.parse(13)?;
 
         Ok(Column {
             catalog,
@@ -513,7 +513,7 @@ impl OkPacketKind for ResultSetTerminator {
         buf.parse::<RawInt<LenEnc>>(())?;
 
         // assume CLIENT_PROTOCOL_41 flag
-        let mut sbuf: ParseBuf = buf.parse(4)?;
+        let mut sbuf: ParseBuf<'_> = buf.parse(4)?;
         let status_flags: Const<StatusFlags, LeU16> = sbuf.parse_unchecked(())?;
         let warnings = sbuf.parse_unchecked(())?;
 
@@ -560,7 +560,7 @@ impl OkPacketKind for OldEofPacket {
         buf: &mut ParseBuf<'de>,
     ) -> io::Result<OkPacketBody<'de>> {
         // We assume that CLIENT_PROTOCOL_41 was set
-        let mut buf: ParseBuf = buf.parse(4)?;
+        let mut buf: ParseBuf<'_> = buf.parse(4)?;
         let warnings = buf.parse_unchecked(())?;
         let status_flags = buf.parse_unchecked(())?;
 
@@ -605,7 +605,7 @@ impl OkPacketKind for CommonOkPacket {
         let last_insert_id = buf.parse(())?;
 
         // We assume that CLIENT_PROTOCOL_41 was set
-        let mut sbuf: ParseBuf = buf.parse(4)?;
+        let mut sbuf: ParseBuf<'_> = buf.parse(4)?;
         let status_flags: Const<StatusFlags, LeU16> = sbuf.parse_unchecked(())?;
         let warnings = sbuf.parse_unchecked(())?;
 
@@ -716,7 +716,7 @@ impl OkPacket<'_> {
     }
 
     /// Value of the info field of an Ok packet as a string (lossy converted).
-    pub fn info_str(&self) -> Option<Cow<str>> {
+    pub fn info_str(&self) -> Option<Cow<'_, str>> {
         self.info.as_ref().map(|x| x.as_str())
     }
 
@@ -841,7 +841,7 @@ impl<'de> MyDeserialize<'de> for ProgressReport<'de> {
     type Ctx = ();
 
     fn deserialize((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
-        let mut sbuf: ParseBuf = buf.parse(6)?;
+        let mut sbuf: ParseBuf<'_> = buf.parse(6)?;
 
         sbuf.skip(1); // Ignore number of strings.
 
@@ -925,7 +925,7 @@ impl<'de> MyDeserialize<'de> for ErrPacket<'de> {
     type Ctx = CapabilityFlags;
 
     fn deserialize(capabilities: Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
-        let mut sbuf: ParseBuf = buf.parse(3)?;
+        let mut sbuf: ParseBuf<'_> = buf.parse(3)?;
         sbuf.parse_unchecked::<ErrPacketHeader>(())?;
         let code: RawInt<LeU16> = sbuf.parse_unchecked(())?;
 
@@ -1608,7 +1608,7 @@ impl<'de> MyDeserialize<'de> for HandshakePacket<'de> {
         let server_version = buf.parse(())?;
 
         // includes trailing 10 bytes filler
-        let mut sbuf: ParseBuf = buf.parse(31)?;
+        let mut sbuf: ParseBuf<'_> = buf.parse(31)?;
         let connection_id = sbuf.parse_unchecked(())?;
         let scramble_1 = sbuf.parse_unchecked(())?;
         let __filler = sbuf.parse_unchecked(())?;
@@ -2015,11 +2015,11 @@ fn deserialize_connect_attrs<'de>(
     buf: &mut ParseBuf<'de>,
 ) -> io::Result<HashMap<RawBytes<'de, LenEnc>, RawBytes<'de, LenEnc>>> {
     let data_len = buf.parse::<RawInt<LenEnc>>(())?;
-    let mut data: ParseBuf = buf.parse(data_len.0 as usize)?;
+    let mut data: ParseBuf<'_> = buf.parse(data_len.0 as usize)?;
     let mut attrs = HashMap::new();
     while !data.is_empty() {
-        let key = data.parse::<RawBytes<LenEnc>>(())?;
-        let value = data.parse::<RawBytes<LenEnc>>(())?;
+        let key = data.parse::<RawBytes<'_, LenEnc>>(())?;
+        let value = data.parse::<RawBytes<'_, LenEnc>>(())?;
         attrs.insert(key, value);
     }
     Ok(attrs)
@@ -2054,7 +2054,7 @@ impl<'de> MyDeserialize<'de> for ComChangeUserMoreData<'de> {
 
         if flags.contains(CapabilityFlags::CLIENT_PLUGIN_AUTH) {
             // plugin name is null-terminated here
-            match buf.parse::<RawBytes<NullBytes>>(())?.0 {
+            match buf.parse::<RawBytes<'_, NullBytes>>(())?.0 {
                 Cow::Borrowed(bytes) => {
                     let mut auth_plugin_buf = ParseBuf(bytes);
                     auth_plugin = Some(auth_plugin_buf.parse(())?);
@@ -2219,7 +2219,7 @@ impl<'de> MyDeserialize<'de> for HandshakeResponse<'de> {
     type Ctx = ();
 
     fn deserialize((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
-        let mut sbuf: ParseBuf = buf.parse(4 + 4 + 1 + 23)?;
+        let mut sbuf: ParseBuf<'_> = buf.parse(4 + 4 + 1 + 23)?;
         let client_flags: RawConst<LeU32, CapabilityFlags> = sbuf.parse_unchecked(())?;
         let max_packet_size: RawInt<LeU32> = sbuf.parse_unchecked(())?;
         let collation = sbuf.parse_unchecked(())?;
@@ -2332,7 +2332,7 @@ impl<'de> MyDeserialize<'de> for SslRequest {
     type Ctx = ();
 
     fn deserialize((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
-        let mut buf: ParseBuf = buf.parse(Self::SIZE.unwrap())?;
+        let mut buf: ParseBuf<'_> = buf.parse(Self::SIZE.unwrap())?;
         let raw_capabilities = buf.parse_unchecked::<RawConst<LeU32, CapabilityFlags>>(())?;
         Ok(Self {
             capabilities: Const::new(CapabilityFlags::from_bits_truncate(raw_capabilities.0)),
@@ -2372,7 +2372,7 @@ impl<'de> MyDeserialize<'de> for StmtPacket {
     type Ctx = ();
 
     fn deserialize((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
-        let mut buf: ParseBuf = buf.parse(Self::SIZE.unwrap())?;
+        let mut buf: ParseBuf<'_> = buf.parse(Self::SIZE.unwrap())?;
         Ok(StmtPacket {
             status: buf.parse_unchecked(())?,
             statement_id: buf.parse_unchecked(())?,
@@ -2886,7 +2886,7 @@ impl<'de> MyDeserialize<'de> for ComRegisterSlave<'de> {
     type Ctx = ();
 
     fn deserialize((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
-        let mut sbuf: ParseBuf = buf.parse(5)?;
+        let mut sbuf: ParseBuf<'_> = buf.parse(5)?;
         let header = sbuf.parse_unchecked(())?;
         let server_id = sbuf.parse_unchecked(())?;
 
@@ -2894,7 +2894,7 @@ impl<'de> MyDeserialize<'de> for ComRegisterSlave<'de> {
         let user = buf.parse(())?;
         let password = buf.parse(())?;
 
-        let mut sbuf: ParseBuf = buf.parse(10)?;
+        let mut sbuf: ParseBuf<'_> = buf.parse(10)?;
         let port = sbuf.parse_unchecked(())?;
         let replication_rank = sbuf.parse_unchecked(())?;
         let master_id = sbuf.parse_unchecked(())?;
@@ -2952,7 +2952,7 @@ impl<'a> ComTableDump<'a> {
     }
 
     /// Returns the `database` field value as a UTF-8 string (lossy converted).
-    pub fn database(&self) -> Cow<str> {
+    pub fn database(&self) -> Cow<'_, str> {
         self.database.as_str()
     }
 
@@ -2962,7 +2962,7 @@ impl<'a> ComTableDump<'a> {
     }
 
     /// Returns the `table` field value as a UTF-8 string (lossy converted).
-    pub fn table(&self) -> Cow<str> {
+    pub fn table(&self) -> Cow<'_, str> {
         self.table.as_str()
     }
 }
@@ -3080,7 +3080,7 @@ impl<'a> ComBinlogDump<'a> {
     }
 
     /// Returns the `filename` field value as a UTF-8 string (lossy converted).
-    pub fn filename(&self) -> Cow<str> {
+    pub fn filename(&self) -> Cow<'_, str> {
         self.filename.as_str()
     }
 }
@@ -3100,7 +3100,7 @@ impl<'de> MyDeserialize<'de> for ComBinlogDump<'de> {
     type Ctx = ();
 
     fn deserialize((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
-        let mut sbuf: ParseBuf = buf.parse(11)?;
+        let mut sbuf: ParseBuf<'_> = buf.parse(11)?;
         Ok(Self {
             header: sbuf.parse_unchecked(())?,
             pos: sbuf.parse_unchecked(())?,
@@ -3344,7 +3344,7 @@ impl<'a> ComBinlogDumpGtid<'a> {
     }
 
     /// Returns the `filename` field value as a UTF-8 string (lossy converted).
-    pub fn filename(&self) -> Cow<str> {
+    pub fn filename(&self) -> Cow<'_, str> {
         self.filename.as_str()
     }
 
@@ -3438,7 +3438,7 @@ impl<'de> MyDeserialize<'de> for ComBinlogDumpGtid<'de> {
     type Ctx = ();
 
     fn deserialize((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
-        let mut sbuf: ParseBuf = buf.parse(7)?;
+        let mut sbuf: ParseBuf<'_> = buf.parse(7)?;
         let header = sbuf.parse_unchecked(())?;
         let flags: Const<BinlogDumpFlags, LeU16> = sbuf.parse_unchecked(())?;
         let server_id = sbuf.parse_unchecked(())?;
@@ -3448,7 +3448,7 @@ impl<'de> MyDeserialize<'de> for ComBinlogDumpGtid<'de> {
 
         // `flags` should contain `BINLOG_THROUGH_GTID` flag if sid_block isn't empty
         let sid_data_len: RawInt<LeU32> = buf.parse(())?;
-        let mut buf: ParseBuf = buf.parse(sid_data_len.0 as usize)?;
+        let mut buf: ParseBuf<'_> = buf.parse(sid_data_len.0 as usize)?;
         let sid_block = buf.parse(())?;
 
         Ok(Self {
@@ -3526,7 +3526,7 @@ impl<'de> MyDeserialize<'de> for SemiSyncAckPacket<'de> {
     type Ctx = ();
 
     fn deserialize((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
-        let mut sbuf: ParseBuf = buf.parse(9)?;
+        let mut sbuf: ParseBuf<'_> = buf.parse(9)?;
         Ok(Self {
             header: sbuf.parse_unchecked(())?,
             position: sbuf.parse_unchecked(())?,
@@ -3848,7 +3848,7 @@ mod test {
         )
         .unwrap_err();
 
-        let ok_packet: OkPacket = OkPacketDeserializer::<CommonOkPacket>::deserialize(
+        let ok_packet: OkPacket<'_> = OkPacketDeserializer::<CommonOkPacket>::deserialize(
             CapabilityFlags::empty(),
             &mut ParseBuf(PLAIN_OK),
         )
@@ -3864,7 +3864,7 @@ mod test {
         assert_eq!(ok_packet.info_ref(), None);
         assert_eq!(ok_packet.session_state_info_ref(), None);
 
-        let ok_packet: OkPacket = OkPacketDeserializer::<CommonOkPacket>::deserialize(
+        let ok_packet: OkPacket<'_> = OkPacketDeserializer::<CommonOkPacket>::deserialize(
             CapabilityFlags::CLIENT_SESSION_TRACK,
             &mut ParseBuf(PLAIN_OK),
         )
@@ -3880,7 +3880,7 @@ mod test {
         assert_eq!(ok_packet.info_ref(), None);
         assert_eq!(ok_packet.session_state_info_ref(), None);
 
-        let ok_packet: OkPacket = OkPacketDeserializer::<ResultSetTerminator>::deserialize(
+        let ok_packet: OkPacket<'_> = OkPacketDeserializer::<ResultSetTerminator>::deserialize(
             CapabilityFlags::CLIENT_SESSION_TRACK,
             &mut ParseBuf(RESULT_SET_TERMINATOR),
         )
@@ -3898,7 +3898,7 @@ mod test {
         );
         assert_eq!(ok_packet.session_state_info_ref(), None);
 
-        let ok_packet: OkPacket = OkPacketDeserializer::<CommonOkPacket>::deserialize(
+        let ok_packet: OkPacket<'_> = OkPacketDeserializer::<CommonOkPacket>::deserialize(
             CapabilityFlags::CLIENT_SESSION_TRACK,
             &mut ParseBuf(SESS_STATE_SYS_VAR_OK),
         )
@@ -3924,7 +3924,7 @@ mod test {
             _ => panic!(),
         }
 
-        let ok_packet: OkPacket = OkPacketDeserializer::<CommonOkPacket>::deserialize(
+        let ok_packet: OkPacket<'_> = OkPacketDeserializer::<CommonOkPacket>::deserialize(
             CapabilityFlags::CLIENT_SESSION_TRACK,
             &mut ParseBuf(SESS_STATE_SCHEMA_OK),
         )
@@ -3944,7 +3944,7 @@ mod test {
             _ => panic!(),
         }
 
-        let ok_packet: OkPacket = OkPacketDeserializer::<CommonOkPacket>::deserialize(
+        let ok_packet: OkPacket<'_> = OkPacketDeserializer::<CommonOkPacket>::deserialize(
             CapabilityFlags::CLIENT_SESSION_TRACK,
             &mut ParseBuf(SESS_STATE_TRACK_OK),
         )
@@ -3964,7 +3964,7 @@ mod test {
             SessionStateChange::IsTracked(true),
         );
 
-        let ok_packet: OkPacket = OkPacketDeserializer::<OldEofPacket>::deserialize(
+        let ok_packet: OkPacket<'_> = OkPacketDeserializer::<OldEofPacket>::deserialize(
             CapabilityFlags::CLIENT_SESSION_TRACK,
             &mut ParseBuf(EOF),
         )
@@ -4088,7 +4088,7 @@ mod test {
     #[test]
     fn parse_str_to_sid() {
         let input = "3E11FA47-71CA-11E1-9E33-C80AA9429562:23";
-        let sid = input.parse::<Sid>().unwrap();
+        let sid = input.parse::<Sid<'_>>().unwrap();
         let expected_sid = Uuid::parse_str("3E11FA47-71CA-11E1-9E33-C80AA9429562").unwrap();
         assert_eq!(sid.uuid, *expected_sid.as_bytes());
         assert_eq!(sid.intervals.len(), 1);
@@ -4096,7 +4096,7 @@ mod test {
         assert_eq!(sid.intervals[0].end.0, 24);
 
         let input = "3E11FA47-71CA-11E1-9E33-C80AA9429562:1-5:10-15";
-        let sid = input.parse::<Sid>().unwrap();
+        let sid = input.parse::<Sid<'_>>().unwrap();
         assert_eq!(sid.uuid, *expected_sid.as_bytes());
         assert_eq!(sid.intervals.len(), 2);
         assert_eq!(sid.intervals[0].start.0, 1);
@@ -4105,26 +4105,26 @@ mod test {
         assert_eq!(sid.intervals[1].end.0, 16);
 
         let input = "3E11FA47-71CA-11E1-9E33-C80AA9429562";
-        let e = input.parse::<Sid>().unwrap_err();
+        let e = input.parse::<Sid<'_>>().unwrap_err();
         assert_eq!(
             e.to_string(),
             "invalid sid format: 3E11FA47-71CA-11E1-9E33-C80AA9429562".to_string()
         );
 
         let input = "3E11FA47-71CA-11E1-9E33-C80AA9429562:1-5:10-15:20-";
-        let e = input.parse::<Sid>().unwrap_err();
+        let e = input.parse::<Sid<'_>>().unwrap_err();
         assert_eq!(e.to_string(), "invalid GnoInterval format: 3E11FA47-71CA-11E1-9E33-C80AA9429562:1-5:10-15:20-, error: cannot parse integer from empty string".to_string());
 
         let input = "3E11FA47-71CA-11E1-9E33-C80AA9429562:1-5:1aaa";
-        let e = input.parse::<Sid>().unwrap_err();
+        let e = input.parse::<Sid<'_>>().unwrap_err();
         assert_eq!(e.to_string(), "invalid GnoInterval format: 3E11FA47-71CA-11E1-9E33-C80AA9429562:1-5:1aaa, error: invalid digit found in string".to_string());
 
         let input = "3E11FA47-71CA-11E1-9E33-C80AA9429562:0-3";
-        let e = input.parse::<Sid>().unwrap_err();
+        let e = input.parse::<Sid<'_>>().unwrap_err();
         assert_eq!(e.to_string(), "Gno can't be zero".to_string());
 
         let input = "3E11FA47-71CA-11E1-9E33-C80AA9429562:4-3";
-        let e = input.parse::<Sid>().unwrap_err();
+        let e = input.parse::<Sid<'_>>().unwrap_err();
         assert_eq!(
             e.to_string(),
             "start(4) >= end(4) in GnoInterval".to_string()

@@ -138,7 +138,7 @@ macro_rules! impl_seq_repr {
                 let mut seq = Vec::with_capacity(len);
                 match T::SIZE {
                     Some(count) => {
-                        let mut buf: ParseBuf = buf.parse(count * len)?;
+                        let mut buf: ParseBuf<'_> = buf.parse(count * len)?;
                         for _ in 0..len {
                             seq.push(buf.parse(())?);
                         }

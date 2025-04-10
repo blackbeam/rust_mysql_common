@@ -77,21 +77,21 @@ fn bindgen_test_layout_decimal_t() {
         )
     );
 }
-extern "C" {
+unsafe extern "C" {
     pub fn c_string2decimal(
         from: *const ::core::ffi::c_char,
         to: *mut decimal_t,
         end: *mut *const ::core::ffi::c_char,
     ) -> ::core::ffi::c_int;
 }
-extern "C" {
+unsafe extern "C" {
     pub fn c_decimal2string(
         from: *const decimal_t,
         to: *mut ::core::ffi::c_char,
         to_len: *mut ::core::ffi::c_int,
     ) -> ::core::ffi::c_int;
 }
-extern "C" {
+unsafe extern "C" {
     pub fn c_decimal2bin(
         from: *const decimal_t,
         to: *mut uchar,
@@ -99,7 +99,7 @@ extern "C" {
         scale: ::core::ffi::c_int,
     ) -> ::core::ffi::c_int;
 }
-extern "C" {
+unsafe extern "C" {
     pub fn c_bin2decimal(
         from: *const uchar,
         to: *mut decimal_t,
@@ -108,7 +108,7 @@ extern "C" {
         keep_prec: bool,
     ) -> ::core::ffi::c_int;
 }
-extern "C" {
+unsafe extern "C" {
     pub fn c_decimal_bin_size(
         precision: ::core::ffi::c_int,
         scale: ::core::ffi::c_int,

@@ -204,11 +204,11 @@ impl EventStreamReader {
 
         if event_type == EventType::FORMAT_DESCRIPTION_EVENT as u8 {
             // we'll redefine fde with an actual one
-            let fde = event.read_event::<FormatDescriptionEvent>()?;
+            let fde = event.read_event::<FormatDescriptionEvent<'_>>()?;
             self.fde = fde.into_owned().with_footer(event.footer());
         } else if event_type == EventType::TABLE_MAP_EVENT as u8 {
             // we'll maintain known table maps
-            let tme = event.read_event::<TableMapEvent>()?;
+            let tme = event.read_event::<TableMapEvent<'_>>()?;
             self.table_map.insert(tme.table_id(), tme.into_owned());
         } else if event_type == EventType::ROTATE_EVENT as u8 {
             // we'll keep table map size within reasonlable bounds
@@ -216,7 +216,7 @@ impl EventStreamReader {
             // TODO: This value is arbitrary
             const TABLE_MAP_MAX_SIZE: usize = 64;
 
-            let re = event.read_event::<RotateEvent>()?;
+            let re = event.read_event::<RotateEvent<'_>>()?;
             if !re.is_fake() {
                 self.table_map.clear();
                 self.table_map.shrink_to(TABLE_MAP_MAX_SIZE);
@@ -862,7 +862,7 @@ mod tests {
                     /// then parses it into the structured representation and compares with
                     /// the expected value.
                     macro_rules! extract_cmp {
-                        ($row:expr, $expected:tt) => {
+                        ($row:expr_2021, $expected:tt) => {
                             let mut after = $row.1.unwrap().unwrap();
                             let a = dbg!(after.pop().unwrap());
                             let super::value::BinlogValue::Jsonb(a) = a else {

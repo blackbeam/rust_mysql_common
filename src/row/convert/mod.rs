@@ -95,7 +95,7 @@ pub trait FromRow {
 }
 
 macro_rules! take_or_place {
-    ($row:expr, $index:expr, $t:ident) => (
+    ($row:expr_2021, $index:expr_2021, $t:ident) => (
         match $row.take($index) {
             Some(value) => {
                 match $t::get_intermediate(value) {
@@ -109,7 +109,7 @@ macro_rules! take_or_place {
             None => return Err(FromRowError($row)),
         }
     );
-    ($row:expr, $index:expr, $t:ident, $( [$idx:expr, $ir:expr] ),*) => (
+    ($row:expr_2021, $index:expr_2021, $t:ident, $( [$idx:expr_2021, $ir:expr_2021] ),*) => (
         match $row.take($index) {
             Some(value) => {
                 match $t::get_intermediate(value) {

@@ -189,7 +189,7 @@ mod test {
     use super::*;
 
     macro_rules! cows {
-        ($($l:expr),+ $(,)?) => { &[$(Cow::Borrowed(&$l[..]),)*] };
+        ($($l:expr_2021),+ $(,)?) => { &[$(Cow::Borrowed(&$l[..]),)*] };
     }
 
     #[test]

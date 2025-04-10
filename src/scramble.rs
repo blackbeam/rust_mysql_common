@@ -176,6 +176,7 @@ pub fn create_response_for_ed25519(_pass: &[u8], _message: &[u8]) -> [u8; 64] {
         use curve25519_dalek::scalar::clamp_integer;
         use curve25519_dalek::{EdwardsPoint, Scalar};
         use sha2::Sha512;
+        use std::convert::TryInto;
 
         // Following reference implementation at https://github.com/mysql-net/MySqlConnector/blob/master/src/MySqlConnector.Authentication.Ed25519/Ed25519AuthenticationPlugin.cs#L35
         // with additional guidance from https://www.rfc-editor.org/rfc/rfc8032#section-5.1.5

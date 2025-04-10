@@ -204,7 +204,7 @@ impl<'de> MyDeserialize<'de> for QueryEvent<'de> {
     type Ctx = BinlogCtx<'de>;
 
     fn deserialize(ctx: Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
-        let mut sbuf: ParseBuf = buf.parse(13)?;
+        let mut sbuf: ParseBuf<'_> = buf.parse(13)?;
         let thread_id = sbuf.parse_unchecked(())?;
         let execution_time = sbuf.parse_unchecked(())?;
         let schema_len: RawInt<u8> = sbuf.parse_unchecked(())?;
@@ -324,7 +324,7 @@ pub struct StatusVar<'a> {
 
 impl StatusVar<'_> {
     /// Returns parsed value of this status variable, or raw value in case of error.
-    pub fn get_value(&self) -> Result<StatusVarVal, &[u8]> {
+    pub fn get_value(&self) -> Result<StatusVarVal<'_>, &[u8]> {
         match self.key {
             StatusVarKey::Flags2 => {
                 let mut read = self.value;
@@ -541,14 +541,14 @@ impl<'a> Iterator for StatusVarsIterator<'a> {
         self.pos += 1;
 
         macro_rules! get_fixed {
-            ($len:expr) => {{
+            ($len:expr_2021) => {{
                 self.pos += $len;
                 self.status_vars.get((self.pos - $len)..self.pos)?
             }};
         }
 
         macro_rules! get_var {
-            ($suffix_len:expr) => {{
+            ($suffix_len:expr_2021) => {{
                 let len = *self.status_vars.get(self.pos)? as usize;
                 get_fixed!(1 + len + $suffix_len)
             }};
