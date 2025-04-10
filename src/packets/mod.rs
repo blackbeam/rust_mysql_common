@@ -1190,6 +1190,9 @@ pub enum AuthPluginData<'a> {
     /// Clear password for `mysql_clear_password` plugin.
     Clear(Cow<'a, [u8]>),
     /// Auth data for MariaDB's `client_ed25519` plugin.
+    ///
+    /// This plugin is known to the library but the actual support is enabled
+    /// by the `client_ed25519` feature.
     Ed25519([u8; 64]),
 }
 
@@ -1249,6 +1252,9 @@ pub enum AuthPlugin<'a> {
     /// Default since MySql v8.0.4
     CachingSha2Password,
     /// MariaDB's Ed25519 based authentication
+    ///
+    /// This plugin is known to the library but the actual support is enabled
+    /// by the `client_ed25519` feature.
     Ed25519,
     Other(Cow<'a, [u8]>),
 }
@@ -1324,6 +1330,10 @@ impl<'a> AuthPlugin<'a> {
     /// It'll generate `None` if password is `None` or empty.
     ///
     /// Note, that you should trim terminating null character from the `nonce`.
+    ///
+    /// # Panic
+    ///
+    /// * [`AuthPlugin::Ed25519`] will panic if `client_ed25519` feature is disabled.
     pub fn gen_data<'b>(&self, pass: Option<&'b str>, nonce: &[u8]) -> Option<AuthPluginData<'b>> {
         use super::scramble::{scramble_323, scramble_native, scramble_sha256};
 

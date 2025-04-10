@@ -66,15 +66,18 @@ Also crate provides from-row convertion for the following list of types (see `Fr
 
 ### Crate features
 
-| Feature        | Description                                          | Default |
-| -------------- | ---------------------------------------------------- | ------- |
-| `bigdecimal`   | Enables `bigdecimal` >=0.3.x, <0.5.x types support   | 🔴      |
-| `chrono`       | Enables `chrono` types support                       | 🔴      |
-| `rust_decimal` | Enables `rust_decimal` types support                 | 🔴      |
-| `time`         | Enables `time` v0.3.x types support                  | 🔴      |
-| `frunk`        | Enables `FromRow` for `frunk::Hlist!` types          | 🔴      |
-| `derive`       | Enables [`FromValue` and `FromRow` derive macros][2] | 🟢      |
-| `binlog`       | Binlog-related functionality                         | 🔴      |
+| Feature          | Description                                          | Default |
+| ---------------- | ---------------------------------------------------- | ------- |
+| `bigdecimal`     | Enables `bigdecimal` >=0.3.x, <0.5.x types support   | 🔴      |
+| `chrono`         | Enables `chrono` types support                       | 🔴      |
+| `rust_decimal`   | Enables `rust_decimal` types support                 | 🔴      |
+| `time`           | Enables `time` v0.3.x types support                  | 🔴      |
+| `frunk`          | Enables `FromRow` for `frunk::Hlist!` types          | 🔴      |
+| `derive`         | Enables [`FromValue` and `FromRow` derive macros][2] | 🟢      |
+| `binlog`         | Binlog-related functionality                         | 🔴      |
+| `client_ed25519` | Enables [ed25519] authentication plugin support      | 🔴      |
+
+[ed25519]: https://mariadb.com/kb/en/authentication-plugin-ed25519/
 
 ## Derive Macros
 
