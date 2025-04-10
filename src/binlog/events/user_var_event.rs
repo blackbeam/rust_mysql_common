@@ -17,12 +17,12 @@ use saturating::Saturating as S;
 
 use crate::{
     binlog::{
-        consts::{BinlogVersion, EventType, UserVarFlags},
         BinlogCtx, BinlogEvent, BinlogStruct,
+        consts::{BinlogVersion, EventType, UserVarFlags},
     },
     constants::{ItemResult, UnknownItemResultType},
     io::ParseBuf,
-    misc::raw::{bytes::U32Bytes, int::*, RawBytes, RawConst, RawFlags},
+    misc::raw::{RawBytes, RawConst, RawFlags, bytes::U32Bytes, int::*},
     proto::{MyDeserialize, MySerialize},
 };
 
@@ -125,7 +125,7 @@ impl<'de> MyDeserialize<'de> for UserVarEvent<'de> {
             });
         }
 
-        let mut sbuf: ParseBuf<'_>= buf.parse(5)?;
+        let mut sbuf: ParseBuf<'_> = buf.parse(5)?;
         let value_type = sbuf.parse_unchecked(())?;
         let charset = sbuf.parse_unchecked(())?;
 

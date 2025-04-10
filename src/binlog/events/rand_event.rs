@@ -10,11 +10,11 @@ use std::io::{self};
 
 use crate::{
     binlog::{
-        consts::{BinlogVersion, EventType},
         BinlogCtx, BinlogEvent, BinlogStruct,
+        consts::{BinlogVersion, EventType},
     },
     io::ParseBuf,
-    misc::raw::{int::LeU64, RawInt},
+    misc::raw::{RawInt, int::LeU64},
     proto::{MyDeserialize, MySerialize},
 };
 

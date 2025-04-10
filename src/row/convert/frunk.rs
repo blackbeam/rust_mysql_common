@@ -12,16 +12,16 @@
 
 use std::sync::Arc;
 
-use frunk::{hlist::h_cons, prelude::HList};
 pub use frunk::{HCons, HNil};
+use frunk::{hlist::h_cons, prelude::HList};
 
 use super::{FromRow, FromRowError};
 use crate::{
     packets::Column,
-    row::{new_row_raw, Row},
+    row::{Row, new_row_raw},
     value::{
-        convert::{FromValue, FromValueError},
         Value,
+        convert::{FromValue, FromValueError},
     },
 };
 

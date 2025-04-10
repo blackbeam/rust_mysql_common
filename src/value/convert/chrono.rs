@@ -17,7 +17,7 @@ use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 use crate::value::Value;
 
 use super::{
-    parse_mysql_datetime_string, parse_mysql_time_string, FromValue, FromValueError, ParseIr,
+    FromValue, FromValueError, ParseIr, parse_mysql_datetime_string, parse_mysql_time_string,
 };
 
 #[cfg_attr(docsrs, doc(cfg(feature = "chrono")))]

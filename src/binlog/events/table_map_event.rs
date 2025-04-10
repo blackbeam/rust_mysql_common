@@ -14,15 +14,15 @@ use saturating::Saturating as S;
 
 use crate::{
     binlog::{
-        consts::{BinlogVersion, EventType, OptionalMetadataFieldType},
         BinlogCtx, BinlogEvent, BinlogStruct,
+        consts::{BinlogVersion, EventType, OptionalMetadataFieldType},
     },
     constants::{ColumnType, GeometryType, UnknownColumnType},
     io::{ParseBuf, ReadMysqlExt},
     misc::raw::{
+        Either, RawBytes, RawConst, RawSeq, Skip,
         bytes::{BareBytes, EofBytes, LenEnc, U8Bytes},
         int::*,
-        Either, RawBytes, RawConst, RawSeq, Skip,
     },
     proto::{MyDeserialize, MySerialize},
 };

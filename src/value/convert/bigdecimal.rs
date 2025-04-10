@@ -72,7 +72,7 @@ mod tests {
     use bigdecimal::BigDecimal;
     use proptest::prelude::*;
 
-    use crate::value::{convert::from_value, Value};
+    use crate::value::{Value, convert::from_value};
 
     proptest! {
         #[test]

@@ -21,20 +21,20 @@ use crate::collations::CollationId;
 use crate::scramble::create_response_for_ed25519;
 use crate::{
     constants::{
-        CapabilityFlags, ColumnFlags, ColumnType, Command, CursorType, SessionStateType,
-        StatusFlags, StmtExecuteParamFlags, StmtExecuteParamsFlags, MAX_PAYLOAD_LEN,
+        CapabilityFlags, ColumnFlags, ColumnType, Command, CursorType, MAX_PAYLOAD_LEN,
+        SessionStateType, StatusFlags, StmtExecuteParamFlags, StmtExecuteParamsFlags,
     },
     io::{BufMutExt, ParseBuf},
     misc::{
         lenenc_str_len,
         raw::{
-            bytes::{
-                BareBytes, ConstBytes, ConstBytesValue, EofBytes, LenEnc, NullBytes, U32Bytes,
-                U8Bytes,
-            },
-            int::{ConstU32, ConstU8, LeU16, LeU24, LeU32, LeU32LowerHalf, LeU32UpperHalf, LeU64},
-            seq::Seq,
             Const, Either, RawBytes, RawConst, RawInt, Skip,
+            bytes::{
+                BareBytes, ConstBytes, ConstBytesValue, EofBytes, LenEnc, NullBytes, U8Bytes,
+                U32Bytes,
+            },
+            int::{ConstU8, ConstU32, LeU16, LeU24, LeU32, LeU32LowerHalf, LeU32UpperHalf, LeU64},
+            seq::Seq,
         },
         unexpected_buf_eof,
     },

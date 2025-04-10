@@ -14,16 +14,16 @@ use saturating::Saturating as S;
 
 use crate::{
     binlog::{
+        BinlogCtx,
         consts::{BinlogVersion, EventType, RowsEventFlags},
         row::BinlogRow,
-        BinlogCtx,
     },
     io::ParseBuf,
     misc::{
         raw::{
+            RawBytes, RawFlags,
             bytes::{BareBytes, EofBytes},
             int::*,
-            RawBytes, RawFlags,
         },
         unexpected_buf_eof,
     },

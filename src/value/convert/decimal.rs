@@ -14,7 +14,7 @@ use rust_decimal::Decimal;
 
 use std::{
     convert::TryFrom,
-    str::{from_utf8, FromStr},
+    str::{FromStr, from_utf8},
 };
 
 use super::{FromValue, FromValueError, ParseIr, Value};

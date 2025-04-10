@@ -109,11 +109,7 @@ impl fmt::Display for MysqlTime {
 }
 
 fn trim_two_digits(value: u32) -> u32 {
-    if value >= 100 {
-        0
-    } else {
-        value
-    }
+    if value >= 100 { 0 } else { value }
 }
 
 /// Formats a time value as `HH:MM:SS[.fraction]`.

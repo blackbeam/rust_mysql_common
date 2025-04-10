@@ -12,14 +12,14 @@ use saturating::Saturating as S;
 
 use crate::{
     binlog::{
-        consts::{BinlogVersion, EventType, LoadDuplicateHandling},
         BinlogCtx, BinlogEvent, BinlogStruct,
+        consts::{BinlogVersion, EventType, LoadDuplicateHandling},
     },
     io::ParseBuf,
     misc::raw::{
+        Const, RawBytes, RawInt, Skip,
         bytes::{BareU8Bytes, EofBytes},
         int::*,
-        Const, RawBytes, RawInt, Skip,
     },
     proto::{MyDeserialize, MySerialize},
 };
@@ -259,7 +259,7 @@ impl<'de> MyDeserialize<'de> for ExecuteLoadQueryEvent<'de> {
     type Ctx = BinlogCtx<'de>;
 
     fn deserialize(_: Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
-        let mut sbuf: ParseBuf<'_>= buf.parse(26)?;
+        let mut sbuf: ParseBuf<'_> = buf.parse(26)?;
 
         let thread_id = sbuf.parse_unchecked(())?;
         let execution_time = sbuf.parse_unchecked(())?;

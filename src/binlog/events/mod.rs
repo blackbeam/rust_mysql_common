@@ -13,7 +13,7 @@ use saturating::Saturating as S;
 
 use crate::{
     io::ParseBuf,
-    misc::raw::{int::*, RawConst, RawFlags},
+    misc::raw::{RawConst, RawFlags, int::*},
     proto::{MyDeserialize, MySerialize},
 };
 
@@ -52,12 +52,12 @@ use std::{
 };
 
 use super::{
+    BinlogCtx, BinlogEvent,
     consts::{
         BinlogChecksumAlg, BinlogVersion, EventFlags, EventType, RowsEventFlags,
         UnknownChecksumAlg, UnknownEventType,
     },
     misc::LimitWrite,
-    BinlogCtx, BinlogEvent,
 };
 
 mod anonymous_gtid_event;

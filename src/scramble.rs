@@ -168,7 +168,9 @@ pub fn scramble_sha256(nonce: &[u8], password: &[u8]) -> Option<[u8; 32]> {
 pub fn create_response_for_ed25519(_pass: &[u8], _message: &[u8]) -> [u8; 64] {
     #[cfg(not(feature = "client_ed25519"))]
     {
-        panic!("Can't create response for `ed25519` authentication plugin — `mysql_common/client_ed25519` feature is disabled.")
+        panic!(
+            "Can't create response for `ed25519` authentication plugin — `mysql_common/client_ed25519` feature is disabled."
+        )
     }
 
     #[cfg(feature = "client_ed25519")]

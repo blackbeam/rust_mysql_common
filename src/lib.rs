@@ -408,11 +408,11 @@ pub use num_bigint;
 pub use serde;
 pub use serde_json;
 
-pub use value::convert::FromValueError;
 pub use value::Value;
+pub use value::convert::FromValueError;
 
-pub use row::convert::FromRowError;
 pub use row::Row;
+pub use row::convert::FromRowError;
 
 pub use value::json::{Deserialized, Serialized};
 
@@ -427,7 +427,7 @@ pub mod prelude {
     #[doc(inline)]
     pub use mysql_common_derive::FromRow;
 
-    pub use crate::row::{convert::FromRow, ColumnIndex};
+    pub use crate::row::{ColumnIndex, convert::FromRow};
     pub use crate::value::convert::{FromValue, ToValue};
 }
 
@@ -599,7 +599,7 @@ fn params_macro_should_panic_on_named_param_redefinition() {
 
 #[test]
 fn issue_88() {
-    use crate::{prelude::FromValue, Value};
+    use crate::{Value, prelude::FromValue};
     #[derive(FromValue, Debug, Eq, PartialEq)]
     #[mysql(is_integer)]
     #[repr(u8)]
@@ -618,7 +618,7 @@ fn issue_88() {
 
 #[test]
 fn from_value_is_string() {
-    use crate::{prelude::FromValue, Value};
+    use crate::{Value, prelude::FromValue};
     #[derive(FromValue, Debug, Eq, PartialEq)]
     #[mysql(is_string, rename_all = "snake_case")]
     enum SomeTypeIsString {
@@ -655,7 +655,7 @@ fn from_value_is_string() {
 
 #[test]
 fn from_value_is_integer() {
-    use crate::{prelude::FromValue, Value};
+    use crate::{Value, prelude::FromValue};
     #[derive(FromValue, Debug, Eq, PartialEq)]
     #[mysql(is_integer, rename_all = "snake_case")]
     #[repr(i8)]
@@ -685,11 +685,11 @@ fn from_value_is_integer() {
 #[cfg(test)]
 mod tests {
     use crate::{
+        FromValueError,
         constants::ColumnType,
         packets::Column,
         row::{convert::FromRow, new_row},
-        value::{convert::from_value, Value},
-        FromValueError,
+        value::{Value, convert::from_value},
     };
     use unic_langid::LanguageIdentifier;
 

@@ -9,8 +9,8 @@
 use crate::{
     row::Row,
     value::{
-        convert::{FromValue, FromValueError},
         Value,
+        convert::{FromValue, FromValueError},
     },
 };
 

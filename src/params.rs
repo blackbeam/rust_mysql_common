@@ -8,14 +8,14 @@
 
 use std::{
     collections::{
-        hash_map::{Entry, Entry::Occupied},
         HashMap,
+        hash_map::{Entry, Entry::Occupied},
     },
     error::Error,
     fmt,
 };
 
-use crate::value::{convert::ToValue, Value};
+use crate::value::{Value, convert::ToValue};
 
 /// `FromValue` conversion error.
 #[derive(Debug, Eq, PartialEq, Clone)]

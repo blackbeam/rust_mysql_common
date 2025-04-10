@@ -13,17 +13,17 @@
 use std::{cmp::Ordering, convert::TryFrom, str::from_utf8};
 
 use time::{
+    Date, PrimitiveDateTime, Time,
     error::{Parse, TryFromParsed},
     format_description::{
-        modifier::{self, Subsecond},
         Component, FormatItem,
+        modifier::{self, Subsecond},
     },
-    Date, PrimitiveDateTime, Time,
 };
 
 use crate::value::Value;
 
-use super::{parse_mysql_time_string, FromValue, FromValueError, ParseIr};
+use super::{FromValue, FromValueError, ParseIr, parse_mysql_time_string};
 
 static FULL_YEAR: modifier::Year = {
     let mut year_modifier = modifier::Year::default();
@@ -331,11 +331,7 @@ impl TryFrom<Value> for ParseIr<time::Duration> {
                             + time::Duration::minutes(minutes.into())
                             + time::Duration::seconds(seconds.into())
                             + time::Duration::microseconds(microseconds.into());
-                        if is_neg {
-                            -duration
-                        } else {
-                            duration
-                        }
+                        if is_neg { -duration } else { duration }
                     }
                     _ => return Err(FromValueError(v)),
                 };

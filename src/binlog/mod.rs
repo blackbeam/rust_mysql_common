@@ -333,9 +333,9 @@ mod tests {
     };
 
     use super::{
+        BinlogFile, BinlogFileHeader, BinlogVersion,
         consts::{EventFlags, EventType},
         events::{BinlogEventHeader, EventData, GtidEvent},
-        BinlogFile, BinlogFileHeader, BinlogVersion,
     };
 
     use crate::{

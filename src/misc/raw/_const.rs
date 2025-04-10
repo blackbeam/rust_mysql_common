@@ -18,7 +18,7 @@ use crate::{
     proto::{MyDeserialize, MySerialize},
 };
 
-use super::{int::IntRepr, RawInt};
+use super::{RawInt, int::IntRepr};
 
 /// Same as `RawConst<T, U>` but holds `U` instead of `T`, i.e. holds the parsed value.
 ///

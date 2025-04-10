@@ -10,7 +10,7 @@ use bytes::{Buf, BufMut, BytesMut};
 
 use crate::{
     constants::DEFAULT_MAX_ALLOWED_PACKET,
-    proto::codec::{error::PacketCodecError, PacketCodec},
+    proto::codec::{PacketCodec, error::PacketCodecError},
 };
 
 use std::{

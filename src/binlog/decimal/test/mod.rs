@@ -56,21 +56,13 @@ impl decimal_t {
             c_string2decimal(string.as_ptr() as *const i8, &mut to, end)
         };
         to.len = slice_end(to.as_ref(), 0x80000000_u32 as i32).len() as i32;
-        if result == 0 {
-            Ok(to)
-        } else {
-            Err(result)
-        }
+        if result == 0 { Ok(to) } else { Err(result) }
     }
 
     pub fn rust_decimal2bin(&self, to: &mut [u8]) -> Result<(), i32> {
         let result =
             unsafe { c_decimal2bin(self, to.as_mut_ptr(), self.intg + self.frac, self.frac) };
-        if result == 0 {
-            Ok(())
-        } else {
-            Err(result)
-        }
+        if result == 0 { Ok(()) } else { Err(result) }
     }
 
     pub fn rust_bin2decimal(
@@ -82,11 +74,7 @@ impl decimal_t {
         let mut to = Self::new();
         let result = unsafe { c_bin2decimal(from.as_ptr(), &mut to, precision, scale, keep_prec) };
         to.len = slice_end(to.as_ref(), 0x80000000_u32 as i32).len() as i32;
-        if result == 0 {
-            Ok(to)
-        } else {
-            Err(result)
-        }
+        if result == 0 { Ok(to) } else { Err(result) }
     }
 
     pub fn rust_decimal2string(&self, to: &mut [u8]) -> Result<usize, i32> {

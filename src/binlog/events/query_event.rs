@@ -19,16 +19,16 @@ use saturating::Saturating as S;
 
 use crate::{
     binlog::{
-        consts::{BinlogVersion, EventType, StatusVarKey},
         BinlogCtx, BinlogEvent, BinlogStruct,
+        consts::{BinlogVersion, EventType, StatusVarKey},
     },
     constants::{Flags2, SqlMode},
     io::ParseBuf,
     misc::{
         raw::{
-            bytes::{BareU16Bytes, BareU8Bytes, EofBytes, NullBytes, U8Bytes},
-            int::*,
             RawBytes, RawFlags, Skip,
+            bytes::{BareU8Bytes, BareU16Bytes, EofBytes, NullBytes, U8Bytes},
+            int::*,
         },
         unexpected_buf_eof,
     },

@@ -16,7 +16,7 @@ use crate::{
     proto::{MyDeserialize, MySerialize},
 };
 
-use super::{int::IntRepr, RawInt};
+use super::{RawInt, int::IntRepr};
 
 /// Wrapper for raw flags value.
 ///

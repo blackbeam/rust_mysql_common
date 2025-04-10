@@ -3,7 +3,7 @@ use std::{borrow::Cow, io};
 use crate::{
     constants::SessionStateType,
     io::ParseBuf,
-    misc::raw::{bytes::EofBytes, int::LenEnc, RawBytes},
+    misc::raw::{RawBytes, bytes::EofBytes, int::LenEnc},
     proto::{MyDeserialize, MySerialize},
 };
 

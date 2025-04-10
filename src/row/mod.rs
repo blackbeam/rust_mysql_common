@@ -12,8 +12,8 @@ use crate::{
     packets::{Column, NullBitmap},
     proto::{Binary, MyDeserialize, Text},
     value::{
-        convert::{from_value, from_value_opt, FromValue, FromValueError},
         BinValue, SerializationSide, TextValue, Value, ValueDeserializer,
+        convert::{FromValue, FromValueError, from_value, from_value_opt},
     },
 };
 use std::{borrow::Cow, fmt, io, marker::PhantomData, ops::Index, sync::Arc};

@@ -12,14 +12,14 @@ use std::io::{self};
 
 use crate::{
     binlog::{
-        consts::{BinlogVersion, EventType, RowsEventFlags},
         BinlogCtx, BinlogEvent, BinlogStruct,
+        consts::{BinlogVersion, EventType, RowsEventFlags},
     },
     io::ParseBuf,
     proto::{MyDeserialize, MySerialize},
 };
 
-use super::{rows_event::RowsEventCtx, RowsEvent, RowsEventRows, TableMapEvent};
+use super::{RowsEvent, RowsEventRows, TableMapEvent, rows_event::RowsEventCtx};
 
 /// Update rows event v1 (mariadb and mysql 5.1.15-5.6.x).
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]

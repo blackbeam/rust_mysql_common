@@ -10,7 +10,7 @@ use std::{borrow::Cow, convert::TryFrom, io};
 
 use crate::{
     io::ParseBuf,
-    misc::raw::{bytes::LenEnc, Const, RawBytes, RawInt},
+    misc::raw::{Const, RawBytes, RawInt, bytes::LenEnc},
     proto::MyDeserialize,
 };
 

@@ -12,8 +12,8 @@ use bytes::BufMut;
 
 use crate::{
     binlog::{
-        consts::{BinlogVersion, EventType},
         BinlogCtx, BinlogEvent, BinlogStruct,
+        consts::{BinlogVersion, EventType},
     },
     io::ParseBuf,
     misc::unexpected_buf_eof,

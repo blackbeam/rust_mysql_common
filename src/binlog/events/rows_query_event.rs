@@ -12,11 +12,11 @@ use saturating::Saturating as S;
 
 use crate::{
     binlog::{
-        consts::{BinlogVersion, EventType},
         BinlogCtx, BinlogEvent, BinlogStruct,
+        consts::{BinlogVersion, EventType},
     },
     io::ParseBuf,
-    misc::raw::{bytes::EofBytes, RawBytes, Skip},
+    misc::raw::{RawBytes, Skip, bytes::EofBytes},
     proto::{MyDeserialize, MySerialize},
 };
 

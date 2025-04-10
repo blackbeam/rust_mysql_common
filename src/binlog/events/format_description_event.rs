@@ -12,14 +12,14 @@ use saturating::Saturating as S;
 
 use crate::{
     binlog::{
-        consts::{BinlogVersion, EventType},
         BinlogCtx, BinlogEvent, BinlogStruct,
+        consts::{BinlogVersion, EventType},
     },
     io::ParseBuf,
     misc::raw::{
+        Const, RawBytes, RawInt,
         bytes::{EofBytes, FixedLengthText},
         int::{ConstU8, LeU16, LeU32},
-        Const, RawBytes, RawInt,
     },
     proto::{MyDeserialize, MySerialize},
 };
@@ -300,7 +300,7 @@ impl<'de> MyDeserialize<'de> for FormatDescriptionEvent<'de> {
     type Ctx = BinlogCtx<'de>;
 
     fn deserialize(_ctx: Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
-        let mut sbuf: ParseBuf<'_>= buf.parse(57)?;
+        let mut sbuf: ParseBuf<'_> = buf.parse(57)?;
         let binlog_version = sbuf.parse_unchecked(())?;
         let server_version = sbuf.parse_unchecked(())?;
         let create_timestamp = sbuf.parse_unchecked(())?;

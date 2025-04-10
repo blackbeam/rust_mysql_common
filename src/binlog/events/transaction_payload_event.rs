@@ -22,13 +22,13 @@ use crate::binlog::EventStreamReader;
 use super::BinlogEventHeader;
 use crate::{
     binlog::{
+        BinlogCtx, BinlogEvent, BinlogStruct,
         consts::{
             BinlogVersion, EventType, TransactionPayloadCompressionType, TransactionPayloadFields,
         },
-        BinlogCtx, BinlogEvent, BinlogStruct,
     },
     io::{BufMutExt, ParseBuf, ReadMysqlExt},
-    misc::raw::{bytes::EofBytes, int::*, RawBytes},
+    misc::raw::{RawBytes, bytes::EofBytes, int::*},
     proto::{MyDeserialize, MySerialize},
 };
 
@@ -90,9 +90,7 @@ impl TransactionPayloadInner<'_> {
     fn has_data_left(&mut self) -> io::Result<bool> {
         match self {
             TransactionPayloadInner::Uncompressed(x) => Ok(!x.is_empty()),
-            TransactionPayloadInner::ZstdCompressed(x) => {
-                x.fill_buf().map(|b| !b.is_empty())
-            }
+            TransactionPayloadInner::ZstdCompressed(x) => x.fill_buf().map(|b| !b.is_empty()),
         }
     }
 }
@@ -292,7 +290,7 @@ impl<'de> MyDeserialize<'de> for TransactionPayloadEvent<'de> {
                         ))?;
                     }
                     ob.header_size = original_buf_size - ob.payload_size.0 as usize;
-                    let mut payload_buf: ParseBuf<'_>= buf.parse(ob.payload_size.0 as usize)?;
+                    let mut payload_buf: ParseBuf<'_> = buf.parse(ob.payload_size.0 as usize)?;
                     ob.payload = RawBytes::from(payload_buf.eat_all());
                     break;
                 }

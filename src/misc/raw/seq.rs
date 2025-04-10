@@ -16,8 +16,8 @@ use crate::{
 };
 
 use super::{
-    int::{IntRepr, LeU32, LeU64},
     RawConst, RawInt,
+    int::{IntRepr, LeU32, LeU64},
 };
 
 /// Sequence of serialized values (length serialized as `U`).

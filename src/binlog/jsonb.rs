@@ -15,17 +15,17 @@ use std::{
     fmt, io,
     iter::FromIterator,
     marker::PhantomData,
-    str::{from_utf8, Utf8Error},
+    str::{Utf8Error, from_utf8},
 };
 
-use base64::{prelude::BASE64_STANDARD, Engine};
+use base64::{Engine, prelude::BASE64_STANDARD};
 use serde_json::Number;
 
 use crate::{
     constants::ColumnType,
     io::ParseBuf,
     misc::{
-        raw::{bytes::BareU16Bytes, int::*, Const, RawBytes},
+        raw::{Const, RawBytes, bytes::BareU16Bytes, int::*},
         unexpected_buf_eof,
     },
     proto::{MyDeserialize, MySerialize},
@@ -128,7 +128,7 @@ impl<'a> JsonbString<'a> {
     }
 
     pub fn into_raw(self) -> Cow<'a, [u8]> {
-        self.0 .0
+        self.0.0
     }
 }
 

@@ -21,7 +21,7 @@ use crate::{
     misc::raw::int::*,
     packets::Column,
     proto::MyDeserialize,
-    row::{new_row_raw, Row},
+    row::{Row, new_row_raw},
     value::Value,
 };
 
@@ -184,7 +184,7 @@ impl<'de> MyDeserialize<'de> for BinlogRow {
                 let column_type = match column_type {
                     Ok(Some(ty)) => ty,
                     Ok(None) => {
-                        return Err(io::Error::new(io::ErrorKind::InvalidData, "No column type"))
+                        return Err(io::Error::new(io::ErrorKind::InvalidData, "No column type"));
                     }
                     Err(e) => return Err(io::Error::new(io::ErrorKind::InvalidData, e)),
                 };

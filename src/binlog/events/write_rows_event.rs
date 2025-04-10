@@ -12,14 +12,14 @@ use std::io::{self};
 
 use crate::{
     binlog::{
-        consts::{BinlogVersion, EventType, RowsEventFlags},
         BinlogCtx, BinlogEvent, BinlogStruct,
+        consts::{BinlogVersion, EventType, RowsEventFlags},
     },
     io::ParseBuf,
     proto::{MyDeserialize, MySerialize},
 };
 
-use super::{rows_event::RowsEventCtx, RowsEvent, RowsEventRows, TableMapEvent};
+use super::{RowsEvent, RowsEventRows, TableMapEvent, rows_event::RowsEventCtx};
 
 /// Write rows event.
 ///
