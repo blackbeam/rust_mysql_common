@@ -6,11 +6,8 @@
 // option. All files in the project carrying such notice may not be copied,
 // modified, or distributed except according to those terms.
 
-use curve25519_dalek::scalar::clamp_integer;
-use curve25519_dalek::{EdwardsPoint, Scalar};
 use sha1::Sha1;
-use sha2::{Digest, Sha256, Sha512};
-use std::convert::TryInto;
+use sha2::{Digest, Sha256};
 
 fn xor<T, U>(mut left: T, right: U) -> T
 where
@@ -164,62 +161,77 @@ pub fn scramble_sha256(nonce: &[u8], password: &[u8]) -> Option<[u8; 32]> {
     ))
 }
 
-/// Crafting a signature according to EdDSA for message using the pass
-pub fn create_response_for_ed25519(pass: &[u8], message: &[u8]) -> [u8; 64] {
-    // Following reference implementation at https://github.com/mysql-net/MySqlConnector/blob/master/src/MySqlConnector.Authentication.Ed25519/Ed25519AuthenticationPlugin.cs#L35
-    // with additional guidance from https://www.rfc-editor.org/rfc/rfc8032#section-5.1.5
-    // Relying on functions provided by curve25519_dalek
+/// Crafting a signature according to EdDSA for message using the pass.
+///
+/// This will only work if `client_ed25519` feature is enabled and otherwise will panic at runtime.
+#[cfg_attr(docsrs, doc(cfg(feature = "client_ed25519")))]
+pub fn create_response_for_ed25519(_pass: &[u8], _message: &[u8]) -> [u8; 64] {
+    #[cfg(not(feature = "client_ed25519"))]
+    {
+        panic!("Can't create response for `ed25519` authentication plugin — `mysql_common/client_ed25519` feature is disabled.")
+    }
 
-    // hash the provided password
-    let hashed_pass = Sha512::default().chain_update(pass).finalize();
+    #[cfg(feature = "client_ed25519")]
+    {
+        use curve25519_dalek::scalar::clamp_integer;
+        use curve25519_dalek::{EdwardsPoint, Scalar};
+        use sha2::Sha512;
 
-    // the hashed password is split into secret and hash_prefix
-    let secret: &[u8; 32] = &hashed_pass[..32].try_into().unwrap();
-    let hash_prefix: &[u8; 32] = &hashed_pass[32..].try_into().unwrap();
+        // Following reference implementation at https://github.com/mysql-net/MySqlConnector/blob/master/src/MySqlConnector.Authentication.Ed25519/Ed25519AuthenticationPlugin.cs#L35
+        // with additional guidance from https://www.rfc-editor.org/rfc/rfc8032#section-5.1.5
+        // Relying on functions provided by curve25519_dalek
 
-    // The public key A is the encoding of the point [s]B, where s is the clamped secret
-    let small_s = clamp_integer(*secret);
-    let reduced_small_s = Scalar::from_bytes_mod_order(small_s);
-    let capital_a = EdwardsPoint::mul_base(&reduced_small_s).compress();
+        // hash the provided password
+        let hashed_pass = Sha512::default().chain_update(_pass).finalize();
 
-    // Compute SHA-512(dom2(F, C) || prefix || PH(M)),
-    // dom2 is the empty string,
-    // PH(M) = M is the provided message
-    let small_r = Sha512::default()
-        .chain_update(hash_prefix)
-        .chain_update(message)
-        .finalize();
+        // the hashed password is split into secret and hash_prefix
+        let secret: &[u8; 32] = &hashed_pass[..32].try_into().unwrap();
+        let hash_prefix: &[u8; 32] = &hashed_pass[32..].try_into().unwrap();
 
-    // Interpret the 64-octet digest as a little-endian integer r.
-    let reduced_small_r = Scalar::from_bytes_mod_order_wide(small_r.as_ref());
+        // The public key A is the encoding of the point [s]B, where s is the clamped secret
+        let small_s = clamp_integer(*secret);
+        let reduced_small_s = Scalar::from_bytes_mod_order(small_s);
+        let capital_a = EdwardsPoint::mul_base(&reduced_small_s).compress();
 
-    // Let R be the encoding of the point [r]B
-    let capital_r = EdwardsPoint::mul_base(&reduced_small_r).compress();
+        // Compute SHA-512(dom2(F, C) || prefix || PH(M)),
+        // dom2 is the empty string,
+        // PH(M) = M is the provided message
+        let small_r = Sha512::default()
+            .chain_update(hash_prefix)
+            .chain_update(_message)
+            .finalize();
 
-    // Compute SHA512(dom2(F, C) || R || A || PH(M))
-    // dom2 is the empty string,
-    // PH(M) = M is the provided message
-    let small_k = Sha512::default()
-        .chain_update(&capital_r.to_bytes())
-        .chain_update(&capital_a.to_bytes())
-        .chain_update(message)
-        .finalize();
+        // Interpret the 64-octet digest as a little-endian integer r.
+        let reduced_small_r = Scalar::from_bytes_mod_order_wide(small_r.as_ref());
 
-    // interpret the 64-octet-digest as a little-endian integer k.
-    let reduced_small_k = Scalar::from_bytes_mod_order_wide(small_k.as_ref());
+        // Let R be the encoding of the point [r]B
+        let capital_r = EdwardsPoint::mul_base(&reduced_small_r).compress();
 
-    let capital_s = reduced_small_k * reduced_small_s;
-    let capital_s = capital_s + reduced_small_r;
+        // Compute SHA512(dom2(F, C) || R || A || PH(M))
+        // dom2 is the empty string,
+        // PH(M) = M is the provided message
+        let small_k = Sha512::default()
+            .chain_update(&capital_r.to_bytes())
+            .chain_update(&capital_a.to_bytes())
+            .chain_update(_message)
+            .finalize();
 
-    // Form the signature of the concatenation of R (32 octets) and the
-    // little-endian encoding of S (32 octets; the three most
-    // significant bits of the final octet are always zero).
+        // interpret the 64-octet-digest as a little-endian integer k.
+        let reduced_small_k = Scalar::from_bytes_mod_order_wide(small_k.as_ref());
 
-    let mut result = [0; 64];
-    result[..32].copy_from_slice(capital_r.as_bytes());
-    result[32..].copy_from_slice(capital_s.as_bytes());
+        let capital_s = reduced_small_k * reduced_small_s;
+        let capital_s = capital_s + reduced_small_r;
 
-    result
+        // Form the signature of the concatenation of R (32 octets) and the
+        // little-endian encoding of S (32 octets; the three most
+        // significant bits of the final octet are always zero).
+
+        let mut result = [0; 64];
+        result[..32].copy_from_slice(capital_r.as_bytes());
+        result[32..].copy_from_slice(capital_s.as_bytes());
+
+        result
+    }
 }
 
 #[cfg(test)]
