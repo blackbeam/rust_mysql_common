@@ -62,7 +62,7 @@ serde_json = "1"
 
 mysql-common-derive = { path = "derive", version = "0.32.0", optional = true }
 btoi = "0.4.3"
-zstd = "0.13"
+zstd = { version = "0.13", optional = true }
 
 [dev-dependencies]
 time = { version = "0.3", features = ["macros"] }
@@ -90,7 +90,7 @@ incremental = false
 default = ["flate2/zlib", "derive"]
 test = ["derive", "time", "bindgen"]
 derive = ["mysql-common-derive"]
-binlog = ["bitvec"]
+binlog = ["bitvec", "dep:zstd"]
 nightly = ["test"]
 
 bigdecimal = ['dep:bigdecimal']
