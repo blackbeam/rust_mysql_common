@@ -1157,6 +1157,39 @@ mod tests {
                     assert_eq!(output, ev.data());
                 }
 
+                // https://github.com/blackbeam/rust_mysql_common/issues/162
+                if file_path.file_name().unwrap() == "minimal_row_metadata.000001" {
+                    let event_data = ev.read_data().unwrap();
+                    match event_data {
+                        Some(EventData::RowsEvent(ev)) => {
+                            let table_map_event =
+                                binlog_file.reader().get_tme(ev.table_id()).unwrap();
+                            let row = ev.rows(table_map_event).next().unwrap().unwrap();
+                            let after_image = row.1.unwrap();
+                            after_image
+                                .columns()
+                                .iter()
+                                .enumerate()
+                                .for_each(|(i, column)| {
+                                    if column.name_str() == "@2" {
+                                        assert_eq!(
+                                            column.character_set(),
+                                            CollationId::UTF8MB4_0900_AI_CI as u16
+                                        );
+                                    } else if column.name_str() == "@4" {
+                                        match after_image.as_ref(i).unwrap() {
+                                            BinlogValue::Value(val) => {
+                                                assert_eq!(val, &Value::Int(3230202323));
+                                            }
+                                            _ => panic!("Expected a value"),
+                                        }
+                                    }
+                                });
+                        }
+                        _ => (),
+                    }
+                }
+
                 ev_pos = ev_end;
             }
         }
