@@ -263,6 +263,46 @@ impl<'de> MyDeserialize<'de> for BinlogRow {
                 }
 
                 image_idx += 1;
+            } else {
+                // advance the iterators even if the column is not in the columns list
+                let column_type = table_info.get_column_type(i);
+                // TableMapEvent must define column type for the current column.
+                let column_type = match column_type {
+                    Ok(Some(ty)) => ty,
+                    Ok(None) => {
+                        return Err(io::Error::new(io::ErrorKind::InvalidData, "No column type"));
+                    }
+                    Err(e) => return Err(io::Error::new(io::ErrorKind::InvalidData, e)),
+                };
+
+                matches!(column_type, ColumnType::MYSQL_TYPE_JSON)
+                    .then(|| {
+                        partial_cols
+                            .as_mut()
+                            .and_then(|bits| bits.next().as_deref().copied())
+                    })
+                    .flatten()
+                    .unwrap_or_default();
+
+                column_type
+                    .is_numeric_type()
+                    .then(|| signedness_iterator.next())
+                    .flatten()
+                    .unwrap_or_default();
+
+                if column_type.is_character_type() {
+                    charset_iter.next().transpose()?.unwrap_or_default();
+                } else if column_type.is_enum_or_set_type() {
+                    enum_and_set_charset_iter
+                        .next()
+                        .transpose()?
+                        .unwrap_or_default();
+                };
+
+                primary_key_iter
+                    .next_if(|next| next.is_err() || next.as_ref().ok() == Some(&(i as u64)))
+                    .transpose()?
+                    .unwrap_or_default();
             }
         }
 
