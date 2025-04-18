@@ -2,7 +2,7 @@
 name = "mysql-common-derive"
 edition = "2021"
 description = "Derive macros for MySql common primitives"
-license = "MIT/Apache-2.0"
+license = "MIT OR Apache-2.0"
 homepage = "https://github.com/blackbeam/rust_mysql_common"
 documentation = "https://docs.rs/mysql-common-derive"
 repository = "https://github.com/blackbeam/rust_mysql_common"
