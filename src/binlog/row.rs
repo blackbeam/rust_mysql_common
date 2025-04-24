@@ -176,67 +176,67 @@ impl<'de> MyDeserialize<'de> for BinlogRow {
         let mut column_name_iter = opt_meta_extractor.iter_column_name();
 
         for i in 0..(num_columns as usize) {
+            let column_type = table_info.get_column_type(i);
+
+            // TableMapEvent must define column type for the current column.
+            let column_type = match column_type {
+                Ok(Some(ty)) => ty,
+                Ok(None) => {
+                    return Err(io::Error::new(io::ErrorKind::InvalidData, "No column type"));
+                }
+                Err(e) => return Err(io::Error::new(io::ErrorKind::InvalidData, e)),
+            };
+
+            let column_meta = table_info.get_column_metadata(i).unwrap_or(&[]);
+
+            let is_partial = column_type == ColumnType::MYSQL_TYPE_JSON
+                && partial_cols
+                    .as_mut()
+                    .and_then(|bits| bits.next().as_deref().copied())
+                    .unwrap_or(false);
+
+            let is_unsigned = column_type
+                .is_numeric_type()
+                .then(|| signedness_iterator.next())
+                .flatten()
+                .unwrap_or_default();
+
+            let charset = if column_type.is_character_type() {
+                charset_iter.next().transpose()?.unwrap_or_default()
+            } else if column_type.is_enum_or_set_type() {
+                enum_and_set_charset_iter
+                    .next()
+                    .transpose()?
+                    .unwrap_or_default()
+            } else {
+                Default::default()
+            };
+
+            let column_name_raw = column_name_iter.next().transpose()?;
+            let column_name = column_name_raw
+                .as_ref()
+                .map(|x| Cow::Borrowed(x.name_raw()))
+                .unwrap_or_else(|| {
+                    // default column name is `@<i>` where i is a column offset in a table
+                    Cow::Owned(format!("@{}", i).into())
+                });
+
+            let mut column_flags = ColumnFlags::empty();
+
+            if is_unsigned {
+                column_flags |= ColumnFlags::UNSIGNED_FLAG;
+            }
+
+            if primary_key_iter
+                .next_if(|next| next.is_err() || next.as_ref().ok() == Some(&(i as u64)))
+                .transpose()?
+                .is_some()
+            {
+                column_flags |= ColumnFlags::PRI_KEY_FLAG;
+            }
+
             // check if column is in columns list
             if cols.get(i).as_deref().copied().unwrap_or(false) {
-                let column_type = table_info.get_column_type(i);
-
-                // TableMapEvent must define column type for the current column.
-                let column_type = match column_type {
-                    Ok(Some(ty)) => ty,
-                    Ok(None) => {
-                        return Err(io::Error::new(io::ErrorKind::InvalidData, "No column type"));
-                    }
-                    Err(e) => return Err(io::Error::new(io::ErrorKind::InvalidData, e)),
-                };
-
-                let column_meta = table_info.get_column_metadata(i).unwrap_or(&[]);
-
-                let is_partial = column_type == ColumnType::MYSQL_TYPE_JSON
-                    && partial_cols
-                        .as_mut()
-                        .and_then(|bits| bits.next().as_deref().copied())
-                        .unwrap_or(false);
-
-                let is_unsigned = column_type
-                    .is_numeric_type()
-                    .then(|| signedness_iterator.next())
-                    .flatten()
-                    .unwrap_or_default();
-
-                let charset = if column_type.is_character_type() {
-                    charset_iter.next().transpose()?.unwrap_or_default()
-                } else if column_type.is_enum_or_set_type() {
-                    enum_and_set_charset_iter
-                        .next()
-                        .transpose()?
-                        .unwrap_or_default()
-                } else {
-                    Default::default()
-                };
-
-                let column_name_raw = column_name_iter.next().transpose()?;
-                let column_name = column_name_raw
-                    .as_ref()
-                    .map(|x| Cow::Borrowed(x.name_raw()))
-                    .unwrap_or_else(|| {
-                        // default column name is `@<i>` where i is a column offset in a table
-                        Cow::Owned(format!("@{}", i).into())
-                    });
-
-                let mut column_flags = ColumnFlags::empty();
-
-                if is_unsigned {
-                    column_flags |= ColumnFlags::UNSIGNED_FLAG;
-                }
-
-                if primary_key_iter
-                    .next_if(|next| next.is_err() || next.as_ref().ok() == Some(&(i as u64)))
-                    .transpose()?
-                    .is_some()
-                {
-                    column_flags |= ColumnFlags::PRI_KEY_FLAG;
-                }
-
                 let column = Column::new(column_type)
                     .with_schema(table_info.database_name_raw())
                     .with_table(table_info.table_name_raw())
