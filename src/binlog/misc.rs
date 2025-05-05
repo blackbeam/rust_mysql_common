@@ -73,10 +73,12 @@ pub fn time_from_packed(mut tmp: i64) -> Value {
     };
     let hms = my_packed_time_get_int_part(tmp);
     let h = ((hms >> 12) as u32) % (1 << 10);
+    let d = h / 24;
+    let h = h % 24;
     let m = ((hms >> 6) as u32) % (1 << 6);
     let s = ((hms) as u32) % (1 << 6);
     let u = my_packed_time_get_frac_part(tmp);
-    Value::Time(neg, 0, h as u8, m as u8, s as u8, u as u32)
+    Value::Time(neg, d, h as u8, m as u8, s as u8, u as u32)
 }
 
 pub fn my_datetime_packed_from_binary<T: io::Read>(mut input: T, dec: u32) -> io::Result<i64> {
