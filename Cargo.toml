@@ -13,7 +13,7 @@ keywords = ["mysql", "database"]
 categories = ["database"]
 
 # * Invoke `cargo readme > README.md` if relevant!
-version = "0.35.3"
+version = "0.35.4"
 
 edition = "2024"
 exclude = [
