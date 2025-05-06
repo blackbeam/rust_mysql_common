@@ -1190,6 +1190,26 @@ mod tests {
                     }
                 }
 
+                if file_path.file_name().unwrap() == "time_issue.000001" {
+                    let event_data = ev.read_data().unwrap();
+                    match event_data {
+                        Some(EventData::RowsEvent(ev)) => {
+                            let table_map_event =
+                                binlog_file.reader().get_tme(ev.table_id()).unwrap();
+                            let row = ev.rows(table_map_event).next().unwrap().unwrap();
+                            let after_image = row.1.unwrap();
+                            after_image.columns().iter().enumerate().for_each(|(i, _)| {
+                                match after_image.as_ref(i).unwrap() {
+                                    BinlogValue::Value(val) => {
+                                        assert_eq!(val, &Value::Time(true, 21, 3, 48, 27, 0));
+                                    }
+                                    _ => panic!("Expected a value"),
+                                }
+                            });
+                        }
+                        _ => (),
+                    }
+                }
                 ev_pos = ev_end;
             }
         }
