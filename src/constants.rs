@@ -361,6 +361,35 @@ my_bitflags! {
 }
 
 my_bitflags! {
+    MariadbCapabilities,
+    #[error("Unknown flags in the raw value of CapabilityFlags (raw={0:b})")]
+    UnknownMariadbCapabilityFlags,
+    u32,
+
+    /// Client capability flags
+    #[derive(PartialEq, Eq, Hash, Debug, Clone, Copy)]
+    pub struct MariadbCapabilities: u32 {
+        /// 
+        const MARIADB_CLIENT_PROGRESS               = 0x0000_0001;
+
+        /// Former COM_MULTI, don't use
+        const MARIADB_CLIENT_RESERVED_1             = 0x0000_0002;
+
+        /// Support of parameter arrays in COM_STMT_EXECUTE, since 10.2.0
+        const MARIADB_CLIENT_STMT_BULK_OPERATIONS   = 0x0000_0004;
+
+        /// Support of extended data type/format information, since 10.5.0
+        const MARIADB_CLIENT_EXTENDED_METADATA      = 0x0000_0008;
+
+        /// Do not resend metadata for prepared statements, since 10.6.0
+        const MARIADB_CLIENT_CACHE_METADATA         = 0x0000_0010;
+
+        /// Permits sending unit result-set for BULK commands
+        const MARIADB_CLIENT_BULK_UNIT_RESULTS      = 0x0000_0020;
+  }
+}
+
+my_bitflags! {
     CursorType,
     #[error("Unknown flags in the raw value of CursorType (raw={0:b})")]
     UnknownCursorType,
