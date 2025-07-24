@@ -23,7 +23,8 @@ use crate::scramble::create_response_for_ed25519;
 use crate::{
     constants::{
         CapabilityFlags, ColumnFlags, ColumnType, Command, CursorType, MAX_PAYLOAD_LEN,
-        SessionStateType, StatusFlags, StmtExecuteParamFlags, StmtExecuteParamsFlags, MariadbCapabilities,
+        MariadbCapabilities, SessionStateType, StatusFlags, StmtExecuteParamFlags,
+        StmtExecuteParamsFlags,
     },
     io::{BufMutExt, ParseBuf},
     misc::{
@@ -1623,7 +1624,7 @@ impl<'de> MyDeserialize<'de> for HandshakePacket<'de> {
         let __reserved = sbuf.parse_unchecked(())?;
         // If the server is MariaDB, it will pass its extended capabilities
         // in the last 4 reserved bytes.
-        let mariadb_capabiities: RawConst<LeU32, MariadbCapabilities>= sbuf.parse_unchecked(())?;
+        let mariadb_capabiities: RawConst<LeU32, MariadbCapabilities> = sbuf.parse_unchecked(())?;
         let mut scramble_2 = None;
         if capabilities_1.0 & CapabilityFlags::CLIENT_SECURE_CONNECTION.bits() > 0 {
             let len = max(13, auth_plugin_data_len.0 as i8 - 8) as usize;
@@ -1650,9 +1651,9 @@ impl<'de> MyDeserialize<'de> for HandshakePacket<'de> {
             capabilities_2: Const::new(CapabilityFlags::from_bits_truncate(capabilities_2.0)),
             auth_plugin_data_len,
             __reserved,
-            mariadb_ext_capabilities: Const::new(
-                MariadbCapabilities::from_bits_truncate(mariadb_capabiities.0),
-            ),
+            mariadb_ext_capabilities: Const::new(MariadbCapabilities::from_bits_truncate(
+                mariadb_capabiities.0,
+            )),
             scramble_2,
             auth_plugin_name,
         })
@@ -2202,8 +2203,16 @@ impl<'a> HandshakeResponse<'a> {
         max_packet_size: u32,
         mariadb_ext_capabilities: MariadbCapabilities,
     ) -> Self {
-        let mut packet = Self::new(scramble_buf, server_version, user, db_name, auth_plugin, capabilities, connect_attributes,
-          max_packet_size);
+        let mut packet = Self::new(
+            scramble_buf,
+            server_version,
+            user,
+            db_name,
+            auth_plugin,
+            capabilities,
+            connect_attributes,
+            max_packet_size,
+        );
 
         packet.mariadb_ext_capabilities = Const::new(mariadb_ext_capabilities);
         return packet;
@@ -2260,8 +2269,7 @@ impl<'de> MyDeserialize<'de> for HandshakeResponse<'de> {
         let max_packet_size: RawInt<LeU32> = sbuf.parse_unchecked(())?;
         let collation = sbuf.parse_unchecked(())?;
         sbuf.parse_unchecked::<Skip<19>>(())?;
-        let mariadb_flags: RawConst<LeU32, MariadbCapabilities> =
-            sbuf.parse_unchecked(())?;
+        let mariadb_flags: RawConst<LeU32, MariadbCapabilities> = sbuf.parse_unchecked(())?;
 
         let user = buf.parse(())?;
         let scramble_buf =
@@ -2298,7 +2306,9 @@ impl<'de> MyDeserialize<'de> for HandshakeResponse<'de> {
             db_name,
             auth_plugin,
             connect_attributes,
-            mariadb_ext_capabilities: Const::new(MariadbCapabilities::from_bits_truncate(mariadb_flags.0)),
+            mariadb_ext_capabilities: Const::new(MariadbCapabilities::from_bits_truncate(
+                mariadb_flags.0,
+            )),
         })
     }
 }
@@ -4033,7 +4043,6 @@ mod test {
             flags_without_db_name,
             None,
             1_u32.to_be(),
-            MariadbCapabilities::empty()
         );
         let mut actual = Vec::new();
         response.serialize(&mut actual);
@@ -4063,7 +4072,6 @@ mod test {
             flags_with_db_name,
             None,
             1_u32.to_be(),
-            MariadbCapabilities::empty(),
         );
         let mut actual = Vec::new();
         response.serialize(&mut actual);
@@ -4093,7 +4101,6 @@ mod test {
             flags_without_db_name,
             None,
             1_u32.to_be(),
-            MariadbCapabilities::empty(),
         );
         let mut actual = Vec::new();
         response.serialize(&mut actual);
@@ -4108,7 +4115,6 @@ mod test {
             flags_with_db_name,
             None,
             1_u32.to_be(),
-            MariadbCapabilities::empty(),
         );
         let mut actual = Vec::new();
         response.serialize(&mut actual);

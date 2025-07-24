@@ -369,7 +369,7 @@ my_bitflags! {
     /// Client capability flags
     #[derive(PartialEq, Eq, Hash, Debug, Clone, Copy)]
     pub struct MariadbCapabilities: u32 {
-        /// 
+        /// Permits feedback during long-running operations
         const MARIADB_CLIENT_PROGRESS               = 0x0000_0001;
 
         /// Former COM_MULTI, don't use
