@@ -1685,8 +1685,12 @@ impl MySerialize for HandshakePacket<'_> {
         } else {
             buf.put_u8(0);
         }
-
-        buf.put_slice(&[0_u8; 10][..]);
+        if self.mariadb_ext_capabilities.is_empty() {
+            buf.put_slice(&[0_u8; 10][..]);
+        } else {
+            buf.put_slice(&[0_u8; 6][..]);
+            self.mariadb_ext_capabilities.serialize(&mut *buf);
+        }
 
         // Assume that the packet is well formed:
         // * the CLIENT_SECURE_CONNECTION is set.
@@ -4132,6 +4136,71 @@ mod test {
             0x61, 0x73, 0x73, 0x77, 0x6f, 0x72, 0x64, 0x00, // mysql_native_password
         ]
         .to_vec();
+        assert_eq!(expected, actual);
+    }
+
+    #[test]
+    fn should_parse_handshake_packet_with_mariadb_ext_capabilities() {
+        const HSP: &[u8] = b"\x0a5.5.5-11.4.7-MariaDB-log\x00\x0b\x00\
+                             \x00\x00\x64\x76\x48\x40\x49\x2d\x43\x4a\x00\xff\xf7\x08\x02\x00\
+                             \x00\x00\x00\x00\x00\x00\x00\x00\x00\x10\x00\x00\x00\x2a\x34\x64\
+                             \x7c\x63\x5a\x77\x6b\x34\x5e\x5d\x3a\x00";
+
+        let hsp = HandshakePacket::deserialize((), &mut ParseBuf(HSP)).unwrap();
+        assert_eq!(hsp.protocol_version(), 0x0a);
+        assert_eq!(hsp.server_version_str(), "5.5.5-11.4.7-MariaDB-log");
+        assert_eq!(hsp.server_version_parsed(), Some((5, 5, 5)));
+        assert_eq!(hsp.maria_db_server_version_parsed(), Some((11, 4, 7)));
+        assert_eq!(hsp.connection_id(), 0x0b);
+        assert_eq!(hsp.scramble_1_ref(), b"dvH@I-CJ");
+        assert_eq!(
+            hsp.capabilities(),
+            CapabilityFlags::from_bits_truncate(0xf7ff)
+        );
+        assert_eq!(hsp.default_collation(), 0x08);
+        assert_eq!(hsp.status_flags(), StatusFlags::from_bits_truncate(0x0002));
+        assert_eq!(hsp.scramble_2_ref(), Some(&b"*4d|cZwk4^]:\x00"[..]));
+        assert_eq!(hsp.auth_plugin_name_ref(), None);
+        assert_eq!(
+            hsp.mariadb_ext_capabilities(),
+            MariadbCapabilities::MARIADB_CLIENT_CACHE_METADATA
+        );
+        let mut output = Vec::new();
+        hsp.serialize(&mut output);
+        assert_eq!(&output, HSP);
+    }
+
+    #[test]
+    fn should_build_handshake_response_with_mariadb_capabilities() {
+        let flags_without_db_name = CapabilityFlags::from_bits_truncate(0x81aea205);
+        let response = HandshakeResponse::new_mariadb(
+            Some(&[][..]),
+            (5u16, 5, 5),
+            Some(&b"root"[..]),
+            None::<&'static [u8]>,
+            Some(AuthPlugin::MysqlNativePassword),
+            flags_without_db_name,
+            None,
+            1_u32.to_be(),
+            MariadbCapabilities::MARIADB_CLIENT_CACHE_METADATA,
+        );
+        let mut actual = Vec::new();
+        response.serialize(&mut actual);
+
+        let expected: Vec<u8> = [
+            0x05, 0xa2, 0xae, 0x81, // client capabilities
+            0x00, 0x00, 0x00, 0x01, // max packet
+            0x2d, // charset
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, // reserved
+            0x10, 0x00, 0x00, 0x00, // mariadb capabilities
+            0x72, 0x6f, 0x6f, 0x74, 0x00, // username=root
+            0x00, // blank scramble
+            0x6d, 0x79, 0x73, 0x71, 0x6c, 0x5f, 0x6e, 0x61, 0x74, 0x69, 0x76, 0x65, 0x5f, 0x70,
+            0x61, 0x73, 0x73, 0x77, 0x6f, 0x72, 0x64, 0x00, // mysql_native_password
+        ]
+        .to_vec();
+
         assert_eq!(expected, actual);
     }
 
