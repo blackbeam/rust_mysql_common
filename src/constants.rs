@@ -362,11 +362,11 @@ my_bitflags! {
 
 my_bitflags! {
     MariadbCapabilities,
-    #[error("Unknown flags in the raw value of CapabilityFlags (raw={0:b})")]
+    #[error("Unknown flags in the raw value of MariadbCapabilities (raw={0:b})")]
     UnknownMariadbCapabilityFlags,
     u32,
 
-    /// Client capability flags
+    /// Mariadb client capability flags
     #[derive(PartialEq, Eq, Hash, Debug, Clone, Copy)]
     pub struct MariadbCapabilities: u32 {
         /// Permits feedback during long-running operations

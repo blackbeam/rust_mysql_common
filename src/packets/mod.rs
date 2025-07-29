@@ -18,7 +18,6 @@ use std::{
 };
 
 use crate::collations::CollationId;
-//use crate::constants::MariadbCapabilities;
 use crate::scramble::create_response_for_ed25519;
 use crate::{
     constants::{
@@ -1685,12 +1684,9 @@ impl MySerialize for HandshakePacket<'_> {
         } else {
             buf.put_u8(0);
         }
-        if self.mariadb_ext_capabilities.is_empty() {
-            buf.put_slice(&[0_u8; 10][..]);
-        } else {
-            buf.put_slice(&[0_u8; 6][..]);
-            self.mariadb_ext_capabilities.serialize(&mut *buf);
-        }
+
+        self.__reserved.serialize(&mut *buf);
+        self.mariadb_ext_capabilities.serialize(&mut *buf);
 
         // Assume that the packet is well formed:
         // * the CLIENT_SECURE_CONNECTION is set.
@@ -2196,34 +2192,20 @@ impl<'a> HandshakeResponse<'a> {
         }
     }
 
-    pub fn new_mariadb(
-        scramble_buf: Option<impl Into<Cow<'a, [u8]>>>,
-        server_version: (u16, u16, u16),
-        user: Option<impl Into<Cow<'a, [u8]>>>,
-        db_name: Option<impl Into<Cow<'a, [u8]>>>,
-        auth_plugin: Option<AuthPlugin<'a>>,
-        capabilities: CapabilityFlags,
-        connect_attributes: Option<HashMap<String, String>>,
-        max_packet_size: u32,
+    pub fn with_mariadb_ext_capabilities(
+        mut self,
         mariadb_ext_capabilities: MariadbCapabilities,
     ) -> Self {
-        let mut packet = Self::new(
-            scramble_buf,
-            server_version,
-            user,
-            db_name,
-            auth_plugin,
-            capabilities,
-            connect_attributes,
-            max_packet_size,
-        );
-
-        packet.mariadb_ext_capabilities = Const::new(mariadb_ext_capabilities);
-        return packet;
+        self.mariadb_ext_capabilities = Const::new(mariadb_ext_capabilities);
+        self
     }
 
     pub fn capabilities(&self) -> CapabilityFlags {
         self.capabilities.0
+    }
+
+    pub fn mariadb_ext_capabilities(&self) -> MariadbCapabilities {
+        self.mariadb_ext_capabilities.0
     }
 
     pub fn collation(&self) -> u8 {
@@ -4173,7 +4155,7 @@ mod test {
     #[test]
     fn should_build_handshake_response_with_mariadb_capabilities() {
         let flags_without_db_name = CapabilityFlags::from_bits_truncate(0x81aea205);
-        let response = HandshakeResponse::new_mariadb(
+        let response = HandshakeResponse::new(
             Some(&[][..]),
             (5u16, 5, 5),
             Some(&b"root"[..]),
@@ -4182,8 +4164,8 @@ mod test {
             flags_without_db_name,
             None,
             1_u32.to_be(),
-            MariadbCapabilities::MARIADB_CLIENT_CACHE_METADATA,
-        );
+        )
+        .with_mariadb_ext_capabilities(MariadbCapabilities::MARIADB_CLIENT_CACHE_METADATA);
         let mut actual = Vec::new();
         response.serialize(&mut actual);
 
