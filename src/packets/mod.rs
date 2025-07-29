@@ -22,7 +22,8 @@ use crate::scramble::create_response_for_ed25519;
 use crate::{
     constants::{
         CapabilityFlags, ColumnFlags, ColumnType, Command, CursorType, MAX_PAYLOAD_LEN,
-        SessionStateType, StatusFlags, StmtExecuteParamFlags, StmtExecuteParamsFlags,
+        MariadbCapabilities, SessionStateType, StatusFlags, StmtExecuteParamFlags,
+        StmtExecuteParamsFlags,
     },
     io::{BufMutExt, ParseBuf},
     misc::{
@@ -1594,7 +1595,9 @@ pub struct HandshakePacket<'a> {
     // upper 16 bytes
     capabilities_2: Const<CapabilityFlags, LeU32UpperHalf>,
     auth_plugin_data_len: RawInt<u8>,
-    __reserved: Skip<10>,
+    __reserved: Skip<6>,
+    // MariaDB uses last 4 reserved bytes to pass its extended capabilities.
+    mariadb_ext_capabilities: Const<MariadbCapabilities, LeU32>,
     scramble_2: Option<RawBytes<'a, BareBytes<{ (u8::MAX as usize) - 8 }>>>,
     auth_plugin_name: Option<RawBytes<'a, NullBytes>>,
 }
@@ -1618,6 +1621,9 @@ impl<'de> MyDeserialize<'de> for HandshakePacket<'de> {
         let capabilities_2: RawConst<LeU32UpperHalf, CapabilityFlags> = sbuf.parse_unchecked(())?;
         let auth_plugin_data_len: RawInt<u8> = sbuf.parse_unchecked(())?;
         let __reserved = sbuf.parse_unchecked(())?;
+        // If the server is MariaDB, it will pass its extended capabilities
+        // in the last 4 reserved bytes.
+        let mariadb_capabiities: RawConst<LeU32, MariadbCapabilities> = sbuf.parse_unchecked(())?;
         let mut scramble_2 = None;
         if capabilities_1.0 & CapabilityFlags::CLIENT_SECURE_CONNECTION.bits() > 0 {
             let len = max(13, auth_plugin_data_len.0 as i8 - 8) as usize;
@@ -1644,6 +1650,9 @@ impl<'de> MyDeserialize<'de> for HandshakePacket<'de> {
             capabilities_2: Const::new(CapabilityFlags::from_bits_truncate(capabilities_2.0)),
             auth_plugin_data_len,
             __reserved,
+            mariadb_ext_capabilities: Const::new(MariadbCapabilities::from_bits_truncate(
+                mariadb_capabiities.0,
+            )),
             scramble_2,
             auth_plugin_name,
         })
@@ -1676,7 +1685,8 @@ impl MySerialize for HandshakePacket<'_> {
             buf.put_u8(0);
         }
 
-        buf.put_slice(&[0_u8; 10][..]);
+        self.__reserved.serialize(&mut *buf);
+        self.mariadb_ext_capabilities.serialize(&mut *buf);
 
         // Assume that the packet is well formed:
         // * the CLIENT_SECURE_CONNECTION is set.
@@ -1704,6 +1714,7 @@ impl<'a> HandshakePacket<'a> {
         default_collation: u8,
         status_flags: StatusFlags,
         auth_plugin_name: Option<impl Into<Cow<'a, [u8]>>>,
+        mariadb_capabilities: MariadbCapabilities,
     ) -> Self {
         // Safety:
         // * capabilities are given as a valid CapabilityFlags instance
@@ -1732,6 +1743,7 @@ impl<'a> HandshakePacket<'a> {
                     .unwrap_or_default(),
             ),
             __reserved: Skip,
+            mariadb_ext_capabilities: Const::new(mariadb_capabilities),
             scramble_2,
             auth_plugin_name: auth_plugin_name.map(RawBytes::new),
         }
@@ -1750,6 +1762,7 @@ impl<'a> HandshakePacket<'a> {
             capabilities_2: self.capabilities_2,
             auth_plugin_data_len: self.auth_plugin_data_len,
             __reserved: self.__reserved,
+            mariadb_ext_capabilities: self.mariadb_ext_capabilities,
             scramble_2: self.scramble_2.map(|x| x.into_owned()),
             auth_plugin_name: self.auth_plugin_name.map(RawBytes::into_owned),
         }
@@ -1834,6 +1847,10 @@ impl<'a> HandshakePacket<'a> {
         self.capabilities_1.0 | self.capabilities_2.0
     }
 
+    /// Value of MariaDB specific server capabilities
+    pub fn mariadb_ext_capabilities(&self) -> MariadbCapabilities {
+        self.mariadb_ext_capabilities.0
+    }
     /// Value of the default_collation field of an initial handshake packet.
     pub fn default_collation(&self) -> u8 {
         self.default_collation.0
@@ -2105,6 +2122,7 @@ pub struct HandshakeResponse<'a> {
     db_name: Option<RawBytes<'a, NullBytes>>,
     auth_plugin: Option<AuthPlugin<'a>>,
     connect_attributes: Option<HashMap<RawBytes<'a, LenEnc>, RawBytes<'a, LenEnc>>>,
+    mariadb_ext_capabilities: Const<MariadbCapabilities, LeU32>,
 }
 
 impl<'a> HandshakeResponse<'a> {
@@ -2170,11 +2188,24 @@ impl<'a> HandshakeResponse<'a> {
                     .collect()
             }),
             max_packet_size: RawInt::new(max_packet_size),
+            mariadb_ext_capabilities: Const::new(MariadbCapabilities::empty()),
         }
+    }
+
+    pub fn with_mariadb_ext_capabilities(
+        mut self,
+        mariadb_ext_capabilities: MariadbCapabilities,
+    ) -> Self {
+        self.mariadb_ext_capabilities = Const::new(mariadb_ext_capabilities);
+        self
     }
 
     pub fn capabilities(&self) -> CapabilityFlags {
         self.capabilities.0
+    }
+
+    pub fn mariadb_ext_capabilities(&self) -> MariadbCapabilities {
+        self.mariadb_ext_capabilities.0
     }
 
     pub fn collation(&self) -> u8 {
@@ -2223,7 +2254,8 @@ impl<'de> MyDeserialize<'de> for HandshakeResponse<'de> {
         let client_flags: RawConst<LeU32, CapabilityFlags> = sbuf.parse_unchecked(())?;
         let max_packet_size: RawInt<LeU32> = sbuf.parse_unchecked(())?;
         let collation = sbuf.parse_unchecked(())?;
-        sbuf.parse_unchecked::<Skip<23>>(())?;
+        sbuf.parse_unchecked::<Skip<19>>(())?;
+        let mariadb_flags: RawConst<LeU32, MariadbCapabilities> = sbuf.parse_unchecked(())?;
 
         let user = buf.parse(())?;
         let scramble_buf =
@@ -2260,6 +2292,9 @@ impl<'de> MyDeserialize<'de> for HandshakeResponse<'de> {
             db_name,
             auth_plugin,
             connect_attributes,
+            mariadb_ext_capabilities: Const::new(MariadbCapabilities::from_bits_truncate(
+                mariadb_flags.0,
+            )),
         })
     }
 }
@@ -2269,7 +2304,8 @@ impl MySerialize for HandshakeResponse<'_> {
         self.capabilities.serialize(&mut *buf);
         self.max_packet_size.serialize(&mut *buf);
         self.collation.serialize(&mut *buf);
-        buf.put_slice(&[0; 23]);
+        buf.put_slice(&[0; 19]);
+        self.mariadb_ext_capabilities.serialize(&mut *buf);
         self.user.serialize(&mut *buf);
         self.scramble_buf.serialize(&mut *buf);
 
@@ -4082,6 +4118,71 @@ mod test {
             0x61, 0x73, 0x73, 0x77, 0x6f, 0x72, 0x64, 0x00, // mysql_native_password
         ]
         .to_vec();
+        assert_eq!(expected, actual);
+    }
+
+    #[test]
+    fn should_parse_handshake_packet_with_mariadb_ext_capabilities() {
+        const HSP: &[u8] = b"\x0a5.5.5-11.4.7-MariaDB-log\x00\x0b\x00\
+                             \x00\x00\x64\x76\x48\x40\x49\x2d\x43\x4a\x00\xff\xf7\x08\x02\x00\
+                             \x00\x00\x00\x00\x00\x00\x00\x00\x00\x10\x00\x00\x00\x2a\x34\x64\
+                             \x7c\x63\x5a\x77\x6b\x34\x5e\x5d\x3a\x00";
+
+        let hsp = HandshakePacket::deserialize((), &mut ParseBuf(HSP)).unwrap();
+        assert_eq!(hsp.protocol_version(), 0x0a);
+        assert_eq!(hsp.server_version_str(), "5.5.5-11.4.7-MariaDB-log");
+        assert_eq!(hsp.server_version_parsed(), Some((5, 5, 5)));
+        assert_eq!(hsp.maria_db_server_version_parsed(), Some((11, 4, 7)));
+        assert_eq!(hsp.connection_id(), 0x0b);
+        assert_eq!(hsp.scramble_1_ref(), b"dvH@I-CJ");
+        assert_eq!(
+            hsp.capabilities(),
+            CapabilityFlags::from_bits_truncate(0xf7ff)
+        );
+        assert_eq!(hsp.default_collation(), 0x08);
+        assert_eq!(hsp.status_flags(), StatusFlags::from_bits_truncate(0x0002));
+        assert_eq!(hsp.scramble_2_ref(), Some(&b"*4d|cZwk4^]:\x00"[..]));
+        assert_eq!(hsp.auth_plugin_name_ref(), None);
+        assert_eq!(
+            hsp.mariadb_ext_capabilities(),
+            MariadbCapabilities::MARIADB_CLIENT_CACHE_METADATA
+        );
+        let mut output = Vec::new();
+        hsp.serialize(&mut output);
+        assert_eq!(&output, HSP);
+    }
+
+    #[test]
+    fn should_build_handshake_response_with_mariadb_capabilities() {
+        let flags_without_db_name = CapabilityFlags::from_bits_truncate(0x81aea205);
+        let response = HandshakeResponse::new(
+            Some(&[][..]),
+            (5u16, 5, 5),
+            Some(&b"root"[..]),
+            None::<&'static [u8]>,
+            Some(AuthPlugin::MysqlNativePassword),
+            flags_without_db_name,
+            None,
+            1_u32.to_be(),
+        )
+        .with_mariadb_ext_capabilities(MariadbCapabilities::MARIADB_CLIENT_CACHE_METADATA);
+        let mut actual = Vec::new();
+        response.serialize(&mut actual);
+
+        let expected: Vec<u8> = [
+            0x05, 0xa2, 0xae, 0x81, // client capabilities
+            0x00, 0x00, 0x00, 0x01, // max packet
+            0x2d, // charset
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, // reserved
+            0x10, 0x00, 0x00, 0x00, // mariadb capabilities
+            0x72, 0x6f, 0x6f, 0x74, 0x00, // username=root
+            0x00, // blank scramble
+            0x6d, 0x79, 0x73, 0x71, 0x6c, 0x5f, 0x6e, 0x61, 0x74, 0x69, 0x76, 0x65, 0x5f, 0x70,
+            0x61, 0x73, 0x73, 0x77, 0x6f, 0x72, 0x64, 0x00, // mysql_native_password
+        ]
+        .to_vec();
+
         assert_eq!(expected, actual);
     }
 
