@@ -1714,7 +1714,6 @@ impl<'a> HandshakePacket<'a> {
         default_collation: u8,
         status_flags: StatusFlags,
         auth_plugin_name: Option<impl Into<Cow<'a, [u8]>>>,
-        mariadb_capabilities: MariadbCapabilities,
     ) -> Self {
         // Safety:
         // * capabilities are given as a valid CapabilityFlags instance
@@ -1743,10 +1742,15 @@ impl<'a> HandshakePacket<'a> {
                     .unwrap_or_default(),
             ),
             __reserved: Skip,
-            mariadb_ext_capabilities: Const::new(mariadb_capabilities),
+            mariadb_ext_capabilities: Const::new(MariadbCapabilities::empty()),
             scramble_2,
             auth_plugin_name: auth_plugin_name.map(RawBytes::new),
         }
+    }
+
+    pub fn with_mariadb_ext_capabilities(mut self, flags: MariadbCapabilities) -> Self {
+        self.mariadb_ext_capabilities = Const::new(flags);
+        self
     }
 
     pub fn into_owned(self) -> HandshakePacket<'static> {
