@@ -442,9 +442,9 @@ impl<'a> OpaqueValue<'a> {
 ///
 /// *   [`ColumnType::MYSQL_TYPE_NEWDECIMAL`] — will be converted to string
 /// *   [`ColumnType::MYSQL_TYPE_DATE`] — will be converted to 'YYYY-MM-DD' string
-/// *   [`ColumnType::MYSQL_TYPE_TIME`] — will be converted to '[-][h]hh:mm::ss.µµµµµµ' string
+/// *   [`ColumnType::MYSQL_TYPE_TIME`] — will be converted to `[-][h]hh:mm::ss.µµµµµµ` string
 /// *   [`ColumnType::MYSQL_TYPE_DATETIME`] and [`ColumnType::MYSQL_TYPE_TIMESTAMP`]
-///     — will be converted to 'YYYY-MM-DD hh:mm::ss.µµµµµµ' string
+///     — will be converted to `YYYY-MM-DD hh:mm::ss.µµµµµµ` string
 /// *   other opaque values will be represented as strings in the form `base64:type<id>:<data>`
 ///     where:
 ///     -   `<id>` — [`ColumnType`] integer value
