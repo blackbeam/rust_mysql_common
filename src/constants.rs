@@ -366,7 +366,7 @@ my_bitflags! {
     UnknownMariadbCapabilityFlags,
     u32,
 
-    /// Mariadb client capability flags
+    /// MariaDB client capability flags
     #[derive(PartialEq, Eq, Hash, Debug, Clone, Copy)]
     pub struct MariadbCapabilities: u32 {
         /// Permits feedback during long-running operations
@@ -428,6 +428,20 @@ my_bitflags! {
     #[derive(PartialEq, Eq, Hash, Debug, Clone, Copy)]
     pub struct StmtExecuteParamFlags: u8 {
         const UNSIGNED  = 128_u8;
+    }
+}
+
+my_bitflags! {
+    StmtBulkExecuteParamsFlags,
+    #[error("Unknown flags in the raw value of StmtBulkExecuteParamsFlags (raw={0:b})")]
+    UnknownStmtBulkExecuteParamsFlags,
+    u16,
+
+    /// MySql stmt execute params flags.
+    #[derive(PartialEq, Eq, Hash, Debug, Clone, Copy)]
+    pub struct StmtBulkExecuteParamsFlags: u16 {
+        const SEND_UNIT_RESULTS  = 64_u16;
+        const SEND_TYPES_TO_SERVER = 128_u16;
     }
 }
 
@@ -528,6 +542,22 @@ pub enum Command {
     COM_BINLOG_DUMP_GTID,
     COM_RESET_CONNECTION,
     COM_END,
+    COM_STMT_BULK_EXECUTE = 0xfa_u8,
+}
+
+/// MariaDB bulk execute parameter value indicators
+#[allow(non_camel_case_types)]
+#[derive(Clone, Copy, Eq, PartialEq, Debug)]
+#[repr(u8)]
+pub enum MariadbBulkIndicator {
+    /// No special indicator, normal value
+    BULK_INDICATOR_NONE = 0x00_u8,
+    /// NULL value
+    BULK_INDICATOR_NULL = 0x01_u8,
+    /// For INSERT/UPDATE, value is default. Not used
+    BULK_INDICATOR_DEFAULT = 0x02_u8,
+    /// Value is default for insert, Is ignored for update. Not used.
+    BULK_INDICATOR_IGNORE = 0x03_u8,
 }
 
 /// Type of state change information (part of MySql's Ok packet).
