@@ -2814,7 +2814,7 @@ impl ComStmtBulkExecuteRequestBuilder {
         !self.paramset.is_empty()
     }
 
-    pub fn build(&self) -> ComStmtBulkExecuteRequest {
+    pub fn build(&self) -> ComStmtBulkExecuteRequest<'_> {
         ComStmtBulkExecuteRequest {
             com_stmt_bulk_execute: ConstU8::new(),
             stmt_id: RawInt::new(self.stmt_id),
