@@ -2764,7 +2764,8 @@ impl MySerialize for ComStmtClose {
 }
 
 /// Sends array of parameters to the server for the bulk execution of a prepared statement with
-/// COM_STMT_BULK_EXECUTE command.
+/// COM_STMT_BULK_EXECUTE command. This command is MariaDB only and may not be used for queries w/out
+/// parameters and with empty parameter sets.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ComStmtBulkExecuteRequestBuilder {
     pub stmt_id: u32,
@@ -2785,24 +2786,33 @@ impl ComStmtBulkExecuteRequestBuilder {
         }
     }
 
-    pub fn next(&mut self) -> () {
+    // Resets the builder to start building a new bulk execute request. In particular - without types.
+    // If it's called - means that there is row to be added that did not fit previous packet. So, it should
+    // be always followed by add_row(). That is something it can do on its own.
+    pub fn next(&mut self, params: &Vec<Value>) -> () {
         self.with_types = false;
         self.paramset.clear();
         self.payload_len = 0;
+        self.add_row(params);
     }
-    pub fn add_row(&mut self, params: &[Value]) -> bool {
+
+    // Adds a new row of parameters to the bulk execute request.
+    // Returns true if adding this row would exceed the max allowed packet size.
+    pub fn add_row(&mut self, params: &Vec<Value>) -> bool {
         if self.with_types && self.payload_len == 0 {
             self.payload_len = params.len() * 2;
         }
         let mut data_len = 0;
         for p in params {
+            // bin_len() includes lenght encoding bytes
             match p.bin_len() as usize {
                 0 => data_len += 1,     // NULLs take 1 byte for the indicator
                 x => data_len += x + 1, // non-NULLs take their length + 1 byte for the indicator
             }
         }
-        // It should be really total packet len(+7 + 4)compared against max allowed packet size, not MAX_PAYLOAD_LEN
-        if 7 + self.payload_len + data_len > self.max_payload_len {
+        // 7 = 1(command id) + 4 (stmt_id) + 2 (flags). If it's 1st row - we take it to return error
+        // later(when the packet is sent). In this way we can avoid eternal loops of trying to add this row.
+        if 7 + self.payload_len + data_len > self.max_payload_len && !self.paramset.is_empty() {
             return true;
         }
         self.paramset.push(params.to_vec());
@@ -2867,6 +2877,7 @@ impl MySerialize for ComStmtBulkExecuteRequest<'_> {
             .bulk_flags
             .0
             .contains(StmtBulkExecuteParamsFlags::SEND_TYPES_TO_SERVER)
+            && !self.params.is_empty()
         {
             for param in &self.params[0] {
                 let (column_type, flags) = match param {
