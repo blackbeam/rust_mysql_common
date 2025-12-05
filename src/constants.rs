@@ -432,14 +432,14 @@ my_bitflags! {
 }
 
 my_bitflags! {
-    StmtBulkExecuteParamsFlags,
+    StmtBulkExecuteFlags,
     #[error("Unknown flags in the raw value of StmtBulkExecuteParamsFlags (raw={0:b})")]
     UnknownStmtBulkExecuteParamsFlags,
     u16,
 
     /// MySql stmt execute params flags.
     #[derive(PartialEq, Eq, Hash, Debug, Clone, Copy)]
-    pub struct StmtBulkExecuteParamsFlags: u16 {
+    pub struct StmtBulkExecuteFlags: u16 {
         const SEND_UNIT_RESULTS  = 64_u16;
         const SEND_TYPES_TO_SERVER = 128_u16;
     }
@@ -545,6 +545,10 @@ pub enum Command {
     COM_STMT_BULK_EXECUTE = 0xfa_u8,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[error("Unknown MariaDB bulk execute parameter value indicator {}", _0)]
+pub struct UnknownMariadbBulkIndicator(pub u8);
+
 /// MariaDB bulk execute parameter value indicators
 #[allow(non_camel_case_types)]
 #[derive(Clone, Copy, Eq, PartialEq, Debug)]
@@ -558,6 +562,26 @@ pub enum MariadbBulkIndicator {
     BULK_INDICATOR_DEFAULT = 0x02_u8,
     /// Value is default for insert, Is ignored for update. Not used.
     BULK_INDICATOR_IGNORE = 0x03_u8,
+}
+
+impl From<MariadbBulkIndicator> for u8 {
+    fn from(x: MariadbBulkIndicator) -> u8 {
+        x as u8
+    }
+}
+
+impl TryFrom<u8> for MariadbBulkIndicator {
+    type Error = UnknownMariadbBulkIndicator;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0x00 => Ok(Self::BULK_INDICATOR_NONE),
+            0x01 => Ok(Self::BULK_INDICATOR_NULL),
+            0x02 => Ok(Self::BULK_INDICATOR_DEFAULT),
+            0x03 => Ok(Self::BULK_INDICATOR_IGNORE),
+            x => Err(UnknownMariadbBulkIndicator(x)),
+        }
+    }
 }
 
 /// Type of state change information (part of MySql's Ok packet).

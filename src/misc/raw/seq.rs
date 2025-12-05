@@ -33,6 +33,12 @@ impl<T: Clone, U> Deref for Seq<'_, T, U> {
     }
 }
 
+impl<T: Clone, U> Seq<'static, T, U> {
+    pub fn empty() -> Seq<'static, T, U> {
+        Self(Cow::Borrowed(&[]), PhantomData)
+    }
+}
+
 impl<'a, T: Clone, U> Seq<'a, T, U> {
     pub fn new(s: impl Into<Cow<'a, [T]>>) -> Self {
         Self(s.into(), PhantomData)
@@ -109,6 +115,44 @@ pub trait SeqRepr {
     where
         T: Clone,
         T: MyDeserialize<'de, Ctx = ()>;
+}
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub struct Unknown;
+
+/// Unknown number of elements.
+impl SeqRepr for Unknown {
+    const MAX_LEN: usize = usize::MAX;
+    const SIZE: Option<usize> = None;
+    type Ctx = usize;
+
+    fn serialize<T: MySerialize>(seq: &[T], buf: &mut Vec<u8>) {
+        for x in seq.iter() {
+            x.serialize(&mut *buf);
+        }
+    }
+
+    fn deserialize<'de, T>(len: Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Cow<'de, [T]>>
+    where
+        T: Clone,
+        T: MyDeserialize<'de, Ctx = ()>,
+    {
+        let mut seq = Vec::with_capacity(len);
+        match T::SIZE {
+            Some(count) => {
+                let mut buf: ParseBuf<'_> = buf.parse(count * len)?;
+                for _ in 0..len {
+                    seq.push(buf.parse(())?);
+                }
+            }
+            None => {
+                for _ in 0..len {
+                    seq.push(buf.parse(())?);
+                }
+            }
+        }
+        Ok(Cow::Owned(seq))
+    }
 }
 
 macro_rules! impl_seq_repr {
