@@ -11,30 +11,30 @@ use std::{
         HashMap,
         hash_map::{Entry, Entry::Occupied},
     },
-    error::Error,
     fmt,
 };
 
 use crate::value::{Value, convert::ToValue};
 
-/// `FromValue` conversion error.
-#[derive(Debug, Eq, PartialEq, Clone)]
+/// Missing named parameter for a statement
+#[derive(Debug, Eq, PartialEq, Clone, thiserror::Error)]
+#[error("Missing named parameter `{}` for statement", String::from_utf8_lossy(&_0))]
 pub struct MissingNamedParameterError(pub Vec<u8>);
 
-impl fmt::Display for MissingNamedParameterError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "Missing named parameter `{}` for statement",
-            String::from_utf8_lossy(&self.0)
-        )
-    }
+#[derive(Debug, PartialEq, Eq, Clone, Copy, thiserror::Error, Hash)]
+pub enum ParamsConfusionError {
+    #[error("Named params given where positional params are expected")]
+    NamedParamsForPositionalQuery,
+    #[error("Positional params given where named params are expected")]
+    PositionalParamsForNamedQuery,
 }
 
-impl Error for MissingNamedParameterError {
-    fn description(&self) -> &str {
-        "Missing named parameter for statement"
-    }
+#[derive(Debug, PartialEq, Eq, Clone, thiserror::Error)]
+pub enum ParamsError {
+    #[error(transparent)]
+    Missing(#[from] MissingNamedParameterError),
+    #[error(transparent)]
+    Confusion(#[from] ParamsConfusionError),
 }
 
 /// Representations of parameters of a prepared statement.
@@ -62,8 +62,77 @@ impl fmt::Debug for Params {
 }
 
 impl Params {
+    /// Converts [`Params`] into a vector of values given the named parameters.
+    ///
+    /// `named_params` (if any) must follow the order they were given in the corresponding SQL
+    /// statement.
+    pub fn into_values(self, named_params: Option<&[Vec<u8>]>) -> Result<Vec<Value>, ParamsError> {
+        match self {
+            Params::Empty => match named_params {
+                Some(params) => {
+                    if let Some(first) = params.first() {
+                        Err(MissingNamedParameterError(first.clone()).into())
+                    } else {
+                        Ok(vec![])
+                    }
+                }
+                None => Ok(vec![]),
+            },
+            Params::Positional(values) => match named_params {
+                Some(named_params) if !named_params.is_empty() => {
+                    Err(ParamsConfusionError::PositionalParamsForNamedQuery.into())
+                }
+                _ => Ok(values),
+            },
+            Params::Named(map) => match named_params {
+                Some(named_params) if !named_params.is_empty() => {
+                    let mut values = vec![Value::NULL; named_params.len()];
+                    let mut indexes = Vec::with_capacity(named_params.len());
+                    for (name, value) in map {
+                        let mut first = None;
+                        for (i, _) in named_params.iter().enumerate().filter(|(_, x)| **x == name) {
+                            indexes.push(i);
+                            if first.is_none() {
+                                first = Some(i);
+                            } else {
+                                values[i] = value.clone();
+                            }
+                        }
+                        if let Some(first) = first {
+                            values[first] = value;
+                        }
+                    }
+                    if indexes.len() != named_params.len() {
+                        indexes.sort_unstable();
+                        match indexes.into_iter().enumerate().find(|x| x.0 != x.1) {
+                            Some((missing, _)) => {
+                                Err(MissingNamedParameterError(named_params[missing].clone())
+                                    .into())
+                            }
+                            None => {
+                                match named_params.last() {
+                                    Some(last) => {
+                                        Err(MissingNamedParameterError(last.clone()).into())
+                                    }
+                                    None => {
+                                        // unreachable
+                                        Ok(values)
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        Ok(values)
+                    }
+                }
+                _ => Err(ParamsConfusionError::NamedParamsForPositionalQuery.into()),
+            },
+        }
+    }
+
     /// Will convert named parameters into positional assuming order passed in `named_params`
     /// attribute.
+    #[deprecated = "use `into_values` instead"]
     pub fn into_positional(
         self,
         named_params: &[Vec<u8>],

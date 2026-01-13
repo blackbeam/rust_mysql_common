@@ -366,7 +366,7 @@ my_bitflags! {
     UnknownMariadbCapabilityFlags,
     u32,
 
-    /// Mariadb client capability flags
+    /// MariaDB client capability flags
     #[derive(PartialEq, Eq, Hash, Debug, Clone, Copy)]
     pub struct MariadbCapabilities: u32 {
         /// Permits feedback during long-running operations
@@ -428,6 +428,20 @@ my_bitflags! {
     #[derive(PartialEq, Eq, Hash, Debug, Clone, Copy)]
     pub struct StmtExecuteParamFlags: u8 {
         const UNSIGNED  = 128_u8;
+    }
+}
+
+my_bitflags! {
+    StmtBulkExecuteFlags,
+    #[error("Unknown flags in the raw value of StmtBulkExecuteParamsFlags (raw={0:b})")]
+    UnknownStmtBulkExecuteParamsFlags,
+    u16,
+
+    /// MySql stmt execute params flags.
+    #[derive(PartialEq, Eq, Hash, Debug, Clone, Copy)]
+    pub struct StmtBulkExecuteFlags: u16 {
+        const SEND_UNIT_RESULTS  = 64_u16;
+        const SEND_TYPES_TO_SERVER = 128_u16;
     }
 }
 
@@ -528,6 +542,46 @@ pub enum Command {
     COM_BINLOG_DUMP_GTID,
     COM_RESET_CONNECTION,
     COM_END,
+    COM_STMT_BULK_EXECUTE = 0xfa_u8,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[error("Unknown MariaDB bulk execute parameter value indicator {}", _0)]
+pub struct UnknownMariadbBulkIndicator(pub u8);
+
+/// MariaDB bulk execute parameter value indicators
+#[allow(non_camel_case_types)]
+#[derive(Clone, Copy, Eq, PartialEq, Debug)]
+#[repr(u8)]
+pub enum MariadbBulkIndicator {
+    /// No special indicator, normal value
+    BULK_INDICATOR_NONE = 0x00_u8,
+    /// NULL value
+    BULK_INDICATOR_NULL = 0x01_u8,
+    /// For INSERT/UPDATE, value is default. Not used
+    BULK_INDICATOR_DEFAULT = 0x02_u8,
+    /// Value is default for insert, Is ignored for update. Not used.
+    BULK_INDICATOR_IGNORE = 0x03_u8,
+}
+
+impl From<MariadbBulkIndicator> for u8 {
+    fn from(x: MariadbBulkIndicator) -> u8 {
+        x as u8
+    }
+}
+
+impl TryFrom<u8> for MariadbBulkIndicator {
+    type Error = UnknownMariadbBulkIndicator;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0x00 => Ok(Self::BULK_INDICATOR_NONE),
+            0x01 => Ok(Self::BULK_INDICATOR_NULL),
+            0x02 => Ok(Self::BULK_INDICATOR_DEFAULT),
+            0x03 => Ok(Self::BULK_INDICATOR_IGNORE),
+            x => Err(UnknownMariadbBulkIndicator(x)),
+        }
+    }
 }
 
 /// Type of state change information (part of MySql's Ok packet).
