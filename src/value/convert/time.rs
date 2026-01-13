@@ -270,10 +270,10 @@ fn create_primitive_date_time(
     micros: u32,
 ) -> Option<PrimitiveDateTime> {
     let mon = time::Month::try_from(month).ok()?;
-    if let Ok(date) = Date::from_calendar_date(year as i32, mon, day) {
-        if let Ok(time) = Time::from_hms_micro(hour, minute, second, micros) {
-            return Some(PrimitiveDateTime::new(date, time));
-        }
+    if let Ok(date) = Date::from_calendar_date(year as i32, mon, day)
+        && let Ok(time) = Time::from_hms_micro(hour, minute, second, micros)
+    {
+        return Some(PrimitiveDateTime::new(date, time));
     }
 
     None
@@ -461,7 +461,7 @@ mod tests {
                             time.hour() as u32,
                             time.minute() as u32,
                             time.second() as u32,
-                            time.microsecond() as u32,
+                            time.microsecond(),
                         ),
                         (h, i, s, if have_us == 1 { us } else { 0 }));
                 },
@@ -501,7 +501,7 @@ mod tests {
                             } else if Time::from_hms_micro(0, i as u8, 0, 0).is_err() {
                                 assert!(/*i < 0 || */i > 59);
                             } else if Time::from_hms_micro(0, 0, s as u8, 0).is_err() {
-                                assert!(/*i < 0 || */i > 59);
+                                assert!(/*s < 0 || */s > 59);
                             }
 
                             // If each of the values passed separately, then the only reason we
@@ -558,7 +558,7 @@ mod tests {
                             datetime.hour() as u32,
                             datetime.minute() as u32,
                             datetime.second() as u32,
-                            datetime.microsecond() as u32,
+                            datetime.microsecond(),
                         ),
                         (y, m, d, h, i, s, if have_us == 1 { us } else { 0 }));
                 },
@@ -609,7 +609,7 @@ mod tests {
                             } else if Time::from_hms_micro(0, i as u8, 0, 0).is_err() {
                                 assert!(/*i < 0 || */i > 59);
                             } else if Time::from_hms_micro(0, 0, s as u8, 0).is_err() {
-                                assert!(/*i < 0 || */i > 59);
+                                assert!(/*s < 0 || */s > 59);
                             }
 
                             // If each of the values passed separately, then the only reason we

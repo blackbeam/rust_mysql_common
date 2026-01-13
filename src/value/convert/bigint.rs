@@ -119,7 +119,7 @@ mod tests {
         fn big_int_roundtrip(
             bytes_pos in r"[1-9][0-9]{31}",
             bytes_neg in r"-[1-9][0-9]{31}",
-            uint in (i64::max_value() as u64 + 1)..u64::max_value(),
+            uint in (i64::MAX as u64 + 1)..u64::MAX,
             int: i64,
         ) {
             let val_bytes_pos = Value::Bytes(bytes_pos.as_bytes().into());
@@ -137,7 +137,7 @@ mod tests {
         fn big_uint_roundtrip(
             bytes in r"[1-9][0-9]{31}",
             uint: u64,
-            int in 0i64..i64::max_value(),
+            int in 0i64..i64::MAX,
         ) {
             let val_bytes = Value::Bytes(bytes.as_bytes().into());
             let val_uint = Value::UInt(uint);

@@ -55,14 +55,14 @@
 //! | [`bigdecimal::BigDecimal`]           | MySql int, uint, floats or bytes parsed using `BigDecimal::parse_bytes`.<br>⚠️ Note that range of this type is greater than supported by MySql `DECIMAL` type but it'll be serialized anyway. |
 //! | `num_bigint::{BigInt, BigUint}`      | MySql int, uint or bytes parsed using `_::parse_bytes`.<br>⚠️ Note that range of this type is greater than supported by MySql integer types but it'll be serialized anyway (as decimal bytes string). |
 //!
-//! Also crate provides from-row convertion for the following list of types (see `FromRow` trait):
+//! Also crate provides from-row conversion for the following list of types (see `FromRow` trait):
 //!
 //! | Type                                            | Notes                                             |
 //! | ----------------------------------------------- | ------------------------------------------------- |
 //! | `Row`                                           | Trivial conversion for `Row` itself.              |
 //! | `T: FromValue`                                  | For rows with a single column.                    |
 //! | `(T1: FromValue [, ..., T12: FromValue])`       | Row to a tuple of arity 1-12.                     |
-//! | [`frunk::hlist::HList`] types                   | Usefull to overcome tuple arity limitation        |
+//! | [`frunk::hlist::HList`] types                   | Useful to overcome tuple arity limitation        |
 //!
 //! ## Crate features
 //!
@@ -621,6 +621,7 @@ fn from_value_is_string() {
     use crate::{Value, prelude::FromValue};
     #[derive(FromValue, Debug, Eq, PartialEq)]
     #[mysql(is_string, rename_all = "snake_case")]
+    #[allow(clippy::enum_variant_names)]
     enum SomeTypeIsString {
         FirstVariant = 0,
         SecondVariant = 2,
@@ -659,6 +660,7 @@ fn from_value_is_integer() {
     #[derive(FromValue, Debug, Eq, PartialEq)]
     #[mysql(is_integer, rename_all = "snake_case")]
     #[repr(i8)]
+    #[allow(clippy::enum_variant_names)]
     enum SomeTypeIsInteger {
         FirstVariant = -1_i8,
         SecondVariant = 2,

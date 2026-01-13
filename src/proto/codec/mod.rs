@@ -33,7 +33,7 @@ pub mod error;
 ///
 /// Resulting sequence id will be returned.
 pub fn packet_to_chunks<T: Buf>(mut seq_id: u8, packet: &mut T, dst: &mut BytesMut) -> u8 {
-    let extra_packet = packet.remaining() % MAX_PAYLOAD_LEN == 0;
+    let extra_packet = packet.remaining().is_multiple_of(MAX_PAYLOAD_LEN);
     dst.reserve(packet.remaining() + (packet.remaining() / MAX_PAYLOAD_LEN) * 4 + 4);
 
     while packet.has_remaining() {
@@ -520,7 +520,7 @@ impl PlainPacketCodec {
                 if self.seq_id != chunk_info.seq_id() {
                     match comp_seq_id {
                         Some(seq_id) if seq_id == chunk_info.seq_id() => {
-                            // server syncronized pkt_nr (in `net_flush`)
+                            // server synchronized pkt_nr (in `net_flush`)
                             self.seq_id = seq_id;
                         }
                         _ => {

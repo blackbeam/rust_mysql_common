@@ -80,7 +80,7 @@ impl io::BufRead for TransactionPayloadReader<'_> {
     }
 }
 
-/// Wraps the data providing [`io::BufRead`] implementaion.
+/// Wraps the data providing [`io::BufRead`] implementation.
 enum TransactionPayloadInner<'a> {
     Uncompressed(&'a [u8]),
     ZstdCompressed(BufReader<zstd::Decoder<'a, &'a [u8]>>),
@@ -209,7 +209,7 @@ impl<'a> TransactionPayloadEvent<'a> {
             ));
         }
 
-        return TransactionPayloadReader::new_zstd(self.payload_raw());
+        TransactionPayloadReader::new_zstd(self.payload_raw())
     }
 
     /// Decompress the whole payload.

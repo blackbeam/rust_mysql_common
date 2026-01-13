@@ -93,7 +93,7 @@ impl<'a> TableMapEvent<'a> {
         self.columns_count.0
     }
 
-    /// Ruturns a number of JSON columns.
+    /// Returns a number of JSON columns.
     pub fn json_column_count(&self) -> usize {
         self.columns_type
             .0
@@ -265,7 +265,7 @@ impl<'de> MyDeserialize<'de> for TableMapEvent<'de> {
         let columns_count: RawInt<LenEnc> = buf.parse(())?;
         let columns_type = buf.parse(columns_count.0 as usize)?;
         let columns_metadata = buf.parse(())?;
-        let null_bitmask = buf.parse(((columns_count.0 + 7) / 8) as usize)?;
+        let null_bitmask = buf.parse(columns_count.0.div_ceil(8) as usize)?;
         let optional_metadata = buf.parse(())?;
 
         Ok(TableMapEvent {
@@ -328,8 +328,8 @@ impl<'a> BinlogStruct<'a> for TableMapEvent<'a> {
 
 /// Optional metadata field that contains charsets for columns.
 ///
-/// - contains charsets for caracter columns if it's a [`OptionalMetadataField::DefaultCharset`];
-/// – contains charsets for ENUM and SET columns if it's a
+/// * contains charsets for character columns if it's a [`OptionalMetadataField::DefaultCharset`];
+/// * contains charsets for ENUM and SET columns if it's a
 ///   [`OptionalMetadataField::EnumAndSetDefaultCharset`].
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct DefaultCharset<'a> {
@@ -449,8 +449,8 @@ impl MySerialize for NonDefaultCharset {
 
 /// Contains charset+collation for column.
 ///
-/// - contains charsets for caracter columns if it's a [`OptionalMetadataField::ColumnCharset`];
-/// – contains charsets for ENUM and SET columns if it's a
+/// * contains charsets for character columns if it's a [`OptionalMetadataField::ColumnCharset`];
+/// * contains charsets for ENUM and SET columns if it's a
 ///   [`OptionalMetadataField::EnumAndSetColumnCharset`].
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct ColumnCharsets<'a> {
@@ -1215,7 +1215,7 @@ pub struct OptionalMetadataIter<'a> {
 
 impl<'a> OptionalMetadataIter<'a> {
     /// Reads type-length-value value.
-    fn read_tlv(&mut self) -> io::Result<(RawConst<u8, OptionalMetadataFieldType>, &'a [u8])> {
+    fn read_tlv(&mut self) -> io::Result<(u8, &'a [u8])> {
         let t = self.data.read_u8()?;
         // The length is encoded in 1, 3 or 8 bytes (https://github.com/mysql/mysql-server/blob/824e2b4064053f7daf17d7f3f84b7a3ed92e5fb4/libs/mysql/binlog/event/binlog_event.h#L812)
         let l = self.data.read_lenenc_int()? as usize;
@@ -1230,13 +1230,11 @@ impl<'a> OptionalMetadataIter<'a> {
             }
         };
         self.data = &self.data[l..];
-        Ok((RawConst::new(t), v))
+        Ok((t, v))
     }
 
     /// Returns next tlv, if any.
-    fn next_tlv(
-        &mut self,
-    ) -> Option<io::Result<(RawConst<u8, OptionalMetadataFieldType>, &'a [u8])>> {
+    fn next_tlv(&mut self) -> Option<io::Result<(u8, &'a [u8])>> {
         if self.data.is_empty() {
             return None;
         }
@@ -1266,19 +1264,17 @@ impl<'a> Iterator for OptionalMetadataIter<'a> {
 
         self.next_tlv()?
             .and_then(|(t, v)| {
+                let t = RawConst::<u8, OptionalMetadataFieldType>::new(t);
                 let mut v = ParseBuf(v);
                 match t.get() {
                     Ok(t) => match t {
                         SIGNEDNESS => {
                             let num_numeric = self.count_columns(ColumnType::is_numeric_type);
-                            let num_flags_bytes = (num_numeric + 7) / 8;
+                            let num_flags_bytes = num_numeric.div_ceil(8);
                             let flags: &[u8] = v.parse(num_flags_bytes)?;
 
                             if !v.is_empty() {
-                                return Err(io::Error::new(
-                                    io::ErrorKind::Other,
-                                    "bytes remaining on stream",
-                                ));
+                                return Err(io::Error::other("bytes remaining on stream"));
                             }
 
                             let flags = BitSlice::from_slice(flags);
@@ -1304,14 +1300,11 @@ impl<'a> Iterator for OptionalMetadataIter<'a> {
                         }
                         COLUMN_VISIBILITY => {
                             let num_columns = self.num_columns();
-                            let num_flags_bytes = (num_columns + 7) / 8;
+                            let num_flags_bytes = num_columns.div_ceil(8);
                             let flags: &[u8] = v.parse(num_flags_bytes)?;
 
                             if !v.is_empty() {
-                                return Err(io::Error::new(
-                                    io::ErrorKind::Other,
-                                    "bytes remaining on stream",
-                                ));
+                                return Err(io::Error::other("bytes remaining on stream"));
                             }
 
                             let flags = BitSlice::from_slice(flags);
@@ -1453,7 +1446,7 @@ impl<'a> OptionalMetaExtractor<'a> {
     ///
     /// Returns peekable iterator so that it is possible to observe next PK index.
     ///
-    /// Emits nothing if there are no PK data in the optinal metadata.
+    /// Emits nothing if there are no PK data in the optional metadata.
     pub fn iter_primary_key(&'a self) -> Peekable<impl Iterator<Item = io::Result<u64>> + 'a> {
         let simple = self
             .simple_primary_key

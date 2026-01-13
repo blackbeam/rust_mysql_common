@@ -99,15 +99,7 @@ impl<T> Pkcs1OaepPadding<T> {
             panic!("mask too long");
         }
 
-        fn ceil_div(dividend: usize, divisor: usize) -> usize {
-            let mut quotient = dividend / divisor;
-            if dividend % divisor > 0 {
-                quotient += 1;
-            }
-            quotient
-        }
-
-        let output = (0..ceil_div(len, Self::HASH_LEN))
+        let output = (0..len.div_ceil(Self::HASH_LEN))
             .map(|c| {
                 let cs = &mut [0u8; 4];
                 BigEndian::write_u32(cs, c as u32);

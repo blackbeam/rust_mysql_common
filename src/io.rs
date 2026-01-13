@@ -261,7 +261,7 @@ impl<'a> ParseBuf<'a> {
 
     /// Consumes MySql length-encoded integer from the head of the buffer.
     ///
-    /// Returns `0` if integer is maliformed (starts with 0xff or 0xfb). First byte will be eaten.
+    /// Returns `0` if integer is malformed (starts with 0xff or 0xfb). First byte will be eaten.
     pub fn eat_lenenc_int(&mut self) -> u64 {
         match self.eat_u8() {
             x @ 0..=0xfa => x as u64,
@@ -285,7 +285,7 @@ impl<'a> ParseBuf<'a> {
 
     /// Consumes MySql length-encoded string from the head of the buffer.
     ///
-    /// Returns an empty slice if length is maliformed (starts with 0xff). First byte will be eaten.
+    /// Returns an empty slice if length is malformed (starts with 0xff). First byte will be eaten.
     pub fn eat_lenenc_str(&mut self) -> &'a [u8] {
         let len = self.eat_lenenc_int();
         self.eat(len as usize)
@@ -340,7 +340,7 @@ impl<'a> ParseBuf<'a> {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 #[error("Invalid length-encoded integer value (starts with 0xfb|0xff)")]
-pub struct InvalidLenghEncodedInteger;
+pub struct InvalidLengthEncodedInteger;
 
 pub trait ReadMysqlExt: ReadBytesExt {
     /// Reads MySql's length-encoded integer.
@@ -350,10 +350,7 @@ pub trait ReadMysqlExt: ReadBytesExt {
             0xfc => self.read_uint::<LE>(2),
             0xfd => self.read_uint::<LE>(3),
             0xfe => self.read_uint::<LE>(8),
-            0xfb | 0xff => Err(io::Error::new(
-                io::ErrorKind::Other,
-                InvalidLenghEncodedInteger,
-            )),
+            0xfb | 0xff => Err(io::Error::other(InvalidLengthEncodedInteger)),
             _ => unreachable!(),
         }
     }

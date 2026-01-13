@@ -107,7 +107,7 @@ impl<'de> MyDeserialize<'de> for BinlogValue<'de> {
                 )))
             }
             MYSQL_TYPE_DATETIME => {
-                // read YYYYMMDDHHMMSS representaion
+                // read YYYYMMDDHHMMSS representation
                 let raw: RawInt<LeU64> = buf.parse(())?;
                 let d_part = *raw / 1_000_000;
                 let t_part = *raw % 1_000_000;
@@ -137,9 +137,9 @@ impl<'de> MyDeserialize<'de> for BinlogValue<'de> {
                 )))
             }
             MYSQL_TYPE_BIT => {
-                let nbits = col_meta[1] as usize * 8 + (col_meta[0] as usize);
-                let nbytes = (nbits + 7) / 8;
-                let bytes: &[u8] = buf.parse(nbytes)?;
+                let n_bits = col_meta[1] as usize * 8 + (col_meta[0] as usize);
+                let n_bytes = n_bits.div_ceil(8);
+                let bytes: &[u8] = buf.parse(n_bytes)?;
                 Ok(BinlogValue::Value(Bytes(bytes.into())))
             }
             MYSQL_TYPE_TIMESTAMP2 => {
@@ -200,8 +200,8 @@ impl<'de> MyDeserialize<'de> for BinlogValue<'de> {
                 _ => Err(io::Error::new(io::ErrorKind::InvalidData, "Unknown ENUM")),
             },
             MYSQL_TYPE_SET => {
-                let nbytes = col_meta[1] as usize;
-                let bytes: &[u8] = buf.parse(nbytes)?;
+                let n_bytes = col_meta[1] as usize;
+                let bytes: &[u8] = buf.parse(n_bytes)?;
                 Ok(BinlogValue::Value(Bytes(bytes.into())))
             }
             MYSQL_TYPE_TINY_BLOB
@@ -210,33 +210,33 @@ impl<'de> MyDeserialize<'de> for BinlogValue<'de> {
             | MYSQL_TYPE_BLOB
             | MYSQL_TYPE_GEOMETRY
             | MYSQL_TYPE_VECTOR => {
-                let nbytes = match col_meta[0] {
+                let n_bytes = match col_meta[0] {
                     1 => *buf.parse::<RawInt<u8>>(())? as usize,
                     2 => *buf.parse::<RawInt<LeU16>>(())? as usize,
                     3 => *buf.parse::<RawInt<LeU24>>(())? as usize,
                     4 => *buf.parse::<RawInt<LeU32>>(())? as usize,
                     _ => return Err(io::Error::new(io::ErrorKind::InvalidData, "Unknown BLOB")),
                 };
-                let bytes: &[u8] = buf.parse(nbytes)?;
+                let bytes: &[u8] = buf.parse(n_bytes)?;
                 Ok(BinlogValue::Value(Bytes(bytes.into())))
             }
             MYSQL_TYPE_VARCHAR | MYSQL_TYPE_VAR_STRING => {
                 let type_len = (col_meta[0] as u16 | ((col_meta[1] as u16) << 8)) as usize;
-                let nbytes = if type_len < 256 {
+                let n_bytes = if type_len < 256 {
                     *buf.parse::<RawInt<u8>>(())? as usize
                 } else {
                     *buf.parse::<RawInt<LeU16>>(())? as usize
                 };
-                let bytes: &[u8] = buf.parse(nbytes)?;
+                let bytes: &[u8] = buf.parse(n_bytes)?;
                 Ok(BinlogValue::Value(Bytes(bytes.into())))
             }
             MYSQL_TYPE_STRING => {
-                let nbytes = if length < 256 {
+                let n_bytes = if length < 256 {
                     *buf.parse::<RawInt<u8>>(())? as usize
                 } else {
                     *buf.parse::<RawInt<LeU16>>(())? as usize
                 };
-                let bytes: &[u8] = buf.parse(nbytes)?;
+                let bytes: &[u8] = buf.parse(n_bytes)?;
                 Ok(BinlogValue::Value(Bytes(bytes.into())))
             }
             _ => Err(io::Error::new(

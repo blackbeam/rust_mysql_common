@@ -939,7 +939,7 @@ mod tests {
                     let val_bytes = Value::Bytes(n.to_string().into());
                     assert_eq!(Value::from(from_value::<$t>(val.clone())), val);
                     assert_eq!(Value::from(from_value::<$t>(val_bytes.clone())), val);
-                    if n as u64 <= i64::max_value() as u64 {
+                    if n as u64 <= i64::MAX as u64 {
                         let val_int = Value::Int(n as i64);
                         assert_eq!(Value::from(from_value::<$t>(val_int.clone())), val);
                     }
@@ -1002,9 +1002,9 @@ mod tests {
         fn parse_int_as_bool(n: i64) {
             let val = Value::Int(n);
             if n == 0 {
-                assert_eq!(from_value::<bool>(val), false);
+                assert!(!from_value::<bool>(val));
             } else {
-                assert_eq!(from_value::<bool>(val), true);
+                assert!(from_value::<bool>(val));
             }
         }
 
@@ -1012,9 +1012,9 @@ mod tests {
         fn parse_uint_as_bool(n: u64) {
             let val = Value::UInt(n);
             if n == 0 {
-                assert_eq!(from_value::<bool>(val), false);
+                assert!(!from_value::<bool>(val));
             } else {
-                assert_eq!(from_value::<bool>(val), true);
+                assert!(from_value::<bool>(val));
             }
         }
 
@@ -1022,7 +1022,7 @@ mod tests {
         fn i128_roundtrip(
             bytes_pos in r"16[0-9]{37}",
             bytes_neg in r"-16[0-9]{37}",
-            uint in (i64::max_value() as u64 + 1)..u64::max_value(),
+            uint in (i64::MAX as u64 + 1)..u64::MAX,
             int: i64,
         ) {
             let val_bytes_pos = Value::Bytes(bytes_pos.as_bytes().into());
@@ -1040,7 +1040,7 @@ mod tests {
         fn u128_roundtrip(
             bytes in r"16[0-9]{37}",
             uint: u64,
-            int in 0i64..i64::max_value(),
+            int in 0i64..i64::MAX,
         ) {
             let val_bytes = Value::Bytes(bytes.as_bytes().into());
             let val_uint = Value::UInt(uint);

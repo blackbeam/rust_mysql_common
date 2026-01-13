@@ -139,7 +139,7 @@ impl EventStreamReader {
 
     /// Returns the table map event for the given table id.
     ///
-    /// Should be availeble if rows event with this table id encountered in the stream.
+    /// Should be available if rows event with this table id encountered in the stream.
     pub fn get_tme(&self, table_id: u64) -> Option<&TableMapEvent<'static>> {
         self.table_map.get(&table_id)
     }
@@ -188,10 +188,7 @@ impl EventStreamReader {
         };
 
         if event.header().event_type_raw() == EventType::TRANSACTION_PAYLOAD_EVENT as u8 {
-            return Err(io::Error::new(
-                io::ErrorKind::Other,
-                "TRANSACTION_PAYLOAD_EVENT encountered",
-            ));
+            return Err(io::Error::other("TRANSACTION_PAYLOAD_EVENT encountered"));
         }
 
         self.handle_event(&event)?;
@@ -211,7 +208,7 @@ impl EventStreamReader {
             let tme = event.read_event::<TableMapEvent<'_>>()?;
             self.table_map.insert(tme.table_id(), tme.into_owned());
         } else if event_type == EventType::ROTATE_EVENT as u8 {
-            // we'll keep table map size within reasonlable bounds
+            // we'll keep table map size within reasonable bounds
 
             // TODO: This value is arbitrary
             const TABLE_MAP_MAX_SIZE: usize = 64;
@@ -846,12 +843,12 @@ mod tests {
                     other => other.transpose().unwrap()?,
                 };
 
-                if file_path.file_name().unwrap() == "binlog-invisible-columns.000001" {
-                    if let Some(EventData::TableMapEvent(ev)) = ev.read_data().unwrap() {
-                        let optional_meta = ev.iter_optional_meta();
-                        for meta in optional_meta {
-                            meta.unwrap();
-                        }
+                if file_path.file_name().unwrap() == "binlog-invisible-columns.000001"
+                    && let Some(EventData::TableMapEvent(ev)) = ev.read_data().unwrap()
+                {
+                    let optional_meta = ev.iter_optional_meta();
+                    for meta in optional_meta {
+                        meta.unwrap();
                     }
                 }
 
@@ -939,27 +936,29 @@ mod tests {
                             match ev.table_name().as_ref() {
                                 "foo" => {
                                     for meta in optional_meta {
-                                        match meta.unwrap() {
-                                            OptionalMetadataField::Dimensionality(x) => assert_eq!(
+                                        if let OptionalMetadataField::Dimensionality(x) =
+                                            meta.unwrap()
+                                        {
+                                            assert_eq!(
                                                 x.iter_dimensionalities()
                                                     .collect::<Result<Vec<_>, _>>()
                                                     .unwrap(),
                                                 vec![3],
-                                            ),
-                                            _ => (),
+                                            )
                                         }
                                     }
                                 }
                                 "bar" => {
                                     for meta in optional_meta {
-                                        match meta.unwrap() {
-                                            OptionalMetadataField::Dimensionality(x) => assert_eq!(
+                                        if let OptionalMetadataField::Dimensionality(x) =
+                                            meta.unwrap()
+                                        {
+                                            assert_eq!(
                                                 x.iter_dimensionalities()
                                                     .collect::<Result<Vec<_>, _>>()
                                                     .unwrap(),
                                                 vec![2, 4],
-                                            ),
-                                            _ => (),
+                                            )
                                         }
                                     }
                                 }
@@ -997,20 +996,20 @@ mod tests {
                     }
                 }
 
-                if file_path.file_name().unwrap() == "mysql-enum-string-set.000001" {
-                    if let Some(EventData::RowsEvent(data)) = ev.read_data().unwrap() {
-                        let table_map_event =
-                            binlog_file.reader().get_tme(data.table_id()).unwrap();
-                        for row in data.rows(table_map_event) {
-                            let (before, after) = row.unwrap();
-                            match data {
-                                RowsEventData::WriteRowsEvent(_) => {
-                                    assert!(before.is_none());
-                                    let after = after.unwrap().unwrap();
-                                    let mut j = 0;
-                                    for v in after {
-                                        j += 1;
-                                        match j {
+                if file_path.file_name().unwrap() == "mysql-enum-string-set.000001"
+                    && let Some(EventData::RowsEvent(data)) = ev.read_data().unwrap()
+                {
+                    let table_map_event = binlog_file.reader().get_tme(data.table_id()).unwrap();
+                    for row in data.rows(table_map_event) {
+                        let (before, after) = row.unwrap();
+                        match data {
+                            RowsEventData::WriteRowsEvent(_) => {
+                                assert!(before.is_none());
+                                let after = after.unwrap().unwrap();
+                                let mut j = 0;
+                                for v in after {
+                                    j += 1;
+                                    match j {
                                             1 => assert_eq!(v, BinlogValue::Value("0123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789".into())),
                                             2 => assert_eq!(v, BinlogValue::Value("0123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456780123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456780123456789012345678901234567890123456789".into())),
                                             3 => assert_eq!(v, BinlogValue::Value(1_i8.into())),
@@ -1019,61 +1018,60 @@ mod tests {
 
                                             _ => panic!(),
                                         }
-                                    }
-                                    assert_eq!(j, 5);
                                 }
-                                RowsEventData::UpdateRowsEvent(_) => {
-                                    let before = before.unwrap().unwrap();
-                                    let mut j = 0;
-                                    for v in before {
-                                        j += 1;
-                                        match j {
-                                            1 => assert_eq!(v, BinlogValue::Value("0123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789".into())),
-                                            2 => assert_eq!(v, BinlogValue::Value("0123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456780123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456780123456789012345678901234567890123456789".into())),
-                                            3 => assert_eq!(v, BinlogValue::Value(1_i8.into())),
-                                            4 => assert_eq!(v, BinlogValue::Value([0b00000101_u8].into())),
-                                            5 => assert_eq!(v, BinlogValue::Value("0123456789".into())),
-
-                                            _ => panic!(),
-                                        }
-                                    }
-                                    assert_eq!(j, 5);
-
-                                    let after = after.unwrap().unwrap();
-                                    let mut j = 0;
-                                    for v in after {
-                                        j += 1;
-                                        match j {
-                                            1 => assert_eq!(v, BinlogValue::Value("field1".into())),
-                                            2 => assert_eq!(v, BinlogValue::Value("field_2".into())),
-                                            3 => assert_eq!(v, BinlogValue::Value(2_i8.into())),
-                                            4 => assert_eq!(v, BinlogValue::Value([0b00001010_u8].into())),
-                                            5 => assert_eq!(v, BinlogValue::Value("0123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456780123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456780123456789012345678901234567890123456789".into())),
-                                            _ => panic!(),
-                                        }
-                                    }
-                                    assert_eq!(j, 5);
-                                }
-                                RowsEventData::DeleteRowsEvent(_) => {
-                                    assert!(after.is_none());
-
-                                    let before = before.unwrap().unwrap();
-                                    let mut j = 0;
-                                    for v in before {
-                                        j += 1;
-                                        match j {
-                                            1 => assert_eq!(v, BinlogValue::Value("field1".into())),
-                                            2 => assert_eq!(v, BinlogValue::Value("field_2".into())),
-                                            3 => assert_eq!(v, BinlogValue::Value(2_i8.into())),
-                                            4 => assert_eq!(v, BinlogValue::Value([0b00001010_u8].into())),
-                                            5 => assert_eq!(v, BinlogValue::Value("0123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456780123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456780123456789012345678901234567890123456789".into())),
-                                            _ => panic!(),
-                                        }
-                                    }
-                                    assert_eq!(j, 5);
-                                }
-                                _ => panic!(),
+                                assert_eq!(j, 5);
                             }
+                            RowsEventData::UpdateRowsEvent(_) => {
+                                let before = before.unwrap().unwrap();
+                                let mut j = 0;
+                                for v in before {
+                                    j += 1;
+                                    match j {
+                                            1 => assert_eq!(v, BinlogValue::Value("0123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789".into())),
+                                            2 => assert_eq!(v, BinlogValue::Value("0123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456780123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456780123456789012345678901234567890123456789".into())),
+                                            3 => assert_eq!(v, BinlogValue::Value(1_i8.into())),
+                                            4 => assert_eq!(v, BinlogValue::Value([0b00000101_u8].into())),
+                                            5 => assert_eq!(v, BinlogValue::Value("0123456789".into())),
+
+                                            _ => panic!(),
+                                        }
+                                }
+                                assert_eq!(j, 5);
+
+                                let after = after.unwrap().unwrap();
+                                let mut j = 0;
+                                for v in after {
+                                    j += 1;
+                                    match j {
+                                            1 => assert_eq!(v, BinlogValue::Value("field1".into())),
+                                            2 => assert_eq!(v, BinlogValue::Value("field_2".into())),
+                                            3 => assert_eq!(v, BinlogValue::Value(2_i8.into())),
+                                            4 => assert_eq!(v, BinlogValue::Value([0b00001010_u8].into())),
+                                            5 => assert_eq!(v, BinlogValue::Value("0123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456780123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456780123456789012345678901234567890123456789".into())),
+                                            _ => panic!(),
+                                        }
+                                }
+                                assert_eq!(j, 5);
+                            }
+                            RowsEventData::DeleteRowsEvent(_) => {
+                                assert!(after.is_none());
+
+                                let before = before.unwrap().unwrap();
+                                let mut j = 0;
+                                for v in before {
+                                    j += 1;
+                                    match j {
+                                            1 => assert_eq!(v, BinlogValue::Value("field1".into())),
+                                            2 => assert_eq!(v, BinlogValue::Value("field_2".into())),
+                                            3 => assert_eq!(v, BinlogValue::Value(2_i8.into())),
+                                            4 => assert_eq!(v, BinlogValue::Value([0b00001010_u8].into())),
+                                            5 => assert_eq!(v, BinlogValue::Value("0123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456780123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456780123456789012345678901234567890123456789".into())),
+                                            _ => panic!(),
+                                        }
+                                }
+                                assert_eq!(j, 5);
+                            }
+                            _ => panic!(),
                         }
                     }
                 }
@@ -1086,21 +1084,21 @@ mod tests {
                     }
                 }
 
-                if file_path.file_name().unwrap() == "mysql_type_bit.000001" {
-                    if let Some(EventData::RowsEvent(ev)) = ev.read_data().unwrap() {
-                        let table_map_event = binlog_file.reader().get_tme(ev.table_id()).unwrap();
-                        for row in ev.rows(table_map_event) {
-                            let (before, after) = row.unwrap();
-                            assert_eq!(before, None);
-                            assert_eq!(
-                                after.unwrap().unwrap(),
-                                vec![
-                                    BinlogValue::Value(Value::Bytes(vec![0b100])),
-                                    BinlogValue::Value(Value::Bytes(b"foo".to_vec())),
-                                    BinlogValue::Value(Value::Bytes(vec![0b100000])),
-                                ],
-                            );
-                        }
+                if file_path.file_name().unwrap() == "mysql_type_bit.000001"
+                    && let Some(EventData::RowsEvent(ev)) = ev.read_data().unwrap()
+                {
+                    let table_map_event = binlog_file.reader().get_tme(ev.table_id()).unwrap();
+                    for row in ev.rows(table_map_event) {
+                        let (before, after) = row.unwrap();
+                        assert_eq!(before, None);
+                        assert_eq!(
+                            after.unwrap().unwrap(),
+                            vec![
+                                BinlogValue::Value(Value::Bytes(vec![0b100])),
+                                BinlogValue::Value(Value::Bytes(b"foo".to_vec())),
+                                BinlogValue::Value(Value::Bytes(vec![0b100000])),
+                            ],
+                        );
                     }
                 }
 
@@ -1108,31 +1106,30 @@ mod tests {
                     assert_eq!(output, &file_data[ev_pos..ev_end]);
                 }
 
-                if file_path.file_name().unwrap() == "transaction_compression.000001" {
-                    if let Some(EventData::TransactionPayloadEvent(data)) = ev.read_data().unwrap()
-                    {
-                        let mut payload = data.decompressed()?;
-                        let reader = binlog_file.reader_mut();
+                if file_path.file_name().unwrap() == "transaction_compression.000001"
+                    && let Some(EventData::TransactionPayloadEvent(data)) = ev.read_data().unwrap()
+                {
+                    let mut payload = data.decompressed()?;
+                    let reader = binlog_file.reader_mut();
 
-                        let mut binlog_ev = reader.read_decompressed(&mut payload)?.unwrap();
-                        assert_eq!(binlog_ev.header().event_type(), Ok(EventType::QUERY_EVENT));
+                    let mut binlog_ev = reader.read_decompressed(&mut payload)?.unwrap();
+                    assert_eq!(binlog_ev.header().event_type(), Ok(EventType::QUERY_EVENT));
 
-                        binlog_ev = reader.read_decompressed(&mut payload)?.unwrap();
-                        assert_eq!(
-                            binlog_ev.header().event_type(),
-                            Ok(EventType::TABLE_MAP_EVENT)
-                        );
+                    binlog_ev = reader.read_decompressed(&mut payload)?.unwrap();
+                    assert_eq!(
+                        binlog_ev.header().event_type(),
+                        Ok(EventType::TABLE_MAP_EVENT)
+                    );
 
-                        binlog_ev = reader.read_decompressed(&mut payload)?.unwrap();
-                        assert_eq!(
-                            binlog_ev.header().event_type(),
-                            Ok(EventType::WRITE_ROWS_EVENT)
-                        );
+                    binlog_ev = reader.read_decompressed(&mut payload)?.unwrap();
+                    assert_eq!(
+                        binlog_ev.header().event_type(),
+                        Ok(EventType::WRITE_ROWS_EVENT)
+                    );
 
-                        binlog_ev = reader.read_decompressed(&mut payload)?.unwrap();
-                        assert_eq!(binlog_ev.header().event_type(), Ok(EventType::XID_EVENT));
-                        assert!(reader.read_decompressed(&mut payload)?.is_none());
-                    }
+                    binlog_ev = reader.read_decompressed(&mut payload)?.unwrap();
+                    assert_eq!(binlog_ev.header().event_type(), Ok(EventType::XID_EVENT));
+                    assert!(reader.read_decompressed(&mut payload)?.is_none());
                 }
                 output = Vec::new();
                 event.serialize(&mut output);
@@ -1160,54 +1157,46 @@ mod tests {
                 // https://github.com/blackbeam/rust_mysql_common/issues/162
                 if file_path.file_name().unwrap() == "minimal_row_metadata.000001" {
                     let event_data = ev.read_data().unwrap();
-                    match event_data {
-                        Some(EventData::RowsEvent(ev)) => {
-                            let table_map_event =
-                                binlog_file.reader().get_tme(ev.table_id()).unwrap();
-                            let row = ev.rows(table_map_event).next().unwrap().unwrap();
-                            let after_image = row.1.unwrap();
-                            after_image
-                                .columns()
-                                .iter()
-                                .enumerate()
-                                .for_each(|(i, column)| {
-                                    if column.name_str() == "@2" {
-                                        assert_eq!(
-                                            column.character_set(),
-                                            CollationId::UTF8MB4_0900_AI_CI as u16
-                                        );
-                                    } else if column.name_str() == "@4" {
-                                        match after_image.as_ref(i).unwrap() {
-                                            BinlogValue::Value(val) => {
-                                                assert_eq!(val, &Value::Int(3230202323));
-                                            }
-                                            _ => panic!("Expected a value"),
+                    if let Some(EventData::RowsEvent(ev)) = event_data {
+                        let table_map_event = binlog_file.reader().get_tme(ev.table_id()).unwrap();
+                        let row = ev.rows(table_map_event).next().unwrap().unwrap();
+                        let after_image = row.1.unwrap();
+                        after_image
+                            .columns()
+                            .iter()
+                            .enumerate()
+                            .for_each(|(i, column)| {
+                                if column.name_str() == "@2" {
+                                    assert_eq!(
+                                        column.character_set(),
+                                        CollationId::UTF8MB4_0900_AI_CI as u16
+                                    );
+                                } else if column.name_str() == "@4" {
+                                    match after_image.as_ref(i).unwrap() {
+                                        BinlogValue::Value(val) => {
+                                            assert_eq!(val, &Value::Int(3230202323));
                                         }
+                                        _ => panic!("Expected a value"),
                                     }
-                                });
-                        }
-                        _ => (),
+                                }
+                            });
                     }
                 }
 
                 if file_path.file_name().unwrap() == "time_issue.000001" {
                     let event_data = ev.read_data().unwrap();
-                    match event_data {
-                        Some(EventData::RowsEvent(ev)) => {
-                            let table_map_event =
-                                binlog_file.reader().get_tme(ev.table_id()).unwrap();
-                            let row = ev.rows(table_map_event).next().unwrap().unwrap();
-                            let after_image = row.1.unwrap();
-                            after_image.columns().iter().enumerate().for_each(|(i, _)| {
-                                match after_image.as_ref(i).unwrap() {
-                                    BinlogValue::Value(val) => {
-                                        assert_eq!(val, &Value::Time(true, 21, 3, 48, 27, 0));
-                                    }
-                                    _ => panic!("Expected a value"),
+                    if let Some(EventData::RowsEvent(ev)) = event_data {
+                        let table_map_event = binlog_file.reader().get_tme(ev.table_id()).unwrap();
+                        let row = ev.rows(table_map_event).next().unwrap().unwrap();
+                        let after_image = row.1.unwrap();
+                        after_image.columns().iter().enumerate().for_each(
+                            |(i, _)| match after_image.as_ref(i).unwrap() {
+                                BinlogValue::Value(val) => {
+                                    assert_eq!(val, &Value::Time(true, 21, 3, 48, 27, 0));
                                 }
-                            });
-                        }
-                        _ => (),
+                                _ => panic!("Expected a value"),
+                            },
+                        );
                     }
                 }
                 ev_pos = ev_end;
