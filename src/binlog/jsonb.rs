@@ -792,15 +792,14 @@ impl<'a> Value<'a> {
                     )))
                 }
                 ColumnType::MYSQL_TYPE_TIME => {
-                    let packed_value = dbg!(opaque_value.data_raw())
-                        .first_chunk::<8>()
-                        .ok_or_else(|| {
+                    let packed_value =
+                        opaque_value.data_raw().first_chunk::<8>().ok_or_else(|| {
                             io::Error::new(
                                 io::ErrorKind::InvalidData,
                                 "not enough data to decode MYSQL_TYPE_TIME",
                             )
                         })?;
-                    let packed_value = dbg!(i64::from_le_bytes(*packed_value));
+                    let packed_value = i64::from_le_bytes(*packed_value);
                     Ok(JsonDom::Scalar(JsonScalar::DateTime(
                         MysqlTime::from_int64_time_packed(packed_value),
                     )))
