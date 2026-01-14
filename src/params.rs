@@ -18,7 +18,10 @@ use crate::value::{Value, convert::ToValue};
 
 /// Missing named parameter for a statement
 #[derive(Debug, Eq, PartialEq, Clone, thiserror::Error)]
-#[error("Missing named parameter `{}` for statement", String::from_utf8_lossy(&_0))]
+#[error(
+    "Missing named parameter `{}` for statement",
+    String::from_utf8_lossy(_0)
+)]
 pub struct MissingNamedParameterError(pub Vec<u8>);
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, thiserror::Error, Hash)]

@@ -204,7 +204,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "bytes remaining on stream")]
     fn incomplete_packet() {
-        let buf = vec![2, 0, 0, 0];
+        let buf = [2, 0, 0, 0];
         let mut buf = &buf[..];
         let mut dst = vec![];
         let mut framed = MySyncFramed::new(&mut buf);

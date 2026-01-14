@@ -38,29 +38,29 @@ define_const!(
 
 /// A format description event is the first event of a binlog for binlog-version 4.
 ///
-/// It describes how the other events are layed out.
+/// It describes how other events are laid out.
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct FormatDescriptionEvent<'a> {
     /// Version of this binlog format.
     binlog_version: Const<BinlogVersion, LeU16>,
     /// Version of the MySQL Server that created the binlog (len=50).
     ///
-    /// The string is evaluted to apply work-arounds in the slave.
+    /// The string is evaluated to apply workarounds in the slave.
     server_version: RawBytes<'a, FixedLengthText<{ SERVER_VER_LEN }>>,
     /// Seconds since Unix epoch when the binlog was created.
     create_timestamp: RawInt<LeU32>,
-    /// Event header length. Aloway `19`.
+    /// Event header length. Always `19`.
     event_header_length: EventHeaderLength,
     /// An array indexed by Binlog Event Type - 1 to extract the length of the event specific
     /// header.
     ///
     /// Use [`Self::get_event_type_header_length`] to get header length for particular event type.
     event_type_header_lengths: RawBytes<'a, EofBytes>,
-    /// This event structure also stores a footer containig checksum algorithm description.
+    /// This event structure also stores a footer containing checksum algorithm description.
     ///
     /// # Note
     ///
-    /// Footer must be assigned manualy after `Self::read`
+    /// Footer must be assigned manually after `Self::read`
     footer: BinlogEventFooter,
 }
 
@@ -236,7 +236,7 @@ impl<'a> FormatDescriptionEvent<'a> {
             .as_bytes()
             .get(usize::from(event_type as u8).saturating_sub(1))
             .copied()
-            .unwrap_or_else(|| match event_type {
+            .unwrap_or(match event_type {
                 EventType::UNKNOWN_EVENT => 0,
                 EventType::START_EVENT_V3 => Self::START_V3_HEADER_LEN,
                 EventType::QUERY_EVENT => Self::QUERY_HEADER_LEN,

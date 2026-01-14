@@ -82,20 +82,20 @@ macro_rules! define_const {
 }
 
 macro_rules! define_const_bytes {
-    ($vname:ident, $name:ident, $err:ident($msg:literal), $val:expr_2021, $len:literal) => {
+    ($v_name:ident, $name:ident, $err:ident($msg:literal), $val:expr_2021, $len:literal) => {
         #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, thiserror::Error)]
         #[error($msg)]
         pub struct $err;
 
         #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
-        pub struct $vname;
+        pub struct $v_name;
 
-        impl ConstBytesValue<$len> for $vname {
+        impl ConstBytesValue<$len> for $v_name {
             const VALUE: [u8; $len] = $val;
             type Error = $err;
         }
 
-        pub type $name = ConstBytes<$vname, $len>;
+        pub type $name = ConstBytes<$v_name, $len>;
     };
 }
 
@@ -1473,7 +1473,7 @@ impl MySerialize for PublicKeyResponse<'_> {
 
 define_header!(
     AuthSwitchRequestHeader,
-    InvalidAuthSwithRequestHeader("Invalid auth switch request header"),
+    InvalidAuthSwitchRequestHeader("Invalid auth switch request header"),
     0xFE
 );
 
@@ -1630,7 +1630,7 @@ impl<'de> MyDeserialize<'de> for HandshakePacket<'de> {
         let __reserved = sbuf.parse_unchecked(())?;
         // If the server is MariaDB, it will pass its extended capabilities
         // in the last 4 reserved bytes.
-        let mariadb_capabiities: RawConst<LeU32, MariadbCapabilities> = sbuf.parse_unchecked(())?;
+        let mariadb_capabilities: RawConst<LeU32, MariadbCapabilities> = sbuf.parse_unchecked(())?;
         let mut scramble_2 = None;
         if capabilities_1.0 & CapabilityFlags::CLIENT_SECURE_CONNECTION.bits() > 0 {
             let len = max(13, auth_plugin_data_len.0 as i8 - 8) as usize;
@@ -1658,7 +1658,7 @@ impl<'de> MyDeserialize<'de> for HandshakePacket<'de> {
             auth_plugin_data_len,
             __reserved,
             mariadb_ext_capabilities: Const::new(MariadbCapabilities::from_bits_truncate(
-                mariadb_capabiities.0,
+                mariadb_capabilities.0,
             )),
             scramble_2,
             auth_plugin_name,
@@ -2930,13 +2930,13 @@ impl ComStmtBulkExecuteRequestBuilder<'_> {
                 return None;
             }
 
-            let mut params_iter = stack
+            let params_iter = stack
                 .take()
                 .map(Params::Positional)
                 .into_iter()
                 .chain(input.by_ref());
 
-            while let Some(params) = params_iter.next() {
+            for params in params_iter {
                 if let Some(params) = transpose!(self.add_params(params)) {
                     stack = Some(params);
                     return Some(Ok(transpose!(self.build())));
@@ -2965,7 +2965,7 @@ impl ComStmtBulkExecuteRequestBuilder<'_> {
         input: impl IntoIterator<Item = Vec<Value>>,
     ) -> impl Iterator<Item = Result<ComStmtBulkExecuteRequest<'static>, BulkExecuteRequestBuilderError>>
     {
-        self.build_params_iter(input.into_iter().map(|x| Params::Positional(x)))
+        self.build_params_iter(input.into_iter().map(Params::Positional))
     }
 }
 
@@ -3711,7 +3711,7 @@ impl Sid<'_> {
         self
     }
 
-    /// Sets the `intevals` value for this block.
+    /// Sets the `intervals` value for this block.
     pub fn with_intervals(mut self, intervals: Vec<GnoInterval>) -> Self {
         self.intervals = Seq::new(intervals);
         self
@@ -3773,17 +3773,17 @@ impl FromStr for Sid<'_> {
         let intervals = intervals
             .split(':')
             .map(|interval| {
-                let nums = interval.split('-').collect::<Vec<_>>();
-                if nums.len() != 1 && nums.len() != 2 {
+                let numbers = interval.split('-').collect::<Vec<_>>();
+                if numbers.len() != 1 && numbers.len() != 2 {
                     return Err(Sid::wrap_err(format!("invalid GnoInterval format: {}", s)));
                 }
-                if nums.len() == 1 {
-                    let start = Sid::parse_interval_num(nums[0], s)?;
+                if numbers.len() == 1 {
+                    let start = Sid::parse_interval_num(numbers[0], s)?;
                     let interval = GnoInterval::check_and_new(start, start + 1)?;
                     Ok(interval)
                 } else {
-                    let start = Sid::parse_interval_num(nums[0], s)?;
-                    let end = Sid::parse_interval_num(nums[1], s)?;
+                    let start = Sid::parse_interval_num(numbers[0], s)?;
+                    let end = Sid::parse_interval_num(numbers[1], s)?;
                     let interval = GnoInterval::check_and_new(start, end + 1)?;
                     Ok(interval)
                 }
@@ -4343,12 +4343,13 @@ mod test {
             0x65, 0x63, 0x2e, 0x2c, 0x20, 0x36, 0x31, 0x31, 0x2e, 0x33, 0x34, 0x20, 0x42, 0x2f,
             0x73, 0x65, 0x63, 0x2e,
         ];
-        const SESS_STATE_SYS_VAR_OK: &[u8] =
+        const SESSION_STATE_SYS_VAR_OK: &[u8] =
             b"\x00\x00\x00\x02\x40\x00\x00\x00\x11\x00\x0f\x0a\x61\
               \x75\x74\x6f\x63\x6f\x6d\x6d\x69\x74\x03\x4f\x46\x46";
-        const SESS_STATE_SCHEMA_OK: &[u8] =
+        const SESSION_STATE_SCHEMA_OK: &[u8] =
             b"\x00\x00\x00\x02\x40\x00\x00\x00\x07\x01\x05\x04\x74\x65\x73\x74";
-        const SESS_STATE_TRACK_OK: &[u8] = b"\x00\x00\x00\x02\x40\x00\x00\x00\x04\x02\x02\x01\x31";
+        const SESSION_STATE_TRACK_OK: &[u8] =
+            b"\x00\x00\x00\x02\x40\x00\x00\x00\x04\x02\x02\x01\x31";
         const EOF: &[u8] = b"\xfe\x00\x00\x02\x00";
 
         // packet starting with 0x00 is not an ok packet if it terminates a result set
@@ -4410,7 +4411,7 @@ mod test {
 
         let ok_packet: OkPacket<'_> = OkPacketDeserializer::<CommonOkPacket>::deserialize(
             CapabilityFlags::CLIENT_SESSION_TRACK,
-            &mut ParseBuf(SESS_STATE_SYS_VAR_OK),
+            &mut ParseBuf(SESSION_STATE_SYS_VAR_OK),
         )
         .unwrap()
         .into();
@@ -4422,9 +4423,9 @@ mod test {
         );
         assert_eq!(ok_packet.warnings(), 0);
         assert_eq!(ok_packet.info_ref(), None);
-        let sess_state_info = ok_packet.session_state_info().unwrap().pop().unwrap();
+        let session_state_info = ok_packet.session_state_info().unwrap().pop().unwrap();
 
-        match sess_state_info.decode().unwrap() {
+        match session_state_info.decode().unwrap() {
             SessionStateChange::SystemVariables(mut vals) => {
                 let val = vals.pop().unwrap();
                 assert_eq!(val.name_bytes(), b"autocommit");
@@ -4436,7 +4437,7 @@ mod test {
 
         let ok_packet: OkPacket<'_> = OkPacketDeserializer::<CommonOkPacket>::deserialize(
             CapabilityFlags::CLIENT_SESSION_TRACK,
-            &mut ParseBuf(SESS_STATE_SCHEMA_OK),
+            &mut ParseBuf(SESSION_STATE_SCHEMA_OK),
         )
         .unwrap()
         .into();
@@ -4448,15 +4449,15 @@ mod test {
         );
         assert_eq!(ok_packet.warnings(), 0);
         assert_eq!(ok_packet.info_ref(), None);
-        let sess_state_info = ok_packet.session_state_info().unwrap().pop().unwrap();
-        match sess_state_info.decode().unwrap() {
+        let session_state_info = ok_packet.session_state_info().unwrap().pop().unwrap();
+        match session_state_info.decode().unwrap() {
             SessionStateChange::Schema(schema) => assert_eq!(schema.as_bytes(), b"test"),
             _ => panic!(),
         }
 
         let ok_packet: OkPacket<'_> = OkPacketDeserializer::<CommonOkPacket>::deserialize(
             CapabilityFlags::CLIENT_SESSION_TRACK,
-            &mut ParseBuf(SESS_STATE_TRACK_OK),
+            &mut ParseBuf(SESSION_STATE_TRACK_OK),
         )
         .unwrap()
         .into();
@@ -4468,9 +4469,9 @@ mod test {
         );
         assert_eq!(ok_packet.warnings(), 0);
         assert_eq!(ok_packet.info_ref(), None);
-        let sess_state_info = ok_packet.session_state_info().unwrap().pop().unwrap();
+        let session_state_info = ok_packet.session_state_info().unwrap().pop().unwrap();
         assert_eq!(
-            sess_state_info.decode().unwrap(),
+            session_state_info.decode().unwrap(),
             SessionStateChange::IsTracked(true),
         );
 
@@ -4544,7 +4545,7 @@ mod test {
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // reserved
             0x72, 0x6f, 0x6f, 0x74, 0x00, // username=root
             0x00, // blank scramble
-            0x6d, 0x79, 0x64, 0x62, 0x00, // dbname
+            0x6d, 0x79, 0x64, 0x62, 0x00, // db name
             0x6d, 0x79, 0x73, 0x71, 0x6c, 0x5f, 0x6e, 0x61, 0x74, 0x69, 0x76, 0x65, 0x5f, 0x70,
             0x61, 0x73, 0x73, 0x77, 0x6f, 0x72, 0x64, 0x00, // mysql_native_password
         ]

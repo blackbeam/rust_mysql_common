@@ -145,7 +145,7 @@ impl<'a> RowsEvent<'a> {
         len += S(2); // extra-data len
         len += S(min(self.extra_data.len(), u16::MAX as usize - 2)); // extra data
         len += S(crate::misc::lenenc_int_len(self.num_columns()) as usize); // number of columns
-        let bitmap_len = (self.num_columns() as usize + 7) / 8;
+        let bitmap_len = self.num_columns().div_ceil(8) as usize;
         if self.columns_before_image.is_some() {
             len += S(bitmap_len); // columns present bitmap 1
         }
@@ -229,7 +229,7 @@ impl<'de> MyDeserialize<'de> for RowsEvent<'de> {
         };
 
         let num_columns: RawInt<LenEnc> = buf.parse(())?;
-        let bitmap_len = (num_columns.0 as usize + 7) / 8;
+        let bitmap_len = num_columns.0.div_ceil(8) as usize;
 
         let mut columns_before_image = None;
         let mut columns_after_image = None;

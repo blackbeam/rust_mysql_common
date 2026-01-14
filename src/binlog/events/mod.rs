@@ -48,7 +48,6 @@ use std::{
     borrow::Cow,
     cmp::min,
     io::{self, Read, Write},
-    u16,
 };
 
 use super::{
@@ -245,13 +244,10 @@ impl Event {
 
         // it is an error if the `event_data` isn't fully consumed
         if !event_data.is_empty() {
-            return Err(io::Error::new(
-                io::ErrorKind::Other,
-                format!(
-                    "bytes remaining on stream while reading {}",
-                    type_name::<T>()
-                ),
-            ));
+            return Err(io::Error::other(format!(
+                "bytes remaining on stream while reading {}",
+                type_name::<T>()
+            )));
         }
 
         Ok(event)

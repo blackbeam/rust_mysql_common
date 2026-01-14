@@ -89,7 +89,7 @@ impl TryFrom<Value> for ParseIr<NaiveDate> {
                 ))
             }
             Value::Bytes(bytes) => {
-                if let Some((y, m, d, _, _, _, _)) = parse_mysql_datetime_string(&*bytes) {
+                if let Some((y, m, d, _, _, _, _)) = parse_mysql_datetime_string(&bytes) {
                     let date = NaiveDate::from_ymd_opt(y as i32, m, d);
                     Ok((date, Value::Bytes(bytes)))
                 } else {
@@ -120,7 +120,7 @@ impl TryFrom<Value> for ParseIr<NaiveTime> {
                 Ok((time, Value::Time(false, 0, h, m, s, u)))
             }
             Value::Bytes(bytes) => {
-                if let Some((false, h, m, s, u)) = parse_mysql_time_string(&*bytes) {
+                if let Some((false, h, m, s, u)) = parse_mysql_time_string(&bytes) {
                     let time = NaiveTime::from_hms_micro_opt(h, m as u32, s as u32, u);
                     Ok((time, Value::Bytes(bytes)))
                 } else {

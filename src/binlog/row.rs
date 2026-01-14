@@ -148,7 +148,7 @@ impl<'de> MyDeserialize<'de> for BinlogRow {
             let value_options = *buf.parse::<RawInt<LenEnc>>(())?;
             if value_options & BinlogRowValueOptions::PARTIAL_JSON_UPDATES as u64 > 0 {
                 let json_columns_count = table_info.json_column_count();
-                let partial_columns_len = (json_columns_count + 7) / 8;
+                let partial_columns_len = json_columns_count.div_ceil(8);
                 let partial_columns: &[u8] = buf.parse(partial_columns_len)?;
                 let partial_columns = BitSlice::<u8>::from_slice(partial_columns);
                 Some(partial_columns.into_iter().take(json_columns_count))
@@ -160,7 +160,7 @@ impl<'de> MyDeserialize<'de> for BinlogRow {
         };
 
         let num_bits = cols.count_ones();
-        let bitmap_len = (num_bits + 7) / 8;
+        let bitmap_len = num_bits.div_ceil(8);
         let bitmap_buf: &[u8] = buf.parse(bitmap_len)?;
         let mut null_bitmap = BitVec::<u8>::from_slice(bitmap_buf);
         null_bitmap.truncate(num_bits);
