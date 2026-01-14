@@ -2975,7 +2975,7 @@ define_header!(
     InvalidComStmtBulkExecuteHeader
 );
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StmtBulkExecuteParamType {
     r#type: Const<ColumnType, u8>,
     flags: Const<StmtExecuteParamFlags, u8>,
@@ -3021,6 +3021,14 @@ impl StmtBulkExecuteParamType {
             flags: Const::new(flags),
         }
     }
+
+    pub fn column_type(&self) -> ColumnType {
+        self.r#type.0
+    }
+
+    pub fn flags(&self) -> StmtExecuteParamFlags {
+        self.flags.0
+    }
 }
 
 impl<'de> MyDeserialize<'de> for StmtBulkExecuteParamType {
@@ -3054,6 +3062,12 @@ impl StmtBulkExecuteParamValues {
             .map(StmtBulkExecuteParamValue::new)
             .collect();
         Self { values }
+    }
+}
+
+impl AsRef<[StmtBulkExecuteParamValue]> for StmtBulkExecuteParamValues {
+    fn as_ref(&self) -> &[StmtBulkExecuteParamValue] {
+        &self.values
     }
 }
 
@@ -3095,6 +3109,14 @@ impl StmtBulkExecuteParamValue {
             indicator: Const::new(indicator),
             value,
         }
+    }
+
+    pub fn indicator(&self) -> MariadbBulkIndicator {
+        self.indicator.0
+    }
+
+    pub fn value(&self) -> &Value {
+        &self.value
     }
 }
 
@@ -3181,6 +3203,22 @@ impl<'a> ComStmtBulkExecuteRequest<'a> {
             types,
             values: StmtBulkExecuteParamValues::new(values.into_iter().flatten()),
         })
+    }
+
+    pub fn stmt_id(&self) -> u32 {
+        self.stmt_id.0
+    }
+
+    pub fn bulk_flags(&self) -> StmtBulkExecuteFlags {
+        self.bulk_flags.0
+    }
+
+    pub fn types(&self) -> &[StmtBulkExecuteParamType] {
+        &self.types
+    }
+
+    pub fn values(&self) -> &StmtBulkExecuteParamValues {
+        &self.values
     }
 }
 
