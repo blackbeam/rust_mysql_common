@@ -3179,20 +3179,46 @@ impl<'a> ComStmtBulkExecuteRequest<'a> {
         let first = values.first().ok_or(BulkExecuteRequestError::NoParams)?;
         let arity = first.len();
 
-        let types = if bulk_flags.contains(StmtBulkExecuteFlags::SEND_TYPES_TO_SERVER) {
-            Seq::new(
-                first
-                    .iter()
-                    .map(StmtBulkExecuteParamType::from_value)
-                    .collect::<Vec<_>>(),
-            )
+        let mut types = if bulk_flags.contains(StmtBulkExecuteFlags::SEND_TYPES_TO_SERVER) {
+            first
+                .iter()
+                .map(StmtBulkExecuteParamType::from_value)
+                .collect::<Vec<_>>()
         } else {
-            Seq::empty()
+            Vec::default()
         };
 
         for values in &values {
             if values.len() != arity {
                 return Err(BulkExecuteRequestError::MixedArity);
+            }
+            let row_types = values
+                .iter()
+                .map(StmtBulkExecuteParamType::from_value)
+                .collect::<Vec<_>>();
+
+            // The point here is to find proper type for every param, i.e the type
+            // that covers param values in all rows.
+            // E.g. ColumnType::MYSQL_TYPE_NULL is a proper type only if all the
+            // values for the given param are NULLs
+            for (left, right) in types.iter_mut().zip(&row_types) {
+                if left != right {
+                    if left.column_type() == ColumnType::MYSQL_TYPE_NULL {
+                        *left = *right;
+                    } else if left.column_type() == right.column_type() {
+                        *left = StmtBulkExecuteParamType::new(
+                            right.column_type(),
+                            // if flag is required by a single param value,
+                            // then it must be given for the whole batch
+                            left.flags().union(right.flags()),
+                        )
+                    } else {
+                        // TODO: Values of different types are given for the same parameter
+                        //       within the batch. Not sure if server will always error here.
+                        // The error:
+                        //   ERROR 1210 (HY000): Incorrect arguments to mysqld_stmt_bulk_execute
+                    }
+                }
             }
         }
 
@@ -3200,7 +3226,7 @@ impl<'a> ComStmtBulkExecuteRequest<'a> {
             header: ConstU8::new(),
             stmt_id: RawInt::new(stmt_id),
             bulk_flags: Const::new(bulk_flags),
-            types,
+            types: Seq::new(types),
             values: StmtBulkExecuteParamValues::new(values.into_iter().flatten()),
         })
     }
