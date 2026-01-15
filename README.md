@@ -9,13 +9,14 @@
 This crate is an implementation of basic MySql protocol primitives.
 
 This crate:
+
 * defines basic MySql constants;
 * implements necessary functionality for MySql `cached_sha2_password`,
   `mysql_native_password` and legacy authentication plugins;
 * implements helper traits for MySql protocol IO;
 * implements support of named parameters for prepared statements;
-* implements parsers for a subset of MySql protocol packets (including binlog packets);
-* defines rust representation of MySql protocol values and rows;
+* implements parsers for a subset of MySql/MariaDb protocol packets (including binlog packets);
+* defines rust representation of MySql/MariaDb protocol values and rows;
 * implements conversion between MySql values and rust types, between MySql rows and tuples
   of rust types.
 * implements [FromRow and FromValue derive macros][2]
@@ -55,14 +56,14 @@ column and protocol type correspondence:
 | [`bigdecimal::BigDecimal`]           | MySql int, uint, floats or bytes parsed using `BigDecimal::parse_bytes`.<br>⚠️ Note that range of this type is greater than supported by MySql `DECIMAL` type but it'll be serialized anyway. |
 | `num_bigint::{BigInt, BigUint}`      | MySql int, uint or bytes parsed using `_::parse_bytes`.<br>⚠️ Note that range of this type is greater than supported by MySql integer types but it'll be serialized anyway (as decimal bytes string). |
 
-Also crate provides from-row convertion for the following list of types (see `FromRow` trait):
+Also crate provides from-row conversion for the following list of types (see `FromRow` trait):
 
 | Type                                            | Notes                                             |
 | ----------------------------------------------- | ------------------------------------------------- |
 | `Row`                                           | Trivial conversion for `Row` itself.              |
 | `T: FromValue`                                  | For rows with a single column.                    |
 | `(T1: FromValue [, ..., T12: FromValue])`       | Row to a tuple of arity 1-12.                     |
-| [`frunk::hlist::HList`] types                   | Usefull to overcome tuple arity limitation        |
+| [`frunk::hlist::HList`] types                   | Useful to overcome tuple arity limitation        |
 
 ### Crate features
 

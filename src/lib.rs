@@ -9,13 +9,14 @@
 //! This crate is an implementation of basic MySql protocol primitives.
 //!
 //! This crate:
+//!
 //! * defines basic MySql constants;
 //! * implements necessary functionality for MySql `cached_sha2_password`,
 //!   `mysql_native_password` and legacy authentication plugins;
 //! * implements helper traits for MySql protocol IO;
 //! * implements support of named parameters for prepared statements;
-//! * implements parsers for a subset of MySql protocol packets (including binlog packets);
-//! * defines rust representation of MySql protocol values and rows;
+//! * implements parsers for a subset of MySql/MariaDb protocol packets (including binlog packets);
+//! * defines rust representation of MySql/MariaDb protocol values and rows;
 //! * implements conversion between MySql values and rust types, between MySql rows and tuples
 //!   of rust types.
 //! * implements [FromRow and FromValue derive macros][2]
