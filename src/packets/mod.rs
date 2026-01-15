@@ -2776,6 +2776,7 @@ impl MySerialize for ComStmtClose {
 pub struct ComStmtBulkExecuteRequestBuilder<'a> {
     stmt_id: u32,
     with_types: bool,
+    with_results: bool,
     params_set: Vec<Vec<Value>>,
     payload_len: usize,
     arity: Option<usize>,
@@ -2791,6 +2792,7 @@ impl ComStmtBulkExecuteRequestBuilder<'_> {
         ComStmtBulkExecuteRequestBuilder {
             stmt_id,
             with_types: true,
+            with_results: false,
             params_set: Vec::new(),
             payload_len: 0,
             arity: None,
@@ -2807,10 +2809,28 @@ impl ComStmtBulkExecuteRequestBuilder<'_> {
         ComStmtBulkExecuteRequestBuilder {
             stmt_id: self.stmt_id,
             with_types: self.with_types,
+            with_results: self.with_results,
             params_set: self.params_set,
             payload_len: self.payload_len,
             arity: self.arity,
             named_params,
+            max_payload_len: self.max_payload_len,
+        }
+    }
+
+    /// Send [`SEND_UNIT_RESULTS`] flag to the server.
+    ///
+    /// This feature is available since MariaDb v11.5.1 and requires
+    /// `MARIADB_CLIENT_BULK_UNIT_RESULTS` capability from the server.
+    pub fn with_results(self) -> Self {
+        ComStmtBulkExecuteRequestBuilder {
+            stmt_id: self.stmt_id,
+            with_types: self.with_types,
+            with_results: true,
+            params_set: self.params_set,
+            payload_len: self.payload_len,
+            arity: self.arity,
+            named_params: self.named_params,
             max_payload_len: self.max_payload_len,
         }
     }
@@ -2893,11 +2913,16 @@ impl ComStmtBulkExecuteRequestBuilder<'_> {
     ///
     /// This will error if no rows was added to the builder.
     pub fn build(&mut self) -> Result<ComStmtBulkExecuteRequest<'static>, BulkExecuteRequestError> {
-        let bulk_flags = if self.with_types {
-            StmtBulkExecuteFlags::SEND_TYPES_TO_SERVER
-        } else {
-            StmtBulkExecuteFlags::empty()
-        };
+        let mut bulk_flags = StmtBulkExecuteFlags::empty();
+
+        if self.with_results {
+            bulk_flags.insert(StmtBulkExecuteFlags::SEND_UNIT_RESULTS);
+        }
+
+        if self.with_types {
+            bulk_flags.insert(StmtBulkExecuteFlags::SEND_TYPES_TO_SERVER);
+        }
+
         self.with_types = false;
         self.payload_len = 0;
         ComStmtBulkExecuteRequest::new(self.stmt_id, bulk_flags, mem::take(&mut self.params_set))
