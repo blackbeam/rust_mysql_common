@@ -28,6 +28,7 @@ pub use self::{
     incident_event::IncidentEvent,
     intvar_event::IntvarEvent,
     partial_update_rows_event::PartialUpdateRowsEvent,
+    previous_gtids_event::{PreviousGtidsEvent, PreviousGtidsSid},
     query_event::{QueryEvent, StatusVar, StatusVarVal, StatusVars, StatusVarsIterator},
     rand_event::RandEvent,
     rotate_event::RotateEvent,
@@ -70,6 +71,7 @@ mod gtid_event;
 mod incident_event;
 mod intvar_event;
 mod partial_update_rows_event;
+mod previous_gtids_event;
 mod query_event;
 mod rand_event;
 mod rotate_event;
@@ -316,7 +318,7 @@ impl Event {
             }
             GTID_EVENT => EventData::GtidEvent(self.read_event()?),
             ANONYMOUS_GTID_EVENT => EventData::AnonymousGtidEvent(self.read_event()?),
-            PREVIOUS_GTIDS_EVENT => EventData::PreviousGtidsEvent(Cow::Borrowed(&*self.data)),
+            PREVIOUS_GTIDS_EVENT => EventData::PreviousGtidsEvent(self.read_event()?),
             TRANSACTION_CONTEXT_EVENT => {
                 EventData::TransactionContextEvent(Cow::Borrowed(&*self.data))
             }
@@ -600,8 +602,7 @@ pub enum EventData<'a> {
     GtidEvent(GtidEvent),
     /// Not yet implemented.
     AnonymousGtidEvent(AnonymousGtidEvent),
-    /// Not yet implemented.
-    PreviousGtidsEvent(Cow<'a, [u8]>),
+    PreviousGtidsEvent(PreviousGtidsEvent<'a>),
     /// Not yet implemented.
     TransactionContextEvent(Cow<'a, [u8]>),
     /// Not yet implemented.
@@ -650,9 +651,7 @@ impl<'a> EventData<'a> {
             Self::RowsQueryEvent(ev) => EventData::RowsQueryEvent(ev.into_owned()),
             Self::GtidEvent(ev) => EventData::GtidEvent(ev),
             Self::AnonymousGtidEvent(ev) => EventData::AnonymousGtidEvent(ev),
-            Self::PreviousGtidsEvent(ev) => {
-                EventData::PreviousGtidsEvent(Cow::Owned(ev.into_owned()))
-            }
+            Self::PreviousGtidsEvent(ev) => EventData::PreviousGtidsEvent(ev.into_owned()),
             Self::TransactionContextEvent(ev) => {
                 EventData::TransactionContextEvent(Cow::Owned(ev.into_owned()))
             }
@@ -700,7 +699,7 @@ impl MySerialize for EventData<'_> {
             EventData::RowsQueryEvent(ev) => ev.serialize(buf),
             EventData::GtidEvent(ev) => ev.serialize(buf),
             EventData::AnonymousGtidEvent(ev) => ev.serialize(buf),
-            EventData::PreviousGtidsEvent(ev) => buf.put_slice(ev),
+            EventData::PreviousGtidsEvent(ev) => ev.serialize(buf),
             EventData::TransactionContextEvent(ev) => buf.put_slice(ev),
             EventData::ViewChangeEvent(ev) => buf.put_slice(ev),
             EventData::XaPrepareLogEvent(ev) => buf.put_slice(ev),

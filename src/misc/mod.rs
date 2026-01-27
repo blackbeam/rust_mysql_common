@@ -48,7 +48,7 @@ pub fn lenenc_str_len(s: &[u8]) -> u64 {
 /// # Reference
 ///
 /// <https://dev.mysql.com/doc/dev/mysql-server/latest/PageLibsMysqlSerialization.html>
-pub(crate) fn read_varlen_uint(buf: &mut ParseBuf<'_>) -> io::Result<u64> {
+pub fn read_varlen_uint(buf: &mut ParseBuf<'_>) -> io::Result<u64> {
     if buf.is_empty() {
         return Err(io::Error::new(
             io::ErrorKind::UnexpectedEof,
@@ -95,7 +95,7 @@ pub(crate) fn read_varlen_uint(buf: &mut ParseBuf<'_>) -> io::Result<u64> {
 /// # Reference
 ///
 /// <https://dev.mysql.com/doc/dev/mysql-server/latest/PageLibsMysqlSerialization.html>
-pub(crate) fn write_varlen_uint(buf: &mut Vec<u8>, value: u64) {
+pub fn write_varlen_uint(buf: &mut Vec<u8>, value: u64) {
     let num_bytes = varlen_uint_size(value);
 
     if num_bytes == 9 {
@@ -119,7 +119,7 @@ pub(crate) fn write_varlen_uint(buf: &mut Vec<u8>, value: u64) {
 ///
 /// Mirrors `get_size_integer_varlen_unsigned()` from MySQL:
 /// <https://github.com/mysql/mysql-server/blob/trunk/libs/mysql/serialization/variable_length_integers.h>
-pub(crate) fn varlen_uint_size(value: u64) -> usize {
+pub fn varlen_uint_size(value: u64) -> usize {
     let data_bits = if value == 0 {
         0
     } else {
