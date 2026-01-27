@@ -8,6 +8,8 @@
 
 use std::io::{self};
 
+use crate::io::ParseBuf;
+
 pub mod raw;
 
 /// Returns length of length-encoded-integer representation of `x`.
@@ -27,6 +29,113 @@ pub fn lenenc_int_len(x: u64) -> u64 {
 pub fn lenenc_str_len(s: &[u8]) -> u64 {
     let len = s.len() as u64;
     lenenc_int_len(len) + len
+}
+
+// ---------------------------------------------------------------------------
+// Variable-length integer encoding (MySQL serialization library format)
+// ---------------------------------------------------------------------------
+
+/// Reads a variable-length unsigned integer from the MySQL serialization format.
+///
+/// # Encoding
+///
+/// Bytes are stored in little-endian order. The least-significant byte's
+/// trailing 1-bits encode the total byte count: `count = trailing_ones + 1`.
+///
+/// For 1–8 bytes, the encoded value is: `le_uint >> (trailing_ones + 1)`.
+/// For 9 bytes (first byte = `0xFF`), the remaining 8 bytes are the raw value.
+///
+/// # Reference
+///
+/// <https://dev.mysql.com/doc/dev/mysql-server/latest/PageLibsMysqlSerialization.html>
+pub(crate) fn read_varlen_uint(buf: &mut ParseBuf<'_>) -> io::Result<u64> {
+    if buf.is_empty() {
+        return Err(io::Error::new(
+            io::ErrorKind::UnexpectedEof,
+            "unexpected end of buffer reading varlen uint",
+        ));
+    }
+
+    let first_byte = buf.0[0];
+    let trailing_ones = first_byte.trailing_ones() as usize;
+
+    if trailing_ones == 8 {
+        // Special case: 0xFF → 9 bytes total, remaining 8 bytes are the raw u64
+        if buf.len() < 9 {
+            return Err(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                "unexpected end of buffer reading 9-byte varlen uint",
+            ));
+        }
+        buf.0 = &buf.0[1..]; // skip 0xFF marker
+        let mut bytes = [0u8; 8];
+        bytes.copy_from_slice(&buf.0[..8]);
+        buf.0 = &buf.0[8..];
+        return Ok(u64::from_le_bytes(bytes));
+    }
+
+    let num_bytes = trailing_ones + 1;
+    if buf.len() < num_bytes {
+        return Err(io::Error::new(
+            io::ErrorKind::UnexpectedEof,
+            "unexpected end of buffer reading varlen uint",
+        ));
+    }
+
+    let mut raw = [0u8; 8];
+    raw[..num_bytes].copy_from_slice(&buf.0[..num_bytes]);
+    buf.0 = &buf.0[num_bytes..];
+
+    let le_val = u64::from_le_bytes(raw);
+    Ok(le_val >> num_bytes)
+}
+
+/// Writes a variable-length unsigned integer in the MySQL serialization format.
+///
+/// # Reference
+///
+/// <https://dev.mysql.com/doc/dev/mysql-server/latest/PageLibsMysqlSerialization.html>
+pub(crate) fn write_varlen_uint(buf: &mut Vec<u8>, value: u64) {
+    let num_bytes = varlen_uint_size(value);
+
+    if num_bytes == 9 {
+        // Special case: 0xFF marker followed by raw 8-byte LE value
+        buf.push(0xFF);
+        buf.extend_from_slice(&value.to_le_bytes());
+        return;
+    }
+
+    // Shift value left by num_bytes to make room for trailing ones + terminator
+    let shifted = value << num_bytes;
+
+    // Set trailing ones: the lowest (num_bytes - 1) bits are 1, bit (num_bytes - 1) is 0
+    let trailer = (1u64 << (num_bytes - 1)) - 1;
+    let encoded = shifted | trailer;
+
+    buf.extend_from_slice(&encoded.to_le_bytes()[..num_bytes]);
+}
+
+/// Returns the number of bytes needed to varlen-encode the given unsigned value.
+///
+/// Mirrors `get_size_integer_varlen_unsigned()` from MySQL:
+/// <https://github.com/mysql/mysql-server/blob/trunk/libs/mysql/serialization/variable_length_integers.h>
+pub(crate) fn varlen_uint_size(value: u64) -> usize {
+    let data_bits = if value == 0 {
+        0
+    } else {
+        64 - value.leading_zeros() as usize
+    };
+    match data_bits {
+        0..=7 => 1,
+        8..=14 => 2,
+        15..=21 => 3,
+        22..=28 => 4,
+        29..=35 => 5,
+        36..=42 => 6,
+        43..=49 => 7,
+        50..=56 => 8,
+        _ => 9,
+    }
 }
 
 pub(crate) fn unexpected_buf_eof() -> io::Error {

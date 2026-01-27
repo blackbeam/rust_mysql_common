@@ -278,6 +278,8 @@ impl<'a> FormatDescriptionEvent<'a> {
                 EventType::XA_PREPARE_LOG_EVENT => Self::XA_PREPARE_HEADER_LEN,
                 EventType::PARTIAL_UPDATE_ROWS_EVENT => Self::ROWS_HEADER_LEN_V2,
                 EventType::TRANSACTION_PAYLOAD_EVENT => Self::TRANSACTION_PAYLOAD_HEADER_LEN,
+                // Tagged GTID events use a different serialization format, header length is variable
+                EventType::GTID_TAGGED_LOG_EVENT => 0,
                 EventType::ENUM_END_EVENT => 0,
             } as u8)
     }

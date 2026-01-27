@@ -51,11 +51,21 @@ pub mod value;
 pub struct BinlogCtx<'a> {
     pub event_size: usize,
     pub fde: &'a FormatDescriptionEvent<'a>,
+    /// Raw event type byte from the binlog event header.
+    ///
+    /// This allows deserialize implementations to dispatch on the event type
+    /// when the same struct handles multiple wire formats (e.g. `GtidEvent`
+    /// handles both `GTID_EVENT` and `GTID_TAGGED_LOG_EVENT`).
+    pub event_type_raw: u8,
 }
 
 impl<'a> BinlogCtx<'a> {
-    pub fn new(event_size: usize, fde: &'a FormatDescriptionEvent<'a>) -> Self {
-        Self { event_size, fde }
+    pub fn new(event_size: usize, fde: &'a FormatDescriptionEvent<'a>, event_type_raw: u8) -> Self {
+        Self {
+            event_size,
+            fde,
+            event_type_raw,
+        }
     }
 }
 
@@ -1203,6 +1213,50 @@ mod tests {
             }
         }
 
+        Ok(())
+    }
+
+    #[test]
+    fn gtid_tagged_log_event_from_binlog() -> io::Result<()> {
+        let file_data =
+            std::fs::read("./test-data/binlogs/binlog_transaction_with_GTID_TAG.000001")?;
+        let binlog_file = BinlogFile::new(BinlogVersion::Version4, &file_data[..])?;
+
+        let mut found_tagged_gtid = false;
+
+        // UUID: 55778904-0299-11f1-b1b8-4ef0c4956feb
+        let expected_sid = [
+            0x55, 0x77, 0x89, 0x04, // 55778904
+            0x02, 0x99, // 0299
+            0x11, 0xf1, // 11f1
+            0xb1, 0xb8, // b1b8
+            0x4e, 0xf0, 0xc4, 0x95, 0x6f, 0xeb, // 4ef0c4956feb
+        ];
+
+        for ev in binlog_file {
+            let ev = ev?;
+            if ev.header().event_type() == Ok(EventType::GTID_TAGGED_LOG_EVENT) {
+                let event_data = ev.read_data()?.expect("should parse event data");
+                match event_data {
+                    EventData::GtidEvent(gtid) => {
+                        assert!(gtid.is_tagged());
+                        assert_eq!(gtid.tag().unwrap().as_str(), "mytag");
+                        assert_eq!(gtid.sid(), expected_sid);
+                        assert_eq!(gtid.gno(), 3);
+                        found_tagged_gtid = true;
+                    }
+                    other => panic!(
+                        "expected GtidEvent (tagged), got {:?}",
+                        std::mem::discriminant(&other)
+                    ),
+                }
+            }
+        }
+
+        assert!(
+            found_tagged_gtid,
+            "GTID_TAGGED_LOG_EVENT not found in binlog"
+        );
         Ok(())
     }
 }

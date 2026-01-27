@@ -117,6 +117,12 @@ pub enum EventType {
     /// to binlog_row_value_options.
     PARTIAL_UPDATE_ROWS_EVENT = 0x27,
     TRANSACTION_PAYLOAD_EVENT = 0x28,
+    // 0x29 = HEARTBEAT_LOG_EVENT_V2 in MySQL — not yet supported.
+    /// GTID event with tag support (MySQL 8.4+).
+    ///
+    /// This event type is used for GTIDs that include a tag component.
+    /// Tagged GTIDs have the format: `UUID:tag:transaction_id`
+    GTID_TAGGED_LOG_EVENT = 0x2a,
     /// Total number of known events.
     ENUM_END_EVENT,
 }
@@ -178,6 +184,7 @@ impl TryFrom<u8> for EventType {
             0x26 => Ok(Self::XA_PREPARE_LOG_EVENT),
             0x27 => Ok(Self::PARTIAL_UPDATE_ROWS_EVENT),
             0x28 => Ok(Self::TRANSACTION_PAYLOAD_EVENT),
+            0x2a => Ok(Self::GTID_TAGGED_LOG_EVENT),
             x => Err(UnknownEventType(x)),
         }
     }

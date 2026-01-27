@@ -42,7 +42,7 @@ use crate::{
             int::{ConstU8, ConstU32, LeU16, LeU24, LeU32, LeU32LowerHalf, LeU32UpperHalf, LeU64},
             seq::{Seq, Unknown},
         },
-        unexpected_buf_eof,
+        read_varlen_uint, unexpected_buf_eof, varlen_uint_size, write_varlen_uint,
     },
     params::{Params, ParamsError},
     proto::{MyDeserialize, MySerialize},
@@ -3725,6 +3725,16 @@ impl GnoInterval {
             end: RawInt::new(end),
         }
     }
+
+    /// Returns the start of the interval (inclusive).
+    pub fn start(&self) -> u64 {
+        self.start.0
+    }
+
+    /// Returns the end of the interval (exclusive).
+    pub fn end(&self) -> u64 {
+        self.end.0
+    }
     /// Checks if the [start, end) interval is valid and creates it.
     pub fn check_and_new(start: u64, end: u64) -> io::Result<Self> {
         if start >= end {
@@ -3766,10 +3776,129 @@ impl<'de> MyDeserialize<'de> for GnoInterval {
 pub const UUID_LEN: usize = 16;
 
 /// SID is a part of the `COM_BINLOG_DUMP_GTID` command. It's a GtidSet whose
+/// A GTID tag (MySQL 8.4+).
+///
+/// Tags are used to group transactions in tagged GTIDs.
+/// The format is: `[a-z_][a-z0-9_]{0,31}` (1-32 characters).
+///
+/// Tagged GTIDs have the format: `UUID:tag:transaction_id`
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub struct Tag<'a>(Cow<'a, str>);
+
+impl<'a> Tag<'a> {
+    /// Maximum length of a tag in characters.
+    pub const MAX_LEN: usize = 32;
+
+    /// Creates a new tag, validating the format.
+    ///
+    /// Tags must:
+    /// - Start with a lowercase letter or underscore
+    /// - Contain only lowercase letters, digits, or underscores
+    /// - Be 1-32 characters long
+    pub fn new(s: impl Into<Cow<'a, str>>) -> Result<Self, InvalidTag> {
+        let s = s.into();
+        Self::validate(&s)?;
+        Ok(Self(s))
+    }
+
+    /// Validates a tag string.
+    fn validate(s: &str) -> Result<(), InvalidTag> {
+        if s.is_empty() {
+            return Err(InvalidTag::Empty);
+        }
+        if s.len() > Self::MAX_LEN {
+            return Err(InvalidTag::TooLong(s.len()));
+        }
+
+        let mut chars = s.chars();
+
+        // First character must be lowercase letter or underscore
+        match chars.next() {
+            Some(c) if c.is_ascii_lowercase() || c == '_' => {}
+            Some(c) => return Err(InvalidTag::InvalidFirstChar(c)),
+            None => return Err(InvalidTag::Empty),
+        }
+
+        // Remaining characters must be lowercase letters, digits, or underscores
+        for c in chars {
+            if !c.is_ascii_lowercase() && !c.is_ascii_digit() && c != '_' {
+                return Err(InvalidTag::InvalidChar(c));
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Returns the tag as a string slice.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    /// Converts this tag into an owned version.
+    pub fn into_owned(self) -> Tag<'static> {
+        Tag(Cow::Owned(self.0.into_owned()))
+    }
+}
+
+impl std::fmt::Display for Tag<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl std::ops::Deref for Tag<'_> {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<'a> TryFrom<&'a str> for Tag<'a> {
+    type Error = InvalidTag;
+
+    fn try_from(s: &'a str) -> Result<Self, Self::Error> {
+        Self::new(s)
+    }
+}
+
+impl TryFrom<String> for Tag<'static> {
+    type Error = InvalidTag;
+
+    fn try_from(s: String) -> Result<Self, Self::Error> {
+        Self::new(s)
+    }
+}
+
+/// Error for invalid GTID tag format.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, thiserror::Error)]
+pub enum InvalidTag {
+    #[error("tag is empty")]
+    Empty,
+    #[error("tag is too long ({len} > {max})", len = .0, max = Tag::MAX_LEN)]
+    TooLong(usize),
+    #[error("invalid first character '{0}' (must be lowercase letter or underscore)")]
+    InvalidFirstChar(char),
+    #[error("invalid character '{0}' (must be lowercase letter, digit, or underscore)")]
+    InvalidChar(char),
+}
+
 /// has only one Uuid.
+///
+/// # Tagged GTIDs (MySQL 8.4+)
+///
+/// Supports tagged GTIDs with the format `UUID:tag:intervals`.
+/// When a tag is present, transactions are grouped by the tag component.
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct Sid<'a> {
     uuid: [u8; UUID_LEN],
+    /// Optional tag for tagged GTIDs (MySQL 8.4+).
+    ///
+    /// When present in any Sid within a [`ComBinlogDumpGtid`] packet, the
+    /// entire sid block is encoded in the tagged (TSID) wire format. In that
+    /// format every entry carries a varlen-encoded tag length prefix (0 for
+    /// untagged entries).
+    tag: Option<Tag<'a>>,
     intervals: Seq<'a, GnoInterval, LeU64>,
 }
 
@@ -3778,6 +3907,7 @@ impl Sid<'_> {
     pub fn new(uuid: [u8; UUID_LEN]) -> Self {
         Self {
             uuid,
+            tag: None,
             intervals: Default::default(),
         }
     }
@@ -3785,6 +3915,11 @@ impl Sid<'_> {
     /// Returns the `uuid` field value.
     pub fn uuid(&self) -> [u8; UUID_LEN] {
         self.uuid
+    }
+
+    /// Returns the `tag` field value (MySQL 8.4+).
+    pub fn tag(&self) -> Option<&Tag<'_>> {
+        self.tag.as_ref()
     }
 
     /// Returns the `intervals` field value.
@@ -3813,6 +3948,80 @@ impl Sid<'_> {
         len += S((self.intervals.len() * 16) as u64);
         len.0
     }
+
+    /// Returns the serialized length in the tagged (TSID) wire format.
+    ///
+    /// Layout: UUID (16) + varlen(tag_len) + tag_bytes + n_intervals (8) + intervals (16 each)
+    fn tagged_len(&self) -> u64 {
+        use saturating::Saturating as S;
+        let tag_str = self.tag.as_ref().map(|t| t.as_str()).unwrap_or("");
+        let mut len = S(UUID_LEN as u64);
+        len += S(varlen_uint_size(tag_str.len() as u64) as u64);
+        len += S(tag_str.len() as u64);
+        len += S(8); // n_intervals
+        len += S((self.intervals.len() * 16) as u64);
+        len.0
+    }
+
+    /// Serializes this Sid in the tagged (TSID) wire format.
+    ///
+    /// Layout: UUID (16) + varlen(tag_len) + tag_bytes + intervals (Seq<GnoInterval, LeU64>)
+    fn serialize_tagged(&self, buf: &mut Vec<u8>) {
+        self.uuid.serialize(&mut *buf);
+        let tag_str = self.tag.as_ref().map(|t| t.as_str()).unwrap_or("");
+        write_varlen_uint(buf, tag_str.len() as u64);
+        if !tag_str.is_empty() {
+            buf.extend_from_slice(tag_str.as_bytes());
+        }
+        self.intervals.serialize(buf);
+    }
+}
+
+impl<'de> Sid<'de> {
+    /// Deserializes a Sid from the tagged (TSID) wire format.
+    fn deserialize_tagged(buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+        let uuid: [u8; UUID_LEN] = buf.parse(())?;
+        let tag_len = read_varlen_uint(buf)? as usize;
+        let tag = if tag_len > 0 {
+            if buf.len() < tag_len {
+                return Err(io::Error::new(
+                    io::ErrorKind::UnexpectedEof,
+                    "unexpected end of buffer reading Sid tag",
+                ));
+            }
+            let tag_bytes = &buf.0[..tag_len];
+            let tag_str = std::str::from_utf8(tag_bytes).map_err(|e| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("invalid UTF-8 in Sid tag: {}", e),
+                )
+            })?;
+            buf.0 = &buf.0[tag_len..];
+            Some(
+                Tag::new(tag_str.to_owned())
+                    .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?,
+            )
+        } else {
+            None
+        };
+        let intervals: Seq<'de, GnoInterval, LeU64> = buf.parse(())?;
+        Ok(Sid {
+            uuid,
+            tag,
+            intervals,
+        })
+    }
+}
+
+impl<'a> Sid<'a> {
+    /// Sets the `tag` value for this SID (MySQL 8.4+).
+    ///
+    /// When any Sid in a [`ComBinlogDumpGtid`] packet carries a tag, the
+    /// entire sid block switches to the tagged (TSID) wire format.
+    pub fn with_tag(mut self, tag: Tag<'a>) -> Self {
+        self.tag = Some(tag);
+        self
+    }
 }
 
 impl MySerialize for Sid<'_> {
@@ -3829,8 +4038,34 @@ impl<'de> MyDeserialize<'de> for Sid<'de> {
     fn deserialize((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
         Ok(Self {
             uuid: buf.parse(())?,
+            // Tags are not present in the binary wire protocol format.
+            // Tagged GTIDs are conveyed via GTID_TAGGED_LOG_EVENT, not via Sid on the wire.
+            tag: None,
             intervals: buf.parse(())?,
         })
+    }
+}
+
+impl fmt::Display for Sid<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let uuid = Uuid::from_bytes(self.uuid);
+        write!(f, "{}", uuid.as_hyphenated())?;
+
+        if let Some(tag) = &self.tag {
+            write!(f, ":{tag}")?;
+        }
+
+        for interval in self.intervals.iter() {
+            let start = *interval.start;
+            let end = *interval.end;
+            if end == start + 1 {
+                write!(f, ":{start}")?;
+            } else {
+                write!(f, ":{}-{}", start, end - 1)?;
+            }
+        }
+
+        Ok(())
     }
 }
 
@@ -3848,20 +4083,66 @@ impl Sid<'_> {
         })?;
         Ok(n)
     }
+
+    /// Parses the tag and intervals portion of a SID string.
+    ///
+    /// Returns (tag, intervals_str) where tag is Some if a tag is present.
+    /// Tagged format: `tag:intervals` where tag matches `[a-z_][a-z0-9_]*`
+    /// Non-tagged format: `intervals` (starts with a digit)
+    fn parse_tag_and_intervals<'a>(
+        rest: &'a str,
+        full: &str,
+    ) -> Result<(Option<Tag<'static>>, &'a str), io::Error> {
+        // Check if the first component looks like a tag
+        // Tags start with [a-z_], intervals start with digits
+        let first_char = rest.chars().next().ok_or_else(|| {
+            Sid::wrap_err(format!("invalid sid format (empty after UUID): {}", full))
+        })?;
+
+        if first_char.is_ascii_digit() {
+            // No tag, rest is all intervals
+            return Ok((None, rest));
+        }
+
+        // Might be a tag - find the first colon to separate tag from intervals
+        if let Some((potential_tag, intervals)) = rest.split_once(':') {
+            // Validate the tag format
+            match Tag::new(potential_tag.to_owned()) {
+                Ok(tag) => Ok((Some(tag), intervals)),
+                Err(e) => Err(Sid::wrap_err(format!(
+                    "invalid tag format in sid {}: {}",
+                    full, e
+                ))),
+            }
+        } else {
+            // No colon after potential tag - this might be an error
+            // or it could be a single-component tag with no intervals (unlikely but possible)
+            Err(Sid::wrap_err(format!(
+                "invalid sid format (no intervals after tag?): {}",
+                full
+            )))
+        }
+    }
 }
 
 impl FromStr for Sid<'_> {
     type Err = io::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let (uuid, intervals) = s
+        let (uuid, rest) = s
             .split_once(':')
             .ok_or_else(|| Sid::wrap_err(format!("invalid sid format: {}", s)))?;
         let uuid = Uuid::parse_str(uuid)
             .map_err(|e| Sid::wrap_err(format!("invalid uuid format: {}, error: {}", s, e)))?;
-        let intervals = intervals
+
+        // Check if the first component after UUID is a tag or an interval
+        // Tags start with [a-z_] and contain only [a-z0-9_]
+        // Intervals are numeric (possibly with a dash for ranges)
+        let (tag, intervals_str) = Self::parse_tag_and_intervals(rest, s)?;
+
+        let intervals: Vec<GnoInterval> = intervals_str
             .split(':')
-            .map(|interval| {
+            .map(|interval: &str| {
                 let numbers = interval.split('-').collect::<Vec<_>>();
                 if numbers.len() != 1 && numbers.len() != 2 {
                     return Err(Sid::wrap_err(format!("invalid GnoInterval format: {}", s)));
@@ -3880,6 +4161,7 @@ impl FromStr for Sid<'_> {
             .collect::<Result<Vec<_>, _>>()?;
         Ok(Self {
             uuid: *uuid.as_bytes(),
+            tag,
             intervals: Seq::new(intervals),
         })
     }
@@ -4010,11 +4292,22 @@ impl<'a> ComBinlogDumpGtid<'a> {
         self
     }
 
+    /// Returns `true` if any Sid in the block has a tag, requiring the tagged
+    /// (TSID) wire format.
+    fn is_tagged_format(&self) -> bool {
+        self.sid_block.iter().any(|sid| sid.tag().is_some())
+    }
+
     fn sid_block_len(&self) -> u32 {
         use saturating::Saturating as S;
-        let mut len = S(8); // n_sids
+        let mut len = S(8_u32); // n_sids header (8 bytes including format indicator)
+        let tagged = self.is_tagged_format();
         for sid in self.sid_block.iter() {
-            len += S(sid.len() as u32);
+            if tagged {
+                len += S(sid.tagged_len() as u32);
+            } else {
+                len += S(sid.len() as u32);
+            }
         }
         len.0
     }
@@ -4028,7 +4321,27 @@ impl MySerialize for ComBinlogDumpGtid<'_> {
         self.filename.serialize(&mut *buf);
         self.pos.serialize(&mut *buf);
         buf.put_u32_le(self.sid_block_len());
-        self.sid_block.serialize(&mut *buf);
+
+        let tagged = self.is_tagged_format();
+        let format_byte: u8 = if tagged { 0x01 } else { 0x00 };
+        let n_sids = self.sid_block.len() as u64;
+        // MySQL encodes the n_sids header differently for tagged vs untagged:
+        //   Untagged: bits [55:0] = n_sids, bits [63:56] = format (0x00)
+        //   Tagged:   bits [55:8] = n_sids, bits [63:56] = format (0x01), bits [7:0] = reserved
+        let n_sids_header = if tagged {
+            (n_sids << 8) | ((format_byte as u64) << 56)
+        } else {
+            n_sids | ((format_byte as u64) << 56)
+        };
+        buf.put_u64_le(n_sids_header);
+
+        for sid in self.sid_block.iter() {
+            if tagged {
+                sid.serialize_tagged(&mut *buf);
+            } else {
+                sid.serialize(&mut *buf);
+            }
+        }
     }
 }
 
@@ -4047,8 +4360,35 @@ impl<'de> MyDeserialize<'de> for ComBinlogDumpGtid<'de> {
 
         // `flags` should contain `BINLOG_THROUGH_GTID` flag if sid_block isn't empty
         let sid_data_len: RawInt<LeU32> = buf.parse(())?;
-        let mut buf: ParseBuf<'_> = buf.parse(sid_data_len.0 as usize)?;
-        let sid_block = buf.parse(())?;
+        let mut sid_buf: ParseBuf<'de> = buf.parse(sid_data_len.0 as usize)?;
+
+        // Read the 8-byte n_sids header which includes the format indicator
+        let raw_n_sids: RawInt<LeU64> = sid_buf.parse(())?;
+        let format_byte = (raw_n_sids.0 >> 56) as u8;
+        // MySQL encodes n_sids differently for tagged vs untagged:
+        //   Untagged: n_sids in bits [55:0]
+        //   Tagged:   n_sids in bits [55:8]
+        let n_sids = if format_byte == 0x01 {
+            (raw_n_sids.0 & 0x00FF_FFFF_FFFF_FF00) >> 8
+        } else {
+            raw_n_sids.0 & 0x00FF_FFFF_FFFF_FFFF
+        };
+
+        let mut sids = Vec::with_capacity(n_sids as usize);
+        match format_byte {
+            0x01 => {
+                // Tagged (TSID) format
+                for _ in 0..n_sids {
+                    sids.push(Sid::deserialize_tagged(&mut sid_buf)?);
+                }
+            }
+            _ => {
+                // Untagged (legacy) format — format_byte 0x00 or any unknown value
+                for _ in 0..n_sids {
+                    sids.push(sid_buf.parse::<Sid<'de>>(())?);
+                }
+            }
+        }
 
         Ok(Self {
             header,
@@ -4056,7 +4396,7 @@ impl<'de> MyDeserialize<'de> for ComBinlogDumpGtid<'de> {
             server_id,
             filename,
             pos,
-            sid_block,
+            sid_block: Seq::new(sids),
         })
     }
 }
@@ -4229,6 +4569,64 @@ mod test {
 
             assert_eq!(cmd, ComBinlogDumpGtid::deserialize((), &mut ParseBuf(&output[..]))?);
         }
+
+        #[test]
+        fn com_binlog_dump_gtid_tagged_roundtrip(
+            flags: u16,
+            server_id: u32,
+            filename: Vec<u8>,
+            pos: u64,
+            n_sid_blocks in 0_u64..128,
+        ) {
+            let mut cmd = ComBinlogDumpGtid::new(server_id)
+                .with_filename(filename)
+                .with_pos(pos)
+                .with_flags(crate::packets::BinlogDumpFlags::from_bits_truncate(flags));
+
+            let mut sids = Vec::new();
+            for i in 0..n_sid_blocks {
+                let mut block = Sid::new([i as u8; 16]);
+                // Tag every other Sid
+                if i % 2 == 0 {
+                    block = block.with_tag(Tag::new(format!("tag_{}", i)).unwrap());
+                }
+                for j in 0..i {
+                    block = block.with_interval(GnoInterval::new(i, j));
+                }
+                sids.push(block);
+            }
+
+            cmd = cmd.with_sids(sids);
+
+            let mut output = Vec::new();
+            cmd.serialize(&mut output);
+
+            assert_eq!(cmd, ComBinlogDumpGtid::deserialize((), &mut ParseBuf(&output[..]))?);
+        }
+    }
+
+    #[test]
+    fn sid_display_roundtrip() {
+        // Untagged SID
+        let input = "3e11fa47-71ca-11e1-9e33-c80aa9429562:1-5:10-20";
+        let sid: Sid = input.parse().unwrap();
+        assert_eq!(sid.to_string(), input);
+
+        // Tagged SID (MySQL 8.4+)
+        let input_tagged = "3e11fa47-71ca-11e1-9e33-c80aa9429562:domain_a:1-5:10-20";
+        let sid_tagged: Sid = input_tagged.parse().unwrap();
+        assert!(sid_tagged.tag().is_some());
+        assert_eq!(sid_tagged.to_string(), input_tagged);
+
+        // Single interval
+        let input_single = "3e11fa47-71ca-11e1-9e33-c80aa9429562:42";
+        let sid_single: Sid = input_single.parse().unwrap();
+        assert_eq!(sid_single.to_string(), input_single);
+
+        // Tagged single interval
+        let input_tagged_single = "3e11fa47-71ca-11e1-9e33-c80aa9429562:app:7";
+        let sid_tagged_single: Sid = input_tagged_single.parse().unwrap();
+        assert_eq!(sid_tagged_single.to_string(), input_tagged_single);
     }
 
     #[test]
@@ -4798,6 +5196,37 @@ mod test {
             e.to_string(),
             "start(4) >= end(4) in GnoInterval".to_string()
         );
+
+        // Tagged GTID tests (MySQL 8.4+)
+        let input = "3E11FA47-71CA-11E1-9E33-C80AA9429562:domain_1:23";
+        let sid = input.parse::<Sid<'_>>().unwrap();
+        let expected_sid = Uuid::parse_str("3E11FA47-71CA-11E1-9E33-C80AA9429562").unwrap();
+        assert_eq!(sid.uuid, *expected_sid.as_bytes());
+        assert_eq!(sid.tag.as_ref().map(|t| t.as_str()), Some("domain_1"));
+        assert_eq!(sid.intervals.len(), 1);
+        assert_eq!(sid.intervals[0].start.0, 23);
+        assert_eq!(sid.intervals[0].end.0, 24);
+
+        let input = "3E11FA47-71CA-11E1-9E33-C80AA9429562:_private_tag:1-5:10-15";
+        let sid = input.parse::<Sid<'_>>().unwrap();
+        assert_eq!(sid.uuid, *expected_sid.as_bytes());
+        assert_eq!(sid.tag.as_ref().map(|t| t.as_str()), Some("_private_tag"));
+        assert_eq!(sid.intervals.len(), 2);
+        assert_eq!(sid.intervals[0].start.0, 1);
+        assert_eq!(sid.intervals[0].end.0, 6);
+        assert_eq!(sid.intervals[1].start.0, 10);
+        assert_eq!(sid.intervals[1].end.0, 16);
+
+        // Invalid tag format (uppercase)
+        let input = "3E11FA47-71CA-11E1-9E33-C80AA9429562:InvalidTag:23";
+        let e = input.parse::<Sid<'_>>().unwrap_err();
+        assert!(e.to_string().contains("invalid first character"));
+
+        // Invalid tag format (starts with digit)
+        let input = "3E11FA47-71CA-11E1-9E33-C80AA9429562:1tag:23";
+        // This should parse as intervals starting with "1tag" which is invalid
+        let e = input.parse::<Sid<'_>>().unwrap_err();
+        assert!(e.to_string().contains("invalid"));
     }
 
     #[test]
@@ -4821,5 +5250,129 @@ mod test {
         let expected = b"\x01test".to_vec();
 
         assert_eq!(expected, actual);
+    }
+
+    #[test]
+    fn valid_tags() {
+        assert!(Tag::new("a").is_ok());
+        assert!(Tag::new("_").is_ok());
+        assert!(Tag::new("domain_1").is_ok());
+        assert!(Tag::new("_private").is_ok());
+        assert!(Tag::new("tag123").is_ok());
+        assert!(Tag::new("a_b_c_1_2_3").is_ok());
+        // Max length (32 chars)
+        assert!(Tag::new("abcdefghijklmnopqrstuvwxyz123456").is_ok());
+    }
+
+    #[test]
+    fn invalid_tags() {
+        // Empty
+        assert_eq!(Tag::new(""), Err(InvalidTag::Empty));
+
+        // Too long (33 chars)
+        assert_eq!(
+            Tag::new("abcdefghijklmnopqrstuvwxyz1234567"),
+            Err(InvalidTag::TooLong(33))
+        );
+
+        // Invalid first character
+        assert_eq!(Tag::new("1tag"), Err(InvalidTag::InvalidFirstChar('1')));
+        assert_eq!(Tag::new("Tag"), Err(InvalidTag::InvalidFirstChar('T')));
+        assert_eq!(Tag::new("-tag"), Err(InvalidTag::InvalidFirstChar('-')));
+
+        // Invalid characters
+        assert_eq!(Tag::new("tag-name"), Err(InvalidTag::InvalidChar('-')));
+        assert_eq!(Tag::new("TAG"), Err(InvalidTag::InvalidFirstChar('T')));
+        assert_eq!(Tag::new("tAg"), Err(InvalidTag::InvalidChar('A')));
+        assert_eq!(Tag::new("tag.name"), Err(InvalidTag::InvalidChar('.')));
+    }
+
+    #[test]
+    fn sid_tagged_wire_roundtrip() {
+        let tag = Tag::new("domain_a".to_owned()).unwrap();
+        let sid = Sid::new(
+            *uuid::Uuid::parse_str("3E11FA47-71CA-11E1-9E33-C80AA9429562")
+                .unwrap()
+                .as_bytes(),
+        )
+        .with_tag(tag)
+        .with_interval(GnoInterval::new(1, 10))
+        .with_interval(GnoInterval::new(20, 30));
+
+        let mut buf = Vec::new();
+        sid.serialize_tagged(&mut buf);
+
+        let mut parse_buf = ParseBuf(&buf);
+        let decoded = Sid::deserialize_tagged(&mut parse_buf).unwrap();
+
+        assert!(
+            parse_buf.is_empty(),
+            "leftover bytes after deserialize_tagged"
+        );
+        assert_eq!(sid, decoded);
+        assert_eq!(decoded.tag().unwrap().as_str(), "domain_a");
+    }
+
+    #[test]
+    fn sid_tagged_zero_tag_roundtrip() {
+        let sid = Sid::new(
+            *uuid::Uuid::parse_str("3E11FA47-71CA-11E1-9E33-C80AA9429562")
+                .unwrap()
+                .as_bytes(),
+        )
+        .with_interval(GnoInterval::new(1, 5));
+
+        let mut buf = Vec::new();
+        sid.serialize_tagged(&mut buf);
+
+        let mut parse_buf = ParseBuf(&buf);
+        let decoded = Sid::deserialize_tagged(&mut parse_buf).unwrap();
+
+        assert!(
+            parse_buf.is_empty(),
+            "leftover bytes after deserialize_tagged"
+        );
+        assert_eq!(sid, decoded);
+        assert!(decoded.tag().is_none());
+    }
+
+    #[test]
+    fn com_binlog_dump_gtid_tagged_format_byte() {
+        let uuid1 = *uuid::Uuid::parse_str("3E11FA47-71CA-11E1-9E33-C80AA9429562")
+            .unwrap()
+            .as_bytes();
+        let uuid2 = *uuid::Uuid::parse_str("A0B1C2D3-E4F5-6789-ABCD-EF0123456789")
+            .unwrap()
+            .as_bytes();
+
+        // Mix of tagged and untagged Sids
+        let sid_tagged = Sid::new(uuid1)
+            .with_tag(Tag::new("app".to_owned()).unwrap())
+            .with_interval(GnoInterval::new(1, 100));
+        let sid_untagged = Sid::new(uuid2).with_interval(GnoInterval::new(1, 50));
+
+        let cmd = ComBinlogDumpGtid::new(42)
+            .with_pos(4)
+            .with_sid(sid_tagged)
+            .with_sid(sid_untagged);
+
+        let mut output = Vec::new();
+        cmd.serialize(&mut output);
+
+        // Verify the format byte is 0x01 in the raw serialized output.
+        // The n_sids header starts after: header(1) + flags(2) + server_id(4) +
+        // filename_len(4) + filename(0) + pos(8) + sid_data_len(4) = 23
+        let n_sids_offset = 1 + 2 + 4 + 4 + 0 + 8 + 4;
+        let n_sids_bytes = &output[n_sids_offset..n_sids_offset + 8];
+        let n_sids_raw = u64::from_le_bytes(n_sids_bytes.try_into().unwrap());
+        let format_byte = (n_sids_raw >> 56) as u8;
+        assert_eq!(format_byte, 0x01, "format byte should be 0x01 for tagged");
+
+        let decoded = ComBinlogDumpGtid::deserialize((), &mut ParseBuf(&output)).unwrap();
+        assert_eq!(cmd, decoded);
+
+        // Verify the tags survived the roundtrip
+        assert_eq!(decoded.sids()[0].tag().unwrap().as_str(), "app");
+        assert!(decoded.sids()[1].tag().is_none());
     }
 }
