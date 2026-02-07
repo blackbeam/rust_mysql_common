@@ -237,6 +237,53 @@ pub fn create_response_for_ed25519(_pass: &[u8], _message: &[u8]) -> [u8; 64] {
     }
 }
 
+/// Crafting response message for parsec authentication. It consists of a client nonce and signature.
+///
+/// This will only work if `parsec` feature is enabled and otherwise will panic at runtime.
+#[cfg_attr(docsrs, doc(cfg(feature = "client_parsec")))]
+pub fn create_response_for_parsec(
+    _pass: &[u8],
+    _server_nonce: &[u8],
+    _iterations: u32,
+    _server_salt: &[u8],
+) -> [u8; 96] {
+    #[cfg(not(feature = "client_parsec"))]
+    {
+        panic!(
+            "Can't create response for `parsec` authentication plugin — `mysql_common/client_parsec` feature is disabled."
+        )
+    }
+
+    #[cfg(feature = "client_parsec")]
+    {
+        use ed25519_dalek::{Signer, SigningKey};
+        use pbkdf2::pbkdf2_hmac;
+        use rand::Rng;
+        use sha2::Sha512;
+
+        // Generating derived key using iteraitions and user specific salt received in parsec ext-salt packet
+        let mut derived_key = [0u8; 32];
+        pbkdf2_hmac::<Sha512>(_pass, _server_salt, _iterations, &mut derived_key);
+
+        let mut rng = rand::rng();
+        // This is the server nonce[0..32] + client nonce[32..64] + signature buffer[64..128]
+        // [0..64] - is the message we will need to sign. [32..] - (client nonce + signature) that will be sent to server
+        let mut msg_and_signature = [0u8; 128];
+        msg_and_signature[..32].copy_from_slice(_server_nonce);
+        // First 32 bytes is random client nonce
+        let client_nonce = &mut msg_and_signature[32..64];
+        rng.fill(client_nonce);
+
+        // The rest 64 bytes is the ed25519 signature of server_nonce + client_nonce using derived key
+        let signing_key = SigningKey::from_bytes(&derived_key);
+
+        let signature = signing_key.sign(&msg_and_signature[..64]);
+        msg_and_signature[64..].copy_from_slice(&signature.to_bytes());
+        let result: &[u8; 96] = unsafe { &*(msg_and_signature[32..].as_ptr() as *const [u8; 96]) };
+        *result
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;

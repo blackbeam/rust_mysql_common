@@ -47,6 +47,7 @@ use crate::{
     params::{Params, ParamsError},
     proto::{MyDeserialize, MySerialize},
     scramble::create_response_for_ed25519,
+    scramble::create_response_for_parsec,
     value::{BinValue, ClientSide, SerializationSide, Value, ValueDeserializer},
 };
 
@@ -1186,6 +1187,7 @@ const MYSQL_NATIVE_PASSWORD_PLUGIN_NAME: &[u8] = b"mysql_native_password";
 const CACHING_SHA2_PASSWORD_PLUGIN_NAME: &[u8] = b"caching_sha2_password";
 const MYSQL_CLEAR_PASSWORD_PLUGIN_NAME: &[u8] = b"mysql_clear_password";
 const ED25519_PLUGIN_NAME: &[u8] = b"client_ed25519";
+const PARSEC_PLUGIN_NAME: &[u8] = b"parsec";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AuthPluginData<'a> {
@@ -1202,6 +1204,8 @@ pub enum AuthPluginData<'a> {
     /// This plugin is known to the library but the actual support is enabled
     /// by the `client_ed25519` feature.
     Ed25519([u8; 64]),
+    /// Auth data for MariaDB's `parsec` plugin.
+    Parsec([u8; 96]),
 }
 
 impl AuthPluginData<'_> {
@@ -1212,6 +1216,7 @@ impl AuthPluginData<'_> {
             AuthPluginData::Sha2(x) => AuthPluginData::Sha2(x),
             AuthPluginData::Clear(x) => AuthPluginData::Clear(Cow::Owned(x.into_owned())),
             AuthPluginData::Ed25519(x) => AuthPluginData::Ed25519(x),
+            AuthPluginData::Parsec(x) => AuthPluginData::Parsec(x),
         }
     }
 }
@@ -1226,6 +1231,7 @@ impl std::ops::Deref for AuthPluginData<'_> {
             Self::Old(x) => &x[..],
             Self::Clear(x) => &x[..],
             Self::Ed25519(x) => &x[..],
+            Self::Parsec(x) => &x[..],
         }
     }
 }
@@ -1244,6 +1250,7 @@ impl MySerialize for AuthPluginData<'_> {
                 buf.push(0);
             }
             Self::Ed25519(x) => buf.put_slice(&x[..]),
+            Self::Parsec(x) => buf.put_slice(&x[..]),
         }
     }
 }
@@ -1264,6 +1271,13 @@ pub enum AuthPlugin<'a> {
     /// This plugin is known to the library but the actual support is enabled
     /// by the `client_ed25519` feature.
     Ed25519,
+    /// MariaDB's Parsec(Password Authentication using Response Signed with Eliptic Curve) authentication
+    ///
+    /// Actual support is enabled by the `client_parsec` feature.
+    MariadbParsec {
+        iterations: u32,
+        ext_salt: [u8; 18],
+    },
     Other(Cow<'a, [u8]>),
 }
 
@@ -1296,6 +1310,10 @@ impl<'a> AuthPlugin<'a> {
             MYSQL_OLD_PASSWORD_PLUGIN_NAME => AuthPlugin::MysqlOldPassword,
             MYSQL_CLEAR_PASSWORD_PLUGIN_NAME => AuthPlugin::MysqlClearPassword,
             ED25519_PLUGIN_NAME => AuthPlugin::Ed25519,
+            PARSEC_PLUGIN_NAME => AuthPlugin::MariadbParsec {
+                iterations: 0,
+                ext_salt: [0; 18],
+            },
             name => AuthPlugin::Other(Cow::Borrowed(name)),
         }
     }
@@ -1307,6 +1325,7 @@ impl<'a> AuthPlugin<'a> {
             AuthPlugin::MysqlOldPassword => MYSQL_OLD_PASSWORD_PLUGIN_NAME,
             AuthPlugin::MysqlClearPassword => MYSQL_CLEAR_PASSWORD_PLUGIN_NAME,
             AuthPlugin::Ed25519 => ED25519_PLUGIN_NAME,
+            AuthPlugin::MariadbParsec { .. } => PARSEC_PLUGIN_NAME,
             AuthPlugin::Other(name) => name,
         }
     }
@@ -1318,6 +1337,13 @@ impl<'a> AuthPlugin<'a> {
             AuthPlugin::MysqlOldPassword => AuthPlugin::MysqlOldPassword,
             AuthPlugin::MysqlClearPassword => AuthPlugin::MysqlClearPassword,
             AuthPlugin::Ed25519 => AuthPlugin::Ed25519,
+            AuthPlugin::MariadbParsec {
+                iterations,
+                ext_salt,
+            } => AuthPlugin::MariadbParsec {
+                iterations,
+                ext_salt,
+            },
             AuthPlugin::Other(name) => AuthPlugin::Other(Cow::Owned(name.into_owned())),
         }
     }
@@ -1329,6 +1355,13 @@ impl<'a> AuthPlugin<'a> {
             AuthPlugin::MysqlOldPassword => AuthPlugin::MysqlOldPassword,
             AuthPlugin::MysqlClearPassword => AuthPlugin::MysqlClearPassword,
             AuthPlugin::Ed25519 => AuthPlugin::Ed25519,
+            AuthPlugin::MariadbParsec {
+                iterations,
+                ext_salt,
+            } => AuthPlugin::MariadbParsec {
+                iterations: *iterations,
+                ext_salt: *ext_salt,
+            },
             AuthPlugin::Other(name) => AuthPlugin::Other(Cow::Borrowed(name.as_ref())),
         }
     }
@@ -1342,6 +1375,7 @@ impl<'a> AuthPlugin<'a> {
     /// # Panic
     ///
     /// * [`AuthPlugin::Ed25519`] will panic if `client_ed25519` feature is disabled.
+    /// * [`AuthPlugin::MariadbParsec`] will panic if `client_parsec` feature is disabled.
     pub fn gen_data<'b>(&self, pass: Option<&'b str>, nonce: &[u8]) -> Option<AuthPluginData<'b>> {
         use super::scramble::{scramble_323, scramble_native, scramble_sha256};
 
@@ -1364,8 +1398,35 @@ impl<'a> AuthPlugin<'a> {
                     pass.as_bytes(),
                     nonce,
                 ))),
+                AuthPlugin::MariadbParsec {
+                    iterations,
+                    ext_salt,
+                } => Some(AuthPluginData::Parsec(create_response_for_parsec(
+                    pass.as_bytes(),
+                    nonce,
+                    *iterations,
+                    ext_salt,
+                ))),
                 AuthPlugin::Other(_) => None,
             },
+            _ => None,
+        }
+    }
+
+    /// Reads additional (packet) data required for authentication data generation.
+    ///
+    /// Currently only needed for Parseec plugin to read the result of additional packets exchange with the server.
+    pub fn read_add_data<'b>(&mut self, payload: &[u8]) -> Option<()> {
+        match self {
+            AuthPlugin::MariadbParsec {
+                iterations,
+                ext_salt,
+            } => {
+                let result = parse_parsec_salt(payload)?;
+                *iterations = result.0;
+                *ext_salt = *result.1;
+                Some(())
+            }
             _ => None,
         }
     }
@@ -1585,6 +1646,21 @@ impl MySerialize for AuthSwitchRequest<'_> {
         self.auth_plugin.serialize(&mut *buf);
         self.plugin_data.serialize(buf);
     }
+}
+
+// Parses and verifies Parsec additional exchange reply packet, including the ext-salt and iteration count.
+pub fn parse_parsec_salt(data: &[u8]) -> Option<(u32, &[u8; 18])> {
+    if data.len() != 20 || data[0] != b'P' {
+        return None;
+    }
+    let factor_byte = data[1];
+    if factor_byte > 3 {
+        return None;
+    }
+    let iterations = 1024 << (factor_byte);
+    // We've verified the length of the data already.
+    let salt: &[u8; 18] = unsafe { &*(data.as_ptr().add(2) as *const [u8; 18]) };
+    Some((iterations, salt))
 }
 
 /// Represents MySql's initial handshake packet.
