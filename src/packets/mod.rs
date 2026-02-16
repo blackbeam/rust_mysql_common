@@ -1660,7 +1660,10 @@ pub fn parse_parsec_salt(data: &[u8]) -> Option<(u32, &[u8; 18])> {
     }
 
     let ([algo, factor], rest) = data.split_first_chunk::<2>().expect("infallible");
-    if *algo != b'P' || *factor > 3 {
+    // It used to be hardocoded 3 in the server, but that is gonna change to be configurable(in the server).
+    // The limit 20 is rather practical - it should be more than enough for good security and yet the
+    // calculation won't take ages.
+    if *algo != b'P' || *factor > 20 {
         return None;
     }
 
