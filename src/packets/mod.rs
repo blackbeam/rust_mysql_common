@@ -1205,6 +1205,8 @@ pub enum AuthPluginData<'a> {
     /// by the `client_ed25519` feature.
     Ed25519([u8; 64]),
     /// Auth data for MariaDB's `parsec` plugin.
+    ///
+    /// Plugin support is enabled by the `client_parsec` feature.
     Parsec([u8; 96]),
 }
 
@@ -1401,12 +1403,15 @@ impl<'a> AuthPlugin<'a> {
                 AuthPlugin::MariadbParsec {
                     iterations,
                     ext_salt,
-                } => Some(AuthPluginData::Parsec(create_response_for_parsec(
-                    pass.as_bytes(),
-                    nonce,
-                    *iterations,
-                    ext_salt,
-                ))),
+                } => match nonce.try_into() {
+                    Ok(nonce_array) => Some(AuthPluginData::Parsec(create_response_for_parsec(
+                        pass.as_bytes(),
+                        nonce_array,
+                        *iterations,
+                        ext_salt,
+                    ))),
+                    Err(_) => None,
+                },
                 AuthPlugin::Other(_) => None,
             },
             _ => None,
@@ -1416,7 +1421,7 @@ impl<'a> AuthPlugin<'a> {
     /// Reads additional (packet) data required for authentication data generation.
     ///
     /// Currently only needed for Parseec plugin to read the result of additional packets exchange with the server.
-    pub fn read_add_data<'b>(&mut self, payload: &[u8]) -> Option<()> {
+    pub fn read_add_data(&mut self, payload: &[u8]) -> Option<()> {
         match self {
             AuthPlugin::MariadbParsec {
                 iterations,
@@ -1650,17 +1655,16 @@ impl MySerialize for AuthSwitchRequest<'_> {
 
 // Parses and verifies Parsec additional exchange reply packet, including the ext-salt and iteration count.
 pub fn parse_parsec_salt(data: &[u8]) -> Option<(u32, &[u8; 18])> {
-    if data.len() != 20 || data[0] != b'P' {
+    if data.len() != 20 {
         return None;
     }
-    let factor_byte = data[1];
-    if factor_byte > 3 {
+
+    let ([algo, factor], rest) = data.split_first_chunk::<2>().expect("infallible");
+    if *algo != b'P' || *factor > 3 {
         return None;
     }
-    let iterations = 1024 << (factor_byte);
-    // We've verified the length of the data already.
-    let salt: &[u8; 18] = unsafe { &*(data.as_ptr().add(2) as *const [u8; 18]) };
-    Some((iterations, salt))
+
+    Some((1024 << factor, rest.try_into().expect("infallible")))
 }
 
 /// Represents MySql's initial handshake packet.

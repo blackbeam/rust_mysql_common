@@ -243,7 +243,7 @@ pub fn create_response_for_ed25519(_pass: &[u8], _message: &[u8]) -> [u8; 64] {
 #[cfg_attr(docsrs, doc(cfg(feature = "client_parsec")))]
 pub fn create_response_for_parsec(
     _pass: &[u8],
-    _server_nonce: &[u8],
+    _server_nonce: &[u8; 32],
     _iterations: u32,
     _server_salt: &[u8],
 ) -> [u8; 96] {
@@ -261,7 +261,7 @@ pub fn create_response_for_parsec(
         use rand::Rng;
         use sha2::Sha512;
 
-        // Generating derived key using iteraitions and user specific salt received in parsec ext-salt packet
+        // Generating derived key using iterations and user specific salt received in parsec ext-salt packet
         let mut derived_key = [0u8; 32];
         pbkdf2_hmac::<Sha512>(_pass, _server_salt, _iterations, &mut derived_key);
 
@@ -279,8 +279,7 @@ pub fn create_response_for_parsec(
 
         let signature = signing_key.sign(&msg_and_signature[..64]);
         msg_and_signature[64..].copy_from_slice(&signature.to_bytes());
-        let result: &[u8; 96] = unsafe { &*(msg_and_signature[32..].as_ptr() as *const [u8; 96]) };
-        *result
+        msg_and_signature[32..].try_into().expect("infallible")
     }
 }
 
