@@ -270,10 +270,10 @@ fn create_primitive_date_time(
     micros: u32,
 ) -> Option<PrimitiveDateTime> {
     let mon = time::Month::try_from(month).ok()?;
-    if let Ok(date) = Date::from_calendar_date(year as i32, mon, day)
-        && let Ok(time) = Time::from_hms_micro(hour, minute, second, micros)
-    {
-        return Some(PrimitiveDateTime::new(date, time));
+    if let Ok(date) = Date::from_calendar_date(year as i32, mon, day) {
+        if let Ok(time) = Time::from_hms_micro(hour, minute, second, micros) {
+            return Some(PrimitiveDateTime::new(date, time));
+        }
     }
 
     None
