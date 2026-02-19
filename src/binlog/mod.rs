@@ -1218,11 +1218,14 @@ mod tests {
 
     #[test]
     fn gtid_tagged_log_event_from_binlog() -> io::Result<()> {
+        use crate::packets::GnoInterval;
+
         let file_data =
             std::fs::read("./test-data/binlogs/binlog_transaction_with_GTID_TAG.000001")?;
         let binlog_file = BinlogFile::new(BinlogVersion::Version4, &file_data[..])?;
 
         let mut found_tagged_gtid = false;
+        let mut found_previous_gtids = false;
 
         // UUID: 55778904-0299-11f1-b1b8-4ef0c4956feb
         let expected_sid = [
@@ -1235,6 +1238,31 @@ mod tests {
 
         for ev in binlog_file {
             let ev = ev?;
+            if ev.header().event_type() == Ok(EventType::PREVIOUS_GTIDS_EVENT) {
+                let event_data = ev.read_data()?.expect("should parse event data");
+                match event_data {
+                    EventData::PreviousGtidsEvent(prev_ev) => {
+                        let sids = prev_ev.sids();
+                        assert_eq!(sids.len(), 2, "expected 2 SID entries");
+
+                        // Entry 1: no tag, interval [1, 14)
+                        assert_eq!(sids[0].uuid(), expected_sid);
+                        assert!(sids[0].tag().is_none(), "first entry should have no tag");
+                        assert_eq!(sids[0].intervals(), &[GnoInterval::new(1, 14)]);
+
+                        // Entry 2: tag "mytag", interval [1, 3)
+                        assert_eq!(sids[1].uuid(), expected_sid);
+                        assert_eq!(sids[1].tag().map(|t| t.as_str()), Some("mytag"));
+                        assert_eq!(sids[1].intervals(), &[GnoInterval::new(1, 3)]);
+
+                        found_previous_gtids = true;
+                    }
+                    other => panic!(
+                        "expected PreviousGtidsEvent, got {:?}",
+                        std::mem::discriminant(&other)
+                    ),
+                }
+            }
             if ev.header().event_type() == Ok(EventType::GTID_TAGGED_LOG_EVENT) {
                 let event_data = ev.read_data()?.expect("should parse event data");
                 match event_data {
@@ -1257,6 +1285,56 @@ mod tests {
             found_tagged_gtid,
             "GTID_TAGGED_LOG_EVENT not found in binlog"
         );
+        assert!(
+            found_previous_gtids,
+            "PREVIOUS_GTIDS_EVENT not found in binlog"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn untagged_previous_gtids_event_from_binlog() -> io::Result<()> {
+        use crate::packets::GnoInterval;
+
+        let file_data =
+            std::fs::read("./test-data/binlogs/binlog_transaction_previous_GTID_no_tag.000001")?;
+        let binlog_file = BinlogFile::new(BinlogVersion::Version4, &file_data[..])?;
+
+        let mut found = false;
+
+        // UUID: b9b88c66-0755-11f1-9899-4a9da94c4d71
+        let expected_uuid = [
+            0xb9, 0xb8, 0x8c, 0x66, // b9b88c66
+            0x07, 0x55, // 0755
+            0x11, 0xf1, // 11f1
+            0x98, 0x99, // 9899
+            0x4a, 0x9d, 0xa9, 0x4c, 0x4d, 0x71, // 4a9da94c4d71
+        ];
+
+        for ev in binlog_file {
+            let ev = ev?;
+            if ev.header().event_type() == Ok(EventType::PREVIOUS_GTIDS_EVENT) {
+                let event_data = ev.read_data()?.expect("should parse event data");
+                match event_data {
+                    EventData::PreviousGtidsEvent(prev_ev) => {
+                        let sids = prev_ev.sids();
+                        assert_eq!(sids.len(), 1);
+
+                        assert_eq!(sids[0].uuid(), expected_uuid);
+                        assert!(sids[0].tag().is_none());
+                        assert_eq!(sids[0].intervals(), &[GnoInterval::new(1, 3)]);
+
+                        found = true;
+                    }
+                    other => panic!(
+                        "expected PreviousGtidsEvent, got {:?}",
+                        std::mem::discriminant(&other)
+                    ),
+                }
+            }
+        }
+
+        assert!(found, "PREVIOUS_GTIDS_EVENT not found in binlog");
         Ok(())
     }
 }
