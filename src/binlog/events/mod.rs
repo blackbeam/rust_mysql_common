@@ -66,6 +66,7 @@ mod delete_rows_event_v1;
 mod execute_load_query_event;
 mod format_description_event;
 mod gtid_event;
+
 mod incident_event;
 mod intvar_event;
 mod partial_update_rows_event;
@@ -238,7 +239,7 @@ impl Event {
         // we'll use data.len() here because of truncated event footer
         let event_size = BinlogEventHeader::LEN + self.data.len();
         let event_data = &mut ParseBuf(&self.data);
-        let ctx = BinlogCtx::new(event_size, &self.fde);
+        let ctx = BinlogCtx::new(event_size, &self.fde, self.header.event_type_raw());
 
         let event = event_data.parse(ctx)?;
 
@@ -325,6 +326,7 @@ impl Event {
                 EventData::RowsEvent(RowsEventData::PartialUpdateRowsEvent(self.read_event()?))
             }
             TRANSACTION_PAYLOAD_EVENT => EventData::TransactionPayloadEvent(self.read_event()?),
+            GTID_TAGGED_LOG_EVENT => EventData::GtidEvent(self.read_event()?),
         };
 
         Ok(Some(event_data))
