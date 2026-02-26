@@ -14,8 +14,8 @@ pub struct MixedParamsError;
 
 enum ParserState {
     TopLevel,
-    // (string_delimiter, last_char)
-    InStringLiteral(u8, u8),
+    // (string_delimiter, in_escape)
+    InStringLiteral(u8, bool),
     MaybeInNamedParam,
     InNamedParam,
     InSharpComment,
@@ -59,15 +59,17 @@ impl<'a> ParsedNamedParams<'a> {
                     b'/' => state = MaybeInCComment1,
                     b'-' => state = MaybeInDoubleDashComment1,
                     b'#' => state = InSharpComment,
-                    b'\'' => state = InStringLiteral(b'\'', b'\''),
-                    b'"' => state = InStringLiteral(b'"', b'"'),
+                    b'\'' => state = InStringLiteral(b'\'', false),
+                    b'"' => state = InStringLiteral(b'"', false),
                     b'?' => have_positional = true,
                     b'`' => state = InQuotedIdentifier,
                     _ => (),
                 },
-                InStringLiteral(separator, prev_char) => match c {
-                    x if *x == separator && prev_char != b'\\' => state = TopLevel,
-                    x => state = InStringLiteral(separator, *x),
+                InStringLiteral(separator, in_escape) => match c {
+                    _ if in_escape => state = InStringLiteral(separator, false),
+                    x if *x == separator => state = TopLevel,
+                    x if *x == b'\\' => state = InStringLiteral(separator, true),
+                    _ => state = InStringLiteral(separator, false),
                 },
                 MaybeInNamedParam => match c {
                     b'a'..=b'z' | b'_' => {
@@ -130,8 +132,8 @@ impl<'a> ParsedNamedParams<'a> {
             if rematch {
                 match c {
                     b':' => state = MaybeInNamedParam,
-                    b'\'' => state = InStringLiteral(b'\'', b'\''),
-                    b'"' => state = InStringLiteral(b'"', b'"'),
+                    b'\'' => state = InStringLiteral(b'\'', false),
+                    b'"' => state = InStringLiteral(b'"', false),
                     _ => state = TopLevel,
                 }
             }
