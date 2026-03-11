@@ -273,6 +273,21 @@ mod test {
         assert_eq!(result.params(), cows!(b"foo"));
     }
 
+    #[test]
+    fn issue_179_string_literal_extended_due_to_improper_escape_sequence_handling() {
+        let result =
+            ParsedNamedParams::parse(br"INSERT INTO `my:table` VALUES (:one, ':two\\', :three)")
+                .unwrap();
+        assert_eq!(
+            result.query(),
+            br"INSERT INTO `my:table` VALUES (?, ':two\\', ?)"
+        );
+        assert_eq!(
+            result.params(),
+            &[Cow::Borrowed(&b"one"[..]), Cow::Borrowed(b"three")]
+        );
+    }
+
     #[cfg(feature = "nightly")]
     mod bench {
         use super::*;
