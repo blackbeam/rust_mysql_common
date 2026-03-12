@@ -13,7 +13,7 @@ keywords = ["mysql", "database"]
 categories = ["database"]
 
 # * Invoke `cargo readme > README.md` if relevant!
-version = "0.36.2"
+version = "0.37.0"
 
 edition = "2024"
 exclude = [
@@ -42,13 +42,16 @@ chrono = { version = "0.4.20", default-features = false, features = [
 ], optional = true }
 crc32fast = "1.2"
 curve25519-dalek = { version = "4.1.3", optional = true }
-ed25519-dalek = { version = "2.1", features = ["rand_core"], optional = true}
+ed25519-dalek = { version = "2.1", features = ["rand_core"], optional = true }
 flate2 = { version = "1.0", default-features = false }
 frunk = { version = "0.4", optional = true }
 getrandom = { version = "0.3", features = ["std"] }
 num-bigint = { version = "0.4" }
 num-traits = { version = "0.2", features = ["i128"] }
-pbkdf2 = { version = "0.12", default-features = false, features = ["hmac", "sha2"], optional = true }
+pbkdf2 = { version = "0.12", default-features = false, features = [
+    "hmac",
+    "sha2",
+], optional = true }
 rand = { version = "0.9.2", optional = true }
 regex = "1.5"
 rust_decimal = { version = "1.0", optional = true }
