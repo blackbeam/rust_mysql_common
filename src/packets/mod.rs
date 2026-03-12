@@ -5445,7 +5445,7 @@ mod test {
         // Verify the format byte is 0x01 in the raw serialized output.
         // The n_sids header starts after: header(1) + flags(2) + server_id(4) +
         // filename_len(4) + filename(0) + pos(8) + sid_data_len(4) = 23
-        let n_sids_offset = 1 + 2 + 4 + 4 + 0 + 8 + 4;
+        let n_sids_offset = 1 + 2 + 4 + 4 + 8 + 4;
         let n_sids_bytes = &output[n_sids_offset..n_sids_offset + 8];
         let n_sids_raw = u64::from_le_bytes(n_sids_bytes.try_into().unwrap());
         let format_byte = (n_sids_raw >> 56) as u8;
