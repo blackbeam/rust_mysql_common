@@ -2431,7 +2431,8 @@ pub struct SslRequest {
     capabilities: Const<CapabilityFlags, LeU32>,
     max_packet_size: RawInt<LeU32>,
     character_set: RawInt<u8>,
-    __skip: Skip<23>,
+    __skip: Skip<19>,
+    mariadb_capabilities: Const<MariadbCapabilities, LeU32>,
 }
 
 impl SslRequest {
@@ -2441,7 +2442,16 @@ impl SslRequest {
             max_packet_size: RawInt::new(max_packet_size),
             character_set: RawInt::new(character_set),
             __skip: Skip,
+            mariadb_capabilities: Const::new(MariadbCapabilities::empty()),
         }
+    }
+
+    /// This only makes sense for MariaDb server (since v10.2?).
+    ///
+    /// Capabilities are zeroed by default.
+    pub fn with_mariadb_capabilities(mut self, mariadb_capabilities: MariadbCapabilities) -> Self {
+        self.mariadb_capabilities.0 = mariadb_capabilities;
+        self
     }
 
     pub fn capabilities(&self) -> CapabilityFlags {
@@ -2464,11 +2474,23 @@ impl<'de> MyDeserialize<'de> for SslRequest {
     fn deserialize((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
         let mut buf: ParseBuf<'_> = buf.parse(Self::SIZE.unwrap())?;
         let raw_capabilities = buf.parse_unchecked::<RawConst<LeU32, CapabilityFlags>>(())?;
+
+        let capabilities = Const::new(CapabilityFlags::from_bits_truncate(raw_capabilities.0));
+        let max_packet_size = buf.parse_unchecked(())?;
+        let character_set = buf.parse_unchecked(())?;
+        let __skip = buf.parse_unchecked(())?;
+
+        let raw_mariadb_capabilities =
+            buf.parse_unchecked::<RawConst<LeU32, MariadbCapabilities>>(())?;
+
         Ok(Self {
-            capabilities: Const::new(CapabilityFlags::from_bits_truncate(raw_capabilities.0)),
-            max_packet_size: buf.parse_unchecked(())?,
-            character_set: buf.parse_unchecked(())?,
-            __skip: buf.parse_unchecked(())?,
+            capabilities,
+            max_packet_size,
+            character_set,
+            __skip,
+            mariadb_capabilities: Const::new(MariadbCapabilities::from_bits_truncate(
+                raw_mariadb_capabilities.0,
+            )),
         })
     }
 }
@@ -2479,6 +2501,7 @@ impl MySerialize for SslRequest {
         self.max_packet_size.serialize(&mut *buf);
         self.character_set.serialize(&mut *buf);
         self.__skip.serialize(&mut *buf);
+        self.mariadb_capabilities.serialize(&mut *buf);
     }
 }
 
