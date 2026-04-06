@@ -563,6 +563,12 @@ impl PlainPacketCodec {
     }
 }
 
+/// Compression codec buffers (`in_buf`, `out_buf`) grow to accommodate large packets
+/// but never shrink back, effectively leaking memory for the lifetime of the connection.
+/// With 20+ compressed connections this can waste 200-500 MB of RSS.
+/// We reclaim buffers that have grown past this threshold once they are fully drained.
+const COMP_CODEC_SHRINK_THRESHOLD: usize = 4 * 1024 * 1024;
+
 /// Codec for compressed MySql protocol.
 #[derive(Debug)]
 struct CompPacketCodec {
@@ -618,6 +624,13 @@ impl CompPacketCodec {
                 Some(self.comp_seq_id.wrapping_sub(1)),
             )?
         {
+            // After decoding, in_buf may be empty but still hold capacity
+            // from previous large responses. Reclaim if over threshold.
+            if self.in_buf.is_empty()
+                && self.in_buf.capacity() > COMP_CODEC_SHRINK_THRESHOLD
+            {
+                self.in_buf = BytesMut::new();
+            }
             return Ok(true);
         }
 
@@ -655,6 +668,12 @@ impl CompPacketCodec {
             &mut self.out_buf,
             dst,
         )?;
+
+        // compress() drains out_buf but leaves allocated capacity behind.
+        // Reclaim if over threshold to avoid holding megabytes idle.
+        if self.out_buf.capacity() > COMP_CODEC_SHRINK_THRESHOLD {
+            self.out_buf = BytesMut::new();
+        }
 
         /* Sync packet number if using compression (see net_serv.cc) */
         self.plain_codec.seq_id = self.comp_seq_id;
