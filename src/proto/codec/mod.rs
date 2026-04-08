@@ -626,9 +626,7 @@ impl CompPacketCodec {
         {
             // After decoding, in_buf may be empty but still hold capacity
             // from previous large responses. Reclaim if over threshold.
-            if self.in_buf.is_empty()
-                && self.in_buf.capacity() > COMP_CODEC_SHRINK_THRESHOLD
-            {
+            if self.in_buf.is_empty() && self.in_buf.capacity() > COMP_CODEC_SHRINK_THRESHOLD {
                 self.in_buf = BytesMut::new();
             }
             return Ok(true);
