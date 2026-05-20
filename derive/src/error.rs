@@ -1,5 +1,5 @@
+use manyhow::{emit, Emitter, ToTokensError};
 use proc_macro2::Span;
-use proc_macro_error2::{Diagnostic, Level};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -33,17 +33,13 @@ pub enum Error {
     FromValueConflictingAttributes(Span, Span),
     #[error("representation won't fit into MySql integer")]
     UnsupportedRepresentation(Span),
-    #[error("this attribute requires `{}` attribute", 0)]
-    FromValueAttributeRequired(Span, &'static str),
     #[error("conflicting attributes")]
     FromRowConflictingAttributes(Span, Span),
-    #[error("this attribute requires `{}` attribute", 0)]
-    FromRowAttributeRequired(Span, &'static str),
 }
 
-impl From<Error> for Diagnostic {
-    fn from(x: Error) -> Diagnostic {
-        match x {
+impl ToTokensError for Error {
+    fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+        match self {
             Error::UnionsNotSupported(span)
             | Error::EnumsNotSupported(span)
             | Error::NonUnitVariant(span)
@@ -54,30 +50,33 @@ impl From<Error> for Diagnostic {
             | Error::UnitStructsNotSupported(span)
             | Error::UnsupportedRepresentation(span)
             | Error::StructsWithUnnamedFieldsNotSupported(span) => {
-                Diagnostic::spanned(span, Level::Error, format!("FromValue: {x}"))
+                manyhow::error_message!(span, "FromValue: {self}").to_tokens(tokens);
             }
             Error::Syn(ref e) => {
-                Diagnostic::spanned(e.span(), Level::Error, format!("FromValue: {x}"))
+                manyhow::error_message!(e.span(), "FromValue: {self}").to_tokens(tokens);
             }
             Error::Darling(ref e) => {
-                Diagnostic::spanned(e.span(), Level::Error, format!("FromValue: {x}"))
+                manyhow::error_message!(e.span(), "FromValue: {self}").to_tokens(tokens);
             }
-            Error::NoCrateNameFound => Diagnostic::new(Level::Error, format!("FromValue: {x}")),
-            Error::MultipleCratesFound => Diagnostic::new(Level::Error, format!("FromValue: {x}")),
+            Error::NoCrateNameFound | Error::MultipleCratesFound => {
+                manyhow::error_message!("FromValue: {self}").to_tokens(tokens);
+            }
             Error::FromValueConflictingAttributes(s1, s2) => {
-                Diagnostic::spanned(s1, Level::Error, format!("FromValue: {x}"))
-                    .span_error(s2, "conflicting attribute".into())
-            }
-            Error::FromValueAttributeRequired(s, _) => {
-                Diagnostic::spanned(s, Level::Error, format!("FromValue: {x}"))
+                let mut emitter = Emitter::new();
+                emit!(emitter, s1, "FromValue: {self}");
+                emit!(emitter, s2, "conflicting attribute");
+                if let Err(error) = emitter.into_result() {
+                    error.to_tokens(tokens);
+                }
             }
             Error::FromRowConflictingAttributes(s1, s2) => {
-                Diagnostic::spanned(s1, Level::Error, format!("FromRow: {x}"))
-                    .span_error(s2, "conflicting attribute".into())
+                let mut emitter = Emitter::new();
+                emit!(emitter, s1, "FromRow: {self}");
+                emit!(emitter, s2, "conflicting attribute");
+                if let Err(error) = emitter.into_result() {
+                    error.to_tokens(tokens);
+                }
             }
-            Error::FromRowAttributeRequired(s, _) => {
-                Diagnostic::spanned(s, Level::Error, format!("FromRow: {x}"))
-            }
-        }
+        };
     }
 }

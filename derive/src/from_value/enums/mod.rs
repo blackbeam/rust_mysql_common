@@ -7,7 +7,6 @@ use attrs::{
 use darling::{FromAttributes, FromMeta};
 use num_bigint::BigInt;
 use proc_macro2::{Span, TokenStream};
-use proc_macro_error2::abort;
 use quote::{ToTokens, TokenStreamExt};
 use syn::spanned::Spanned;
 
@@ -36,13 +35,13 @@ pub fn impl_from_value_for_enum(
         repr.0,
         container::EnumRepr::U128(_) | container::EnumRepr::I128(_)
     ) {
-        abort!(crate::Error::UnsupportedRepresentation(repr.0.span()));
+        return Err(crate::Error::UnsupportedRepresentation(repr.0.span()));
     }
 
     if *item_attrs.is_integer && *item_attrs.is_string {
-        abort!(crate::Error::FromValueConflictingAttributes(
+        return Err(crate::Error::FromValueConflictingAttributes(
             item_attrs.is_string.span(),
-            item_attrs.is_integer.span()
+            item_attrs.is_integer.span(),
         ));
     }
 
@@ -54,7 +53,7 @@ pub fn impl_from_value_for_enum(
     let mut next_discriminant = BigInt::default();
     for variant in &data_enum.variants {
         if !matches!(variant.fields, syn::Fields::Unit) {
-            abort!(crate::Error::NonUnitVariant(variant.span()));
+            return Err(crate::Error::NonUnitVariant(variant.span()));
         }
 
         let mut variant_attrs =
@@ -68,7 +67,7 @@ pub fn impl_from_value_for_enum(
             .unwrap_or(next_discriminant);
 
         if discriminant >= BigInt::from(u64::MAX) {
-            abort!(crate::Error::UnsupportedRepresentation(variant.span()));
+            return Err(crate::Error::UnsupportedRepresentation(variant.span()));
         }
 
         min_discriminant = cmp::min(min_discriminant, discriminant.clone());
@@ -99,7 +98,7 @@ pub fn impl_from_value_for_enum(
                 if variant_attrs.explicit_invalid {
                     variant_attrs.rename = Some("".into());
                 } else {
-                    abort!(crate::Error::ExplicitInvalid(variant.span()))
+                    return Err(crate::Error::ExplicitInvalid(variant.span()));
                 }
             }
         }
@@ -159,7 +158,19 @@ pub fn impl_from_value_for_enum(
         }
     }
 
+    let crat = match item_attrs.crate_name {
+        container::Crate::NotFound => {
+            return Err(crate::Error::NoCrateNameFound);
+        }
+        container::Crate::Multiple => {
+            return Err(crate::Error::MultipleCratesFound);
+        }
+        container::Crate::Itself => syn::Ident::new("crate", Span::call_site()),
+        container::Crate::Found(ref name) => syn::Ident::new(name, Span::call_site()),
+    };
+
     let derived = Enum {
+        crat,
         item_attrs,
         name: ident.clone(),
         variants,
@@ -171,6 +182,7 @@ pub fn impl_from_value_for_enum(
 }
 
 struct Enum {
+    crat: syn::Ident,
     item_attrs: container::Mysql,
     name: proc_macro2::Ident,
     variants: Vec<EnumVariant>,
@@ -180,18 +192,12 @@ struct Enum {
 impl ToTokens for Enum {
     fn to_tokens(&self, tokens: &mut TokenStream) {
         let Self {
+            crat,
             item_attrs,
             name: container_name,
             variants,
             repr,
         } = self;
-
-        let crat = match item_attrs.crate_name {
-            container::Crate::NotFound => abort!(crate::Error::NoCrateNameFound),
-            container::Crate::Multiple => abort!(crate::Error::MultipleCratesFound),
-            container::Crate::Itself => syn::Ident::new("crate", Span::call_site()),
-            container::Crate::Found(ref name) => syn::Ident::new(name, Span::call_site()),
-        };
 
         let ir_name = syn::Ident::new(&format!("{container_name}Ir"), Span::call_site());
         let parsed_name = syn::Ident::new(&format!("{container_name}IrParsed"), Span::call_site());

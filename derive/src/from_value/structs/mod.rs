@@ -1,7 +1,6 @@
 use darling::FromMeta;
 use heck::AsSnakeCase;
 use proc_macro2::{Span, TokenStream};
-use proc_macro_error2::abort;
 use quote::{ToTokens, TokenStreamExt};
 
 use super::enums::attrs::container::Crate;
@@ -45,20 +44,23 @@ pub fn impl_from_value_for_struct(
         .transpose()?
         .unwrap_or_default();
 
-    if let Some(ref x) = item_attrs.serialize_with {
-        if item_attrs.deserialize_with.is_none() {
-            abort!(crate::Error::FromValueAttributeRequired(
-                x.span(),
-                "deserialize_with"
-            ))
+    let crat = match item_attrs.crate_name {
+        Crate::NotFound => {
+            return Err(crate::Error::NoCrateNameFound);
         }
-    }
+        Crate::Multiple => {
+            return Err(crate::Error::MultipleCratesFound);
+        }
+        Crate::Itself => syn::Ident::new("crate", Span::call_site()),
+        Crate::Found(ref name) => syn::Ident::new(name, Span::call_site()),
+    };
 
     if generics.params.is_empty() {
         let derived = NewTypeNoGenerics {
             ident,
             field: fields.unnamed.first().unwrap(),
             item_attrs,
+            crat,
         };
         Ok(quote::quote! { #derived })
     } else {
@@ -67,12 +69,14 @@ pub fn impl_from_value_for_struct(
             field: fields.unnamed.first().unwrap(),
             item_attrs,
             generics,
+            crat,
         };
         Ok(quote::quote! { #derived })
     }
 }
 
 struct NewTypeNoGenerics<'a> {
+    crat: syn::Ident,
     ident: &'a proc_macro2::Ident,
     item_attrs: attrs::container::Mysql,
     field: &'a syn::Field,
@@ -80,15 +84,9 @@ struct NewTypeNoGenerics<'a> {
 
 impl ToTokens for NewTypeNoGenerics<'_> {
     fn to_tokens(&self, tokens: &mut TokenStream) {
+        let crat = &self.crat;
         let container_name = self.ident;
         let field_type = &self.field.ty;
-
-        let crat = match self.item_attrs.crate_name {
-            Crate::NotFound => abort!(crate::Error::NoCrateNameFound),
-            Crate::Multiple => abort!(crate::Error::MultipleCratesFound),
-            Crate::Itself => syn::Ident::new("crate", Span::call_site()),
-            Crate::Found(ref name) => syn::Ident::new(name, Span::call_site()),
-        };
 
         let ir_name = syn::Ident::new(&format!("{container_name}Ir"), Span::call_site());
         let ir_mod_name = syn::Ident::new(
@@ -196,6 +194,7 @@ impl ToTokens for NewTypeNoGenerics<'_> {
 }
 
 struct NewType<'a> {
+    crat: syn::Ident,
     ident: &'a proc_macro2::Ident,
     item_attrs: attrs::container::Mysql,
     field: &'a syn::Field,
@@ -204,16 +203,10 @@ struct NewType<'a> {
 
 impl ToTokens for NewType<'_> {
     fn to_tokens(&self, tokens: &mut TokenStream) {
+        let crat = &self.crat;
         let container_name = self.ident;
         let field_type = &self.field.ty;
         let generics = self.generics.params.iter();
-
-        let crat = match self.item_attrs.crate_name {
-            Crate::NotFound => abort!(crate::Error::NoCrateNameFound),
-            Crate::Multiple => abort!(crate::Error::MultipleCratesFound),
-            Crate::Itself => syn::Ident::new("crate", Span::call_site()),
-            Crate::Found(ref name) => syn::Ident::new(name, Span::call_site()),
-        };
 
         let ir_name = syn::Ident::new(&format!("{container_name}Ir"), Span::call_site());
         let ir_mod_name = syn::Ident::new(
