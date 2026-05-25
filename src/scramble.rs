@@ -244,8 +244,7 @@ pub fn create_response_for_ed25519(_pass: &[u8], _message: &[u8]) -> [u8; 64] {
 pub fn create_response_for_parsec(
     _pass: &[u8],
     _server_nonce: &[u8; 32],
-    _iterations: u32,
-    _server_salt: &[u8],
+    _parsec_password_hash: &mut [u8; 52],
 ) -> [u8; 96] {
     #[cfg(not(feature = "client_parsec"))]
     {
@@ -253,7 +252,6 @@ pub fn create_response_for_parsec(
             "Can't create response for `parsec` authentication plugin — `mysql_common/client_parsec` feature is disabled."
         )
     }
-
     #[cfg(feature = "client_parsec")]
     {
         use ed25519_dalek::{Signer, SigningKey};
@@ -261,10 +259,12 @@ pub fn create_response_for_parsec(
         use rand::Rng;
         use sha2::Sha512;
 
-        // Generating derived key using iterations and user specific salt received in parsec ext-salt packet
-        let mut derived_key = [0u8; 32];
-        pbkdf2_hmac::<Sha512>(_pass, _server_salt, _iterations, &mut derived_key);
-
+        // Generate the derived key using iterations and user specific salt received in parsec ext-salt packet
+        // directly into Parsec hash bytes [20..52].
+        let factor = _parsec_password_hash[1];
+        let iterations = 1024_u32 << factor;
+        let (salt, derived_key) = _parsec_password_hash.split_at_mut(20);
+        pbkdf2_hmac::<Sha512>(_pass, &salt[2..20], iterations, derived_key);
         let mut rng = rand::rng();
         // This is the server nonce[0..32] + client nonce[32..64] + signature buffer[64..128]
         // [0..64] - is the message we will need to sign. [32..] - (client nonce + signature) that will be sent to server
@@ -275,8 +275,11 @@ pub fn create_response_for_parsec(
         rng.fill(client_nonce);
 
         // The rest 64 bytes is the ed25519 signature of server_nonce + client_nonce using derived key
-        let signing_key = SigningKey::from_bytes(&derived_key);
-
+        let derived_key: &mut [u8; 32] = derived_key.try_into().expect("infallible");
+        let signing_key = SigningKey::from_bytes(derived_key);
+        // We don't need derived key any more, but we need to cache puplic key - it can be used for the
+        // server certificate validation("zero-config TLS")
+        _parsec_password_hash[20..].copy_from_slice(signing_key.verifying_key().as_bytes());
         let signature = signing_key.sign(&msg_and_signature[..64]);
         msg_and_signature[64..].copy_from_slice(&signature.to_bytes());
         msg_and_signature[32..].try_into().expect("infallible")

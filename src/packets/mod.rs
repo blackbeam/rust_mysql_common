@@ -1277,8 +1277,7 @@ pub enum AuthPlugin<'a> {
     ///
     /// Actual support is enabled by the `client_parsec` feature.
     MariadbParsec {
-        iterations: u32,
-        ext_salt: [u8; 18],
+        parsec_password_hash: [u8; 52],
     },
     Other(Cow<'a, [u8]>),
 }
@@ -1313,8 +1312,7 @@ impl<'a> AuthPlugin<'a> {
             MYSQL_CLEAR_PASSWORD_PLUGIN_NAME => AuthPlugin::MysqlClearPassword,
             ED25519_PLUGIN_NAME => AuthPlugin::Ed25519,
             PARSEC_PLUGIN_NAME => AuthPlugin::MariadbParsec {
-                iterations: 0,
-                ext_salt: [0; 18],
+                parsec_password_hash: [0; 52],
             },
             name => AuthPlugin::Other(Cow::Borrowed(name)),
         }
@@ -1340,11 +1338,9 @@ impl<'a> AuthPlugin<'a> {
             AuthPlugin::MysqlClearPassword => AuthPlugin::MysqlClearPassword,
             AuthPlugin::Ed25519 => AuthPlugin::Ed25519,
             AuthPlugin::MariadbParsec {
-                iterations,
-                ext_salt,
+                parsec_password_hash,
             } => AuthPlugin::MariadbParsec {
-                iterations,
-                ext_salt,
+                parsec_password_hash,
             },
             AuthPlugin::Other(name) => AuthPlugin::Other(Cow::Owned(name.into_owned())),
         }
@@ -1358,11 +1354,9 @@ impl<'a> AuthPlugin<'a> {
             AuthPlugin::MysqlClearPassword => AuthPlugin::MysqlClearPassword,
             AuthPlugin::Ed25519 => AuthPlugin::Ed25519,
             AuthPlugin::MariadbParsec {
-                iterations,
-                ext_salt,
+                parsec_password_hash,
             } => AuthPlugin::MariadbParsec {
-                iterations: *iterations,
-                ext_salt: *ext_salt,
+                parsec_password_hash: *parsec_password_hash,
             },
             AuthPlugin::Other(name) => AuthPlugin::Other(Cow::Borrowed(name.as_ref())),
         }
@@ -1378,7 +1372,11 @@ impl<'a> AuthPlugin<'a> {
     ///
     /// * [`AuthPlugin::Ed25519`] will panic if `client_ed25519` feature is disabled.
     /// * [`AuthPlugin::MariadbParsec`] will panic if `client_parsec` feature is disabled.
-    pub fn gen_data<'b>(&self, pass: Option<&'b str>, nonce: &[u8]) -> Option<AuthPluginData<'b>> {
+    pub fn gen_data<'b>(
+        &mut self,
+        pass: Option<&'b str>,
+        nonce: &[u8],
+    ) -> Option<AuthPluginData<'b>> {
         use super::scramble::{scramble_323, scramble_native, scramble_sha256};
 
         match pass {
@@ -1401,19 +1399,73 @@ impl<'a> AuthPlugin<'a> {
                     nonce,
                 ))),
                 AuthPlugin::MariadbParsec {
-                    iterations,
-                    ext_salt,
+                    parsec_password_hash,
                 } => match nonce.try_into() {
                     Ok(nonce_array) => Some(AuthPluginData::Parsec(create_response_for_parsec(
                         pass.as_bytes(),
                         nonce_array,
-                        *iterations,
-                        ext_salt,
+                        parsec_password_hash,
                     ))),
                     Err(_) => None,
                 },
                 AuthPlugin::Other(_) => None,
             },
+            _ => None,
+        }
+    }
+
+    /// Returns true if this auth plugin supports deterministic password hashing.
+    pub fn supports_password_hash(&self) -> bool {
+        matches!(
+            self,
+            AuthPlugin::MysqlNativePassword
+                | AuthPlugin::Ed25519
+                | AuthPlugin::MariadbParsec { .. }
+        )
+    }
+
+    /// Returns a deterministic password hash for plugins that support it.
+    ///
+    /// Returns `None` if password is absent/empty or hashing is unsupported.
+    pub fn hash_password(&self, pass: Option<&str>) -> Option<Vec<u8>> {
+        let pass = pass?.as_bytes();
+        if pass.is_empty() {
+            return None;
+        }
+
+        match self {
+            AuthPlugin::MysqlNativePassword => {
+                use sha1::{Digest, Sha1};
+                let first = Sha1::digest(pass);
+                Some(Sha1::digest(first).to_vec())
+            }
+            AuthPlugin::Ed25519 => {
+                #[cfg(feature = "client_ed25519")]
+                {
+                    use curve25519_dalek::{EdwardsPoint, Scalar, scalar::clamp_integer};
+                    use sha2::{Digest, Sha512};
+
+                    let az = Sha512::default().chain_update(pass).finalize();
+                    let secret: [u8; 32] = az[..32].try_into().unwrap();
+                    let small_s = Scalar::from_bytes_mod_order(clamp_integer(secret));
+                    Some(
+                        EdwardsPoint::mul_base(&small_s)
+                            .compress()
+                            .to_bytes()
+                            .to_vec(),
+                    )
+                }
+                #[cfg(not(feature = "client_ed25519"))]
+                {
+                    None
+                }
+            }
+            AuthPlugin::MariadbParsec {
+                parsec_password_hash,
+            } => {
+                let out = parsec_password_hash.to_vec();
+                Some(out)
+            }
             _ => None,
         }
     }
@@ -1424,12 +1476,9 @@ impl<'a> AuthPlugin<'a> {
     pub fn read_add_data(&mut self, payload: &[u8]) -> Option<()> {
         match self {
             AuthPlugin::MariadbParsec {
-                iterations,
-                ext_salt,
+                parsec_password_hash,
             } => {
-                let result = parse_parsec_salt(payload)?;
-                *iterations = result.0;
-                *ext_salt = *result.1;
+                parsec_password_hash[..20].copy_from_slice(parse_parsec_salt(payload)?);
                 Some(())
             }
             _ => None,
@@ -1653,21 +1702,23 @@ impl MySerialize for AuthSwitchRequest<'_> {
     }
 }
 
-// Parses and verifies Parsec additional exchange reply packet, including the ext-salt and iteration count.
-pub fn parse_parsec_salt(data: &[u8]) -> Option<(u32, &[u8; 18])> {
+// Parses and verifies Parsec additional exchange reply packet, including algorithm,
+// factor and ext-salt. Returns the validated 20-byte prefix of the Parsec password hash.
+pub fn parse_parsec_salt(data: &[u8]) -> Option<&[u8; 20]> {
     if data.len() != 20 {
         return None;
     }
 
-    let ([algo, factor], rest) = data.split_first_chunk::<2>().expect("infallible");
+    let out: &[u8; 20] = data.try_into().expect("infallible");
+    let [algorithm, factor, ..] = *out;
     // It used to be hardocoded 3 in the server, but that is gonna change to be configurable(in the server).
     // The limit 20 is rather practical - it should be more than enough for good security and yet the
     // calculation won't take ages.
-    if *algo != b'P' || *factor > 20 {
+    if algorithm != b'P' || factor > 20 {
         return None;
     }
 
-    Some((1024 << factor, rest.try_into().expect("infallible")))
+    Some(out)
 }
 
 /// Represents MySql's initial handshake packet.
