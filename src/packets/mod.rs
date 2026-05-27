@@ -1183,6 +1183,7 @@ impl MySerialize for LocalInfilePacket<'_> {
 
 const MYSQL_OLD_PASSWORD_PLUGIN_NAME: &[u8] = b"mysql_old_password";
 const MYSQL_NATIVE_PASSWORD_PLUGIN_NAME: &[u8] = b"mysql_native_password";
+const SHA256_PASSWORD_PLUGIN_NAME: &[u8] = b"sha256_password";
 const CACHING_SHA2_PASSWORD_PLUGIN_NAME: &[u8] = b"caching_sha2_password";
 const MYSQL_CLEAR_PASSWORD_PLUGIN_NAME: &[u8] = b"mysql_clear_password";
 const ED25519_PLUGIN_NAME: &[u8] = b"client_ed25519";
@@ -1197,6 +1198,8 @@ pub enum AuthPlugin<'a> {
     MysqlClearPassword,
     /// Legacy authentication plugin
     MysqlNativePassword,
+    /// Deprecated SHA-256 authentication plugin.
+    Sha256Password,
     /// Default since MySql v8.0.4
     CachingSha2Password,
     /// MariaDB's Ed25519 based authentication
@@ -1235,6 +1238,7 @@ impl<'a> AuthPlugin<'a> {
             name
         };
         match name {
+            SHA256_PASSWORD_PLUGIN_NAME => AuthPlugin::Sha256Password,
             CACHING_SHA2_PASSWORD_PLUGIN_NAME => AuthPlugin::CachingSha2Password,
             MYSQL_NATIVE_PASSWORD_PLUGIN_NAME => AuthPlugin::MysqlNativePassword,
             MYSQL_OLD_PASSWORD_PLUGIN_NAME => AuthPlugin::MysqlOldPassword,
@@ -1247,6 +1251,7 @@ impl<'a> AuthPlugin<'a> {
 
     pub fn as_bytes(&self) -> &[u8] {
         match self {
+            AuthPlugin::Sha256Password => SHA256_PASSWORD_PLUGIN_NAME,
             AuthPlugin::CachingSha2Password => CACHING_SHA2_PASSWORD_PLUGIN_NAME,
             AuthPlugin::MysqlNativePassword => MYSQL_NATIVE_PASSWORD_PLUGIN_NAME,
             AuthPlugin::MysqlOldPassword => MYSQL_OLD_PASSWORD_PLUGIN_NAME,
@@ -1259,6 +1264,7 @@ impl<'a> AuthPlugin<'a> {
 
     pub fn into_owned(self) -> AuthPlugin<'static> {
         match self {
+            AuthPlugin::Sha256Password => AuthPlugin::Sha256Password,
             AuthPlugin::CachingSha2Password => AuthPlugin::CachingSha2Password,
             AuthPlugin::MysqlNativePassword => AuthPlugin::MysqlNativePassword,
             AuthPlugin::MysqlOldPassword => AuthPlugin::MysqlOldPassword,
@@ -1271,6 +1277,7 @@ impl<'a> AuthPlugin<'a> {
 
     pub fn borrow(&self) -> AuthPlugin<'_> {
         match self {
+            AuthPlugin::Sha256Password => AuthPlugin::Sha256Password,
             AuthPlugin::CachingSha2Password => AuthPlugin::CachingSha2Password,
             AuthPlugin::MysqlNativePassword => AuthPlugin::MysqlNativePassword,
             AuthPlugin::MysqlOldPassword => AuthPlugin::MysqlOldPassword,
@@ -4785,6 +4792,16 @@ mod test {
         let packet = AuthSwitchRequest::deserialize((), &mut ParseBuf(PAYLOAD)).unwrap();
         assert_eq!(packet.auth_plugin().as_bytes(), b"mysql_native_password",);
         assert_eq!(packet.plugin_data(), b"zQg4i6oNy6=rHN/>-b)A",)
+    }
+
+    #[test]
+    fn should_recognize_sha256_password_auth_plugin() {
+        let plugin = AuthPlugin::from_bytes(b"sha256_password");
+
+        assert_eq!(plugin, AuthPlugin::Sha256Password);
+        assert_eq!(plugin.as_bytes(), b"sha256_password");
+        assert_eq!(plugin.borrow(), AuthPlugin::Sha256Password);
+        assert_eq!(plugin.into_owned(), AuthPlugin::Sha256Password);
     }
 
     #[test]
