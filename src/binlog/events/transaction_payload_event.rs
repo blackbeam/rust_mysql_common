@@ -261,7 +261,7 @@ impl<'de> MyDeserialize<'de> for TransactionPayloadEvent<'de> {
             payload_size: RawInt::new(0),
             algorithm: TransactionPayloadCompressionType::NONE,
             uncompressed_size: RawInt::new(0),
-            payload: RawBytes::from("".as_bytes()),
+            payload: RawBytes::new("".as_bytes()),
             header_size: 0,
         };
         let mut have_payload_size = false;
@@ -291,7 +291,7 @@ impl<'de> MyDeserialize<'de> for TransactionPayloadEvent<'de> {
                     }
                     ob.header_size = original_buf_size - ob.payload_size.0 as usize;
                     let mut payload_buf: ParseBuf<'_> = buf.parse(ob.payload_size.0 as usize)?;
-                    ob.payload = RawBytes::from(payload_buf.eat_all());
+                    ob.payload = RawBytes::new(payload_buf.eat_all());
                     break;
                 }
 
