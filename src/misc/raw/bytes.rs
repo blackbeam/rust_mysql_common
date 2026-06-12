@@ -59,6 +59,12 @@ impl<'a, T: BytesRepr> RawBytes<'a, T> {
     }
 }
 
+impl<'a, T: Into<Cow<'a, [u8]>>, U: BytesRepr> From<T> for RawBytes<'a, U> {
+    fn from(bytes: T) -> RawBytes<'a, U> {
+        RawBytes::new(bytes)
+    }
+}
+
 impl<T: BytesRepr> PartialEq<[u8]> for RawBytes<'_, T> {
     fn eq(&self, other: &[u8]) -> bool {
         self.0.as_ref().eq(other)
