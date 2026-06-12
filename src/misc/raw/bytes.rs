@@ -53,15 +53,9 @@ impl<'a, T: BytesRepr> RawBytes<'a, T> {
         &self.0.as_ref()[..self.len()]
     }
 
-    /// Returns the value as a UTF-8 string (lossy contverted).
+    /// Returns the value as a UTF-8 string (lossy converted).
     pub fn as_str(&'a self) -> Cow<'a, str> {
         String::from_utf8_lossy(self.as_bytes())
-    }
-}
-
-impl<'a, T: Into<Cow<'a, [u8]>>, U: BytesRepr> From<T> for RawBytes<'a, U> {
-    fn from(bytes: T) -> RawBytes<'a, U> {
-        RawBytes::new(bytes)
     }
 }
 
@@ -105,7 +99,7 @@ impl<T: BytesRepr> fmt::Debug for RawBytes<'_, T> {
 
 /// Representation of a serialized bytes.
 pub trait BytesRepr {
-    /// Maximum length of bytes for this repr (depends on how lenght is stored).
+    /// Maximum length of bytes for this repr (depends on how length is stored).
     const MAX_LEN: usize;
     const SIZE: Option<usize>;
     type Ctx;

@@ -1,6 +1,5 @@
 use darling::FromAttributes;
 use proc_macro2::{Span, TokenStream};
-use proc_macro_error2::abort;
 use quote::{ToTokens, TokenStreamExt};
 use syn::ext::IdentExt;
 use syn::spanned::Spanned;
@@ -43,7 +42,19 @@ pub fn impl_from_row_for_struct(
         field_attrs.validate()?;
     }
 
+    let crat = match item_attrs.crate_name {
+        Crate::NotFound => {
+            return Err(crate::Error::NoCrateNameFound);
+        }
+        Crate::Multiple => {
+            return Err(crate::Error::MultipleCratesFound);
+        }
+        Crate::Itself => syn::Ident::new("crate", Span::call_site()),
+        Crate::Found(ref name) => syn::Ident::new(name, Span::call_site()),
+    };
+
     let derived = GenericStruct {
+        crat,
         ident,
         fields,
         fields_attrs: &fields_attrs,
@@ -54,6 +65,7 @@ pub fn impl_from_row_for_struct(
 }
 
 struct GenericStruct<'a> {
+    crat: syn::Ident,
     ident: &'a proc_macro2::Ident,
     item_attrs: attrs::container::Mysql,
     fields: &'a syn::FieldsNamed,
@@ -64,19 +76,13 @@ struct GenericStruct<'a> {
 impl ToTokens for GenericStruct<'_> {
     fn to_tokens(&self, tokens: &mut TokenStream) {
         let Self {
+            crat,
             ident,
             item_attrs,
             fields,
             fields_attrs,
             generics,
         } = self;
-
-        let crat = match self.item_attrs.crate_name {
-            Crate::NotFound => abort!(crate::Error::NoCrateNameFound),
-            Crate::Multiple => abort!(crate::Error::MultipleCratesFound),
-            Crate::Itself => syn::Ident::new("crate", Span::call_site()),
-            Crate::Found(ref name) => syn::Ident::new(name, Span::call_site()),
-        };
 
         let impl_generics = (!generics.params.is_empty()).then(|| {
             let generics = self.generics.params.iter();
@@ -154,7 +160,6 @@ impl ToTokens for GenericStruct<'_> {
             .zip(&fields_names)
             .enumerate()
             .map(|(i, ((f, attrs), name))| {
-                attrs.validate()?;
                 let ident = f.ident.as_ref().unwrap();
                 let ty = &f.ty;
                 let lit = syn::LitStr::new(name, ident.span());
@@ -195,7 +200,7 @@ impl ToTokens for GenericStruct<'_> {
                     quote::quote!( <#intermediate_ty as std::convert::TryFrom<Value>>::try_from(x) )
                 };
 
-                Ok(quote::quote!(
+                quote::quote!(
                     let #ident = {
                         let val = match row.take_opt::<Value, &str>(#lit) {
                             Some(Ok(x)) => match #try_from {
@@ -216,14 +221,9 @@ impl ToTokens for GenericStruct<'_> {
                             return Err(FromRowError(row));
                         }
                     }
-                ))
+                )
             })
-            .collect::<Result<Vec<_>, crate::Error>>();
-
-        let take_field = match take_field {
-            Ok(x) => x,
-            Err(error) => abort!(error),
-        };
+            .collect::<Vec<_>>();
 
         let set_field = fields
             .named
