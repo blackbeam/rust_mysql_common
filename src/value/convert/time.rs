@@ -15,119 +15,63 @@ use std::{cmp::Ordering, convert::TryFrom, str::from_utf8};
 use time::{
     Date, PrimitiveDateTime, Time,
     error::{Parse, TryFromParsed},
-    format_description::{
-        Component, FormatItem,
-        modifier::{self, Subsecond},
-    },
+    format_description::BorrowedFormatItem,
+    macros::format_description,
 };
 
 use crate::value::Value;
 
 use super::{FromValue, FromValueError, ParseIr, parse_mysql_time_string};
 
-static FULL_YEAR: modifier::Year = {
-    let mut year_modifier = modifier::Year::default();
-    year_modifier.padding = modifier::Padding::Zero;
-    year_modifier.repr = modifier::YearRepr::Full;
-    year_modifier.iso_week_based = false;
-    year_modifier.sign_is_mandatory = false;
+static DATE_FORMAT: &[BorrowedFormatItem<'static>] = format_description!(
+    "[year
+        padding:zero repr:full
+        range:extended
+        sign:automatic]-\
+    [month
+        repr:numerical
+        padding:zero
+        case_sensitive:true]-\
+    [day padding:zero]"
+);
 
-    year_modifier
-};
+static TIME_FORMAT: &[BorrowedFormatItem<'static>] =
+    format_description!("[hour padding:zero repr:24]:[minute padding:zero]:[second padding:zero]");
 
-static ZERO_PADDED_MONTH: modifier::Month = {
-    let mut month_modifier = modifier::Month::default();
-    month_modifier.padding = modifier::Padding::Zero;
-    month_modifier.repr = modifier::MonthRepr::Numerical;
-    month_modifier.case_sensitive = true;
+static TIME_FORMAT_MICRO: &[BorrowedFormatItem<'static>] = format_description!(
+    "[hour padding:zero repr:24]:[minute padding:zero]:[second padding:zero].[subsecond digits:1+]"
+);
 
-    month_modifier
-};
+static DATE_TIME_FORMAT: &[BorrowedFormatItem<'static>] = format_description!(
+    "[year
+        padding:zero repr:full
+        range:extended
+        sign:automatic]-\
+    [month
+        repr:numerical
+        padding:zero
+        case_sensitive:true]-\
+    [day padding:zero] \
+    [hour padding:zero repr:24]:\
+    [minute padding:zero]:\
+    [second padding:zero]"
+);
 
-static ZERO_PADDED_DAY: modifier::Day = {
-    let mut day_modifier = modifier::Day::default();
-    day_modifier.padding = modifier::Padding::Zero;
-
-    day_modifier
-};
-
-static ZERO_PADDED_HOUR: modifier::Hour = {
-    let mut hour_modifier = modifier::Hour::default();
-    hour_modifier.padding = modifier::Padding::Zero;
-    hour_modifier.is_12_hour_clock = false;
-
-    hour_modifier
-};
-
-static ZERO_PADDED_MINUTE: modifier::Minute = {
-    let mut minute_modifier = modifier::Minute::default();
-    minute_modifier.padding = modifier::Padding::Zero;
-
-    minute_modifier
-};
-
-static ZERO_PADDED_SECOND: modifier::Second = {
-    let mut second_modifier = modifier::Second::default();
-    second_modifier.padding = modifier::Padding::Zero;
-
-    second_modifier
-};
-
-static DATE_FORMAT: &[FormatItem<'static>] = &[
-    FormatItem::Component(Component::Year(FULL_YEAR)),
-    FormatItem::Literal(b"-"),
-    FormatItem::Component(Component::Month(ZERO_PADDED_MONTH)),
-    FormatItem::Literal(b"-"),
-    FormatItem::Component(Component::Day(ZERO_PADDED_DAY)),
-];
-
-static TIME_FORMAT: &[FormatItem<'static>] = &[
-    FormatItem::Component(Component::Hour(ZERO_PADDED_HOUR)),
-    FormatItem::Literal(b":"),
-    FormatItem::Component(Component::Minute(ZERO_PADDED_MINUTE)),
-    FormatItem::Literal(b":"),
-    FormatItem::Component(Component::Second(ZERO_PADDED_SECOND)),
-];
-
-static TIME_FORMAT_MICRO: &[FormatItem<'static>] = &[
-    FormatItem::Component(Component::Hour(ZERO_PADDED_HOUR)),
-    FormatItem::Literal(b":"),
-    FormatItem::Component(Component::Minute(ZERO_PADDED_MINUTE)),
-    FormatItem::Literal(b":"),
-    FormatItem::Component(Component::Second(ZERO_PADDED_SECOND)),
-    FormatItem::Literal(b"."),
-    FormatItem::Component(Component::Subsecond(Subsecond::default())),
-];
-
-static DATE_TIME_FORMAT: &[FormatItem<'static>] = &[
-    FormatItem::Component(Component::Year(FULL_YEAR)),
-    FormatItem::Literal(b"-"),
-    FormatItem::Component(Component::Month(ZERO_PADDED_MONTH)),
-    FormatItem::Literal(b"-"),
-    FormatItem::Component(Component::Day(ZERO_PADDED_DAY)),
-    FormatItem::Literal(b" "),
-    FormatItem::Component(Component::Hour(ZERO_PADDED_HOUR)),
-    FormatItem::Literal(b":"),
-    FormatItem::Component(Component::Minute(ZERO_PADDED_MINUTE)),
-    FormatItem::Literal(b":"),
-    FormatItem::Component(Component::Second(ZERO_PADDED_SECOND)),
-];
-
-static DATE_TIME_FORMAT_MICRO: &[FormatItem<'static>] = &[
-    FormatItem::Component(Component::Year(FULL_YEAR)),
-    FormatItem::Literal(b"-"),
-    FormatItem::Component(Component::Month(ZERO_PADDED_MONTH)),
-    FormatItem::Literal(b"-"),
-    FormatItem::Component(Component::Day(ZERO_PADDED_DAY)),
-    FormatItem::Literal(b" "),
-    FormatItem::Component(Component::Hour(ZERO_PADDED_HOUR)),
-    FormatItem::Literal(b":"),
-    FormatItem::Component(Component::Minute(ZERO_PADDED_MINUTE)),
-    FormatItem::Literal(b":"),
-    FormatItem::Component(Component::Second(ZERO_PADDED_SECOND)),
-    FormatItem::Literal(b"."),
-    FormatItem::Component(Component::Subsecond(Subsecond::default())),
-];
+static DATE_TIME_FORMAT_MICRO: &[BorrowedFormatItem<'static>] = format_description!(
+    "[year
+        padding:zero repr:full
+        range:extended
+        sign:automatic]-\
+    [month
+        repr:numerical
+        padding:zero
+        case_sensitive:true]-\
+    [day padding:zero] \
+    [hour padding:zero repr:24]:\
+    [minute padding:zero]:\
+    [second padding:zero].\
+    [subsecond digits:1+]"
+);
 
 #[cfg_attr(docsrs, doc(cfg(feature = "time")))]
 impl TryFrom<Value> for ParseIr<PrimitiveDateTime> {
