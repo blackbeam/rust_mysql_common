@@ -60,6 +60,7 @@ sha2 = "0.10"
 thiserror = "2"
 time = { version = "0.3", default-features = false, features = [
     "parsing",
+    "macros",
 ], optional = true }
 uuid = { version = "1" }
 saturating = "0.1"
