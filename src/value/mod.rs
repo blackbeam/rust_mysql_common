@@ -442,6 +442,7 @@ impl Value {
                 .map(Double),
             ColumnType::MYSQL_TYPE_TIMESTAMP
             | ColumnType::MYSQL_TYPE_DATE
+            | ColumnType::MYSQL_TYPE_NEWDATE
             | ColumnType::MYSQL_TYPE_DATETIME => Self::deserialize_datetime(buf),
             ColumnType::MYSQL_TYPE_TIME => Self::deserialize_time(buf),
             ColumnType::MYSQL_TYPE_NULL => Ok(NULL),

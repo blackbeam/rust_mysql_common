@@ -780,6 +780,7 @@ impl TryFrom<u8> for ColumnType {
             0x0b_u8 => Ok(ColumnType::MYSQL_TYPE_TIME),
             0x0c_u8 => Ok(ColumnType::MYSQL_TYPE_DATETIME),
             0x0d_u8 => Ok(ColumnType::MYSQL_TYPE_YEAR),
+            0x0e_u8 => Ok(ColumnType::MYSQL_TYPE_NEWDATE),
             0x0f_u8 => Ok(ColumnType::MYSQL_TYPE_VARCHAR),
             0x10_u8 => Ok(ColumnType::MYSQL_TYPE_BIT),
             0x11_u8 => Ok(ColumnType::MYSQL_TYPE_TIMESTAMP2),
