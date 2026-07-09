@@ -24,6 +24,7 @@ use std::{
 };
 
 use crate::{
+    auth::plugins::{AuthProc, PluginInitError, mysql_native_password::SCRAMBLE_LENGTH},
     collations::CollationId,
     constants::{
         CapabilityFlags, ColumnFlags, ColumnType, Command, CursorType, MAX_PAYLOAD_LEN,
@@ -46,8 +47,6 @@ use crate::{
     },
     params::{Params, ParamsError},
     proto::{MyDeserialize, MySerialize},
-    scramble::create_response_for_ed25519,
-    scramble::create_response_for_parsec,
     value::{BinValue, ClientSide, SerializationSide, Value, ValueDeserializer},
 };
 
@@ -1189,74 +1188,6 @@ const MYSQL_CLEAR_PASSWORD_PLUGIN_NAME: &[u8] = b"mysql_clear_password";
 const ED25519_PLUGIN_NAME: &[u8] = b"client_ed25519";
 const PARSEC_PLUGIN_NAME: &[u8] = b"parsec";
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum AuthPluginData<'a> {
-    /// Auth data for the `mysql_old_password` plugin.
-    Old([u8; 8]),
-    /// Auth data for the `mysql_native_password` plugin.
-    Native([u8; 20]),
-    /// Auth data for `sha2_password` and `caching_sha2_password` plugins.
-    Sha2([u8; 32]),
-    /// Clear password for `mysql_clear_password` plugin.
-    Clear(Cow<'a, [u8]>),
-    /// Auth data for MariaDB's `client_ed25519` plugin.
-    ///
-    /// This plugin is known to the library but the actual support is enabled
-    /// by the `client_ed25519` feature.
-    Ed25519([u8; 64]),
-    /// Auth data for MariaDB's `parsec` plugin.
-    ///
-    /// Plugin support is enabled by the `client_parsec` feature.
-    Parsec([u8; 96]),
-}
-
-impl AuthPluginData<'_> {
-    pub fn into_owned(self) -> AuthPluginData<'static> {
-        match self {
-            AuthPluginData::Old(x) => AuthPluginData::Old(x),
-            AuthPluginData::Native(x) => AuthPluginData::Native(x),
-            AuthPluginData::Sha2(x) => AuthPluginData::Sha2(x),
-            AuthPluginData::Clear(x) => AuthPluginData::Clear(Cow::Owned(x.into_owned())),
-            AuthPluginData::Ed25519(x) => AuthPluginData::Ed25519(x),
-            AuthPluginData::Parsec(x) => AuthPluginData::Parsec(x),
-        }
-    }
-}
-
-impl std::ops::Deref for AuthPluginData<'_> {
-    type Target = [u8];
-
-    fn deref(&self) -> &Self::Target {
-        match self {
-            Self::Sha2(x) => &x[..],
-            Self::Native(x) => &x[..],
-            Self::Old(x) => &x[..],
-            Self::Clear(x) => &x[..],
-            Self::Ed25519(x) => &x[..],
-            Self::Parsec(x) => &x[..],
-        }
-    }
-}
-
-impl MySerialize for AuthPluginData<'_> {
-    fn serialize(&self, buf: &mut Vec<u8>) {
-        match self {
-            Self::Sha2(x) => buf.put_slice(&x[..]),
-            Self::Native(x) => buf.put_slice(&x[..]),
-            Self::Old(x) => {
-                buf.put_slice(&x[..]);
-                buf.push(0);
-            }
-            Self::Clear(x) => {
-                buf.put_slice(x);
-                buf.push(0);
-            }
-            Self::Ed25519(x) => buf.put_slice(&x[..]),
-            Self::Parsec(x) => buf.put_slice(&x[..]),
-        }
-    }
-}
-
 /// Authentication plugin
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub enum AuthPlugin<'a> {
@@ -1276,9 +1207,7 @@ pub enum AuthPlugin<'a> {
     /// MariaDB's Parsec(Password Authentication using Response Signed with Eliptic Curve) authentication
     ///
     /// Actual support is enabled by the `client_parsec` feature.
-    MariadbParsec {
-        parsec_password_hash: [u8; 52],
-    },
+    Parsec,
     Other(Cow<'a, [u8]>),
 }
 
@@ -1311,9 +1240,7 @@ impl<'a> AuthPlugin<'a> {
             MYSQL_OLD_PASSWORD_PLUGIN_NAME => AuthPlugin::MysqlOldPassword,
             MYSQL_CLEAR_PASSWORD_PLUGIN_NAME => AuthPlugin::MysqlClearPassword,
             ED25519_PLUGIN_NAME => AuthPlugin::Ed25519,
-            PARSEC_PLUGIN_NAME => AuthPlugin::MariadbParsec {
-                parsec_password_hash: [0; 52],
-            },
+            PARSEC_PLUGIN_NAME => AuthPlugin::Parsec,
             name => AuthPlugin::Other(Cow::Borrowed(name)),
         }
     }
@@ -1325,7 +1252,7 @@ impl<'a> AuthPlugin<'a> {
             AuthPlugin::MysqlOldPassword => MYSQL_OLD_PASSWORD_PLUGIN_NAME,
             AuthPlugin::MysqlClearPassword => MYSQL_CLEAR_PASSWORD_PLUGIN_NAME,
             AuthPlugin::Ed25519 => ED25519_PLUGIN_NAME,
-            AuthPlugin::MariadbParsec { .. } => PARSEC_PLUGIN_NAME,
+            AuthPlugin::Parsec { .. } => PARSEC_PLUGIN_NAME,
             AuthPlugin::Other(name) => name,
         }
     }
@@ -1337,11 +1264,7 @@ impl<'a> AuthPlugin<'a> {
             AuthPlugin::MysqlOldPassword => AuthPlugin::MysqlOldPassword,
             AuthPlugin::MysqlClearPassword => AuthPlugin::MysqlClearPassword,
             AuthPlugin::Ed25519 => AuthPlugin::Ed25519,
-            AuthPlugin::MariadbParsec {
-                parsec_password_hash,
-            } => AuthPlugin::MariadbParsec {
-                parsec_password_hash,
-            },
+            AuthPlugin::Parsec => AuthPlugin::Parsec,
             AuthPlugin::Other(name) => AuthPlugin::Other(Cow::Owned(name.into_owned())),
         }
     }
@@ -1353,136 +1276,22 @@ impl<'a> AuthPlugin<'a> {
             AuthPlugin::MysqlOldPassword => AuthPlugin::MysqlOldPassword,
             AuthPlugin::MysqlClearPassword => AuthPlugin::MysqlClearPassword,
             AuthPlugin::Ed25519 => AuthPlugin::Ed25519,
-            AuthPlugin::MariadbParsec {
-                parsec_password_hash,
-            } => AuthPlugin::MariadbParsec {
-                parsec_password_hash: *parsec_password_hash,
-            },
+            AuthPlugin::Parsec => AuthPlugin::Parsec,
             AuthPlugin::Other(name) => AuthPlugin::Other(Cow::Borrowed(name.as_ref())),
         }
     }
 
-    /// Generates auth plugin data for this plugin.
-    ///
-    /// It'll generate `None` if password is `None` or empty.
-    ///
-    /// Note, that you should trim terminating null character from the `nonce`.
-    ///
-    /// # Panic
-    ///
-    /// * [`AuthPlugin::Ed25519`] will panic if `client_ed25519` feature is disabled.
-    /// * [`AuthPlugin::MariadbParsec`] will panic if `client_parsec` feature is disabled.
-    pub fn gen_data<'b>(
-        &mut self,
-        pass: Option<&'b str>,
-        nonce: &[u8],
-    ) -> Option<AuthPluginData<'b>> {
-        use super::scramble::{scramble_323, scramble_native, scramble_sha256};
-
-        match pass {
-            Some(pass) if !pass.is_empty() => match self {
-                AuthPlugin::CachingSha2Password => {
-                    scramble_sha256(nonce, pass.as_bytes()).map(AuthPluginData::Sha2)
-                }
-                AuthPlugin::MysqlNativePassword => {
-                    scramble_native(nonce, pass.as_bytes()).map(AuthPluginData::Native)
-                }
-                AuthPlugin::MysqlOldPassword => {
-                    scramble_323(nonce.chunks(8).next().unwrap(), pass.as_bytes())
-                        .map(AuthPluginData::Old)
-                }
-                AuthPlugin::MysqlClearPassword => {
-                    Some(AuthPluginData::Clear(Cow::Borrowed(pass.as_bytes())))
-                }
-                AuthPlugin::Ed25519 => Some(AuthPluginData::Ed25519(create_response_for_ed25519(
-                    pass.as_bytes(),
-                    nonce,
-                ))),
-                AuthPlugin::MariadbParsec {
-                    parsec_password_hash,
-                } => match nonce.try_into() {
-                    Ok(nonce_array) => Some(AuthPluginData::Parsec(create_response_for_parsec(
-                        pass.as_bytes(),
-                        nonce_array,
-                        parsec_password_hash,
-                    ))),
-                    Err(_) => None,
-                },
-                AuthPlugin::Other(_) => None,
-            },
-            _ => None,
-        }
+    /// Initializes an authentication procedure for the plugin.
+    pub fn init(&self) -> Result<AuthProc, PluginInitError> {
+        AuthProc::init(self)
     }
 
     /// Returns true if this auth plugin supports deterministic password hashing.
     pub fn supports_password_hash(&self) -> bool {
         matches!(
             self,
-            AuthPlugin::MysqlNativePassword
-                | AuthPlugin::Ed25519
-                | AuthPlugin::MariadbParsec { .. }
+            AuthPlugin::MysqlNativePassword | AuthPlugin::Ed25519 | AuthPlugin::Parsec { .. }
         )
-    }
-
-    /// Returns a deterministic password hash for plugins that support it.
-    ///
-    /// Returns `None` if password is absent/empty or hashing is unsupported.
-    pub fn hash_password(&self, pass: Option<&str>) -> Option<Vec<u8>> {
-        let pass = pass?.as_bytes();
-        if pass.is_empty() {
-            return None;
-        }
-
-        match self {
-            AuthPlugin::MysqlNativePassword => {
-                use sha1::{Digest, Sha1};
-                let first = Sha1::digest(pass);
-                Some(Sha1::digest(first).to_vec())
-            }
-            AuthPlugin::Ed25519 => {
-                #[cfg(feature = "client_ed25519")]
-                {
-                    use curve25519_dalek::{EdwardsPoint, Scalar, scalar::clamp_integer};
-                    use sha2::{Digest, Sha512};
-
-                    let az = Sha512::default().chain_update(pass).finalize();
-                    let secret: [u8; 32] = az[..32].try_into().unwrap();
-                    let small_s = Scalar::from_bytes_mod_order(clamp_integer(secret));
-                    Some(
-                        EdwardsPoint::mul_base(&small_s)
-                            .compress()
-                            .to_bytes()
-                            .to_vec(),
-                    )
-                }
-                #[cfg(not(feature = "client_ed25519"))]
-                {
-                    None
-                }
-            }
-            AuthPlugin::MariadbParsec {
-                parsec_password_hash,
-            } => {
-                let out = parsec_password_hash.to_vec();
-                Some(out)
-            }
-            _ => None,
-        }
-    }
-
-    /// Reads additional (packet) data required for authentication data generation.
-    ///
-    /// Currently only needed for Parseec plugin to read the result of additional packets exchange with the server.
-    pub fn read_add_data(&mut self, payload: &[u8]) -> Option<()> {
-        match self {
-            AuthPlugin::MariadbParsec {
-                parsec_password_hash,
-            } => {
-                parsec_password_hash[..20].copy_from_slice(parse_parsec_salt(payload)?);
-                Some(())
-            }
-            _ => None,
-        }
     }
 }
 
@@ -1979,11 +1788,20 @@ impl<'a> HandshakePacket<'a> {
     /// Returns concatenated auth plugin nonce.
     pub fn nonce(&self) -> Vec<u8> {
         let mut out = Vec::from(self.scramble_1_ref());
-        out.extend_from_slice(self.scramble_2_ref().unwrap_or(&[][..]));
+        if let Some(scramble_2) = self.scramble_2_ref() {
+            // Trim terminating null character
+            if let Some((0_u8, scramble_2)) = scramble_2.split_last() {
+                out.extend_from_slice(scramble_2);
+            } else {
+                out.extend_from_slice(scramble_2);
+            }
+        }
 
-        // Trim zero terminator. Fill with zeroes if nonce
-        // is somehow smaller than 20 bytes.
-        out.resize(20, 0);
+        // Fill with zeroes if nonce is somehow smaller than 20 bytes.
+        if out.len() < SCRAMBLE_LENGTH {
+            out.resize(20, 0);
+        }
+
         out
     }
 

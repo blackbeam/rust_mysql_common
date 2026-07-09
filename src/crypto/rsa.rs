@@ -14,7 +14,7 @@ use sha1::{Digest, Sha1};
 /// Padding operation trait.
 pub trait Padding {
     /// Padding operation for `input` bytes, where `k` is the length of modulus in octets.
-    fn pub_pad(&mut self, input: impl AsRef<[u8]>, k: usize) -> Vec<u8>;
+    fn pub_pad(&mut self, input: impl AsRef<[u8]>, k: usize) -> Result<Vec<u8>, PaddingError>;
 }
 
 /// Represents a source of random bytes.
@@ -36,6 +36,14 @@ impl Rng for GetRandom {
     }
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum PaddingError {
+    #[error("The length of the data D shall not be more than k-11 octets")]
+    BadData,
+    #[error(transparent)]
+    Rng(#[from] Box<dyn std::error::Error + Send + Sync + 'static>),
+}
+
 /// Padding, as described in PKCS #1: RSA Encryption Version 1.5 (rfc2313).
 #[derive(Debug)]
 pub struct Pkcs1Padding<T> {
@@ -48,14 +56,17 @@ impl<T> Pkcs1Padding<T> {
     }
 }
 
-impl<T: Rng> Padding for Pkcs1Padding<T> {
-    fn pub_pad(&mut self, input: impl AsRef<[u8]>, k: usize) -> Vec<u8> {
+impl<T: Rng> Padding for Pkcs1Padding<T>
+where
+    T::Error: Send + Sync + 'static,
+{
+    fn pub_pad(&mut self, input: impl AsRef<[u8]>, k: usize) -> Result<Vec<u8>, PaddingError> {
         let input = input.as_ref();
         let input_len = input.len();
-        assert!(
-            input_len < k - 11,
-            "The length of the data D shall not be more than k-11 octets"
-        );
+        if input_len >= k - 11 {
+            // The length of the data D shall not be more than k-11 octets
+            return Err(PaddingError::BadData);
+        }
 
         let mut output = vec![0u8; k];
 
@@ -67,13 +78,13 @@ impl<T: Rng> Padding for Pkcs1Padding<T> {
             while output[i + 2] == 0 {
                 self.rng
                     .fill(&mut output[i + 2..=i + 2])
-                    .expect("rng ran out of entropy while padding");
+                    .map_err(|x| PaddingError::Rng(Box::new(x)))?;
             }
         }
 
         output[2 + ps_len] = 0x00;
         output[2 + ps_len + 1..].copy_from_slice(input);
-        output
+        Ok(output)
     }
 }
 
@@ -94,9 +105,10 @@ impl<T> Pkcs1OaepPadding<T> {
     /// Mask Generation Function as defined in rfc2437.
     ///
     /// It will use SHA-1 as a hash function.
-    fn mgf1(seed: &[u8], len: usize) -> Vec<u8> {
+    fn mgf1(seed: &[u8], len: usize) -> Result<Vec<u8>, PaddingError> {
         if len as u64 > 2u64.pow(32) * Self::HASH_LEN as u64 {
-            panic!("mask too long");
+            // mask too long
+            return Err(PaddingError::BadData);
         }
 
         let output = (0..len.div_ceil(Self::HASH_LEN))
@@ -108,18 +120,22 @@ impl<T> Pkcs1OaepPadding<T> {
             .collect::<Vec<Vec<u8>>>()
             .concat();
 
-        output[..len].into()
+        Ok(output[..len].into())
     }
 }
 
-impl<T: Rng> Padding for Pkcs1OaepPadding<T> {
+impl<T: Rng> Padding for Pkcs1OaepPadding<T>
+where
+    T::Error: Send + Sync + 'static,
+{
     /// Will pad input according to PKCS #1 v2 with encoding parameters equal to `[]`.
-    fn pub_pad(&mut self, input: impl AsRef<[u8]>, k: usize) -> Vec<u8> {
+    fn pub_pad(&mut self, input: impl AsRef<[u8]>, k: usize) -> Result<Vec<u8>, PaddingError> {
         let input = input.as_ref();
         // 1. Skip because encoding parameters == []
         // 2. If ||M|| > emLen-2hLen-1 then output "message too long" and stop.
         if input.len() > k - 2 * Self::HASH_LEN - 1 {
-            panic!("message too long");
+            // message too long
+            return Err(PaddingError::BadData);
         }
         // 3. Generate an octet string PS consisting of emLen-||M||-2hLen-1 zero
         //    octets. The length of PS may be 0.
@@ -132,13 +148,15 @@ impl<T: Rng> Padding for Pkcs1OaepPadding<T> {
         let db = [&*p_hash, &*ps, input].concat();
         // 6. Generate a random octet string seed of length hLen.
         let mut seed = vec![0; Self::HASH_LEN];
-        self.rng.fill(&mut seed[..]).expect("rng out of entropy");
+        self.rng
+            .fill(&mut seed[..])
+            .map_err(|x| PaddingError::Rng(Box::new(x)))?;
         // 7. Let dbMask = MGF(seed, emLen-hLen).
-        let db_mask = Self::mgf1(&seed, k - Self::HASH_LEN);
+        let db_mask = Self::mgf1(&seed, k - Self::HASH_LEN)?;
         // 8. Let maskedDB = DB \xor dbMask.
         let masked_db: Vec<_> = db.into_iter().zip(db_mask).map(|(a, b)| a ^ b).collect();
         // 9. Let seedMask = MGF(maskedDB, hLen).
-        let seed_mask = Self::mgf1(&masked_db, Self::HASH_LEN);
+        let seed_mask = Self::mgf1(&masked_db, Self::HASH_LEN)?;
         // 10. Let maskedSeed = seed \xor seedMask.
         let masked_seed: Vec<_> = seed
             .into_iter()
@@ -146,8 +164,18 @@ impl<T: Rng> Padding for Pkcs1OaepPadding<T> {
             .map(|(a, b)| a ^ b)
             .collect();
         // 11. Let EM = maskedSeed || maskedDB.
-        [&*masked_seed, &*masked_db].concat()
+        Ok([&*masked_seed, &*masked_db].concat())
     }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum PubkeyError {
+    #[error("Bad RSA Public Key PEM header")]
+    BadPemHeader,
+    #[error("Bad RSA Public Key DER")]
+    BadDer,
+    #[error(transparent)]
+    Base64(#[from] base64::DecodeError),
 }
 
 #[derive(Debug)]
@@ -167,10 +195,10 @@ impl PublicKey {
     /// # Panic
     ///
     /// Will panic in case of bad pem data.
-    pub fn from_pem(pem_data: impl AsRef<[u8]>) -> PublicKey {
-        let (der, file_type) = der::pem_to_der(pem_data);
-        let (modulus, exponent) = der::parse_pub_key(&der, file_type);
-        PublicKey::new(modulus, exponent)
+    pub fn from_pem(pem_data: impl AsRef<[u8]>) -> Result<PublicKey, PubkeyError> {
+        let (der, file_type) = der::pem_to_der(pem_data)?;
+        let (modulus, exponent) = der::parse_pub_key(&der, file_type)?;
+        Ok(PublicKey::new(modulus, exponent))
     }
 
     /// Returns number of octets in the modulus.
@@ -193,8 +221,12 @@ impl PublicKey {
     /// # Panic
     ///
     /// Will panic if block is too long for key or padding.
-    pub fn encrypt_block(&self, block: impl AsRef<[u8]>, mut pad: impl Padding) -> Vec<u8> {
-        let enc_block = pad.pub_pad(block, self.num_octets());
+    pub fn encrypt_block(
+        &self,
+        block: impl AsRef<[u8]>,
+        mut pad: impl Padding,
+    ) -> Result<Vec<u8>, PaddingError> {
+        let enc_block = pad.pub_pad(block, self.num_octets())?;
         let enc_int = BigUint::from_bytes_be(&enc_block);
         let rsa = enc_int.modpow(self.exponent(), self.modulus());
         let mut rsa_bytes = rsa.to_bytes_be();
@@ -202,7 +234,7 @@ impl PublicKey {
         while rsa_bytes.len() < self.num_octets() {
             rsa_bytes.insert(0, 0);
         }
-        rsa_bytes
+        Ok(rsa_bytes)
     }
 }
 
@@ -236,7 +268,7 @@ mod tests {
 
     #[test]
     fn mgf1() {
-        let mask = Pkcs1OaepPadding::<()>::mgf1(&SEED[..], 128);
+        let mask = Pkcs1OaepPadding::<()>::mgf1(&SEED[..], 128).unwrap();
         assert_eq!(mask, &MASK[..]);
     }
 
@@ -311,7 +343,7 @@ mod tests {
         let rng = Seed(seed1);
         let pad = Pkcs1Padding::new(rng);
 
-        let cipher_text = public_key.encrypt_block(msg1, pad);
+        let cipher_text = public_key.encrypt_block(msg1, pad).unwrap();
         assert_eq!(cipher_text, cipher_text1);
     }
 
@@ -359,7 +391,7 @@ mod tests {
         let rng = Seed(seed);
         let pad = Pkcs1OaepPadding::new(rng);
 
-        let cipher_text = public_key.encrypt_block(msg, pad);
+        let cipher_text = public_key.encrypt_block(msg, pad).unwrap();
         assert_eq!(cipher_text, correct_cipher_text);
     }
 }

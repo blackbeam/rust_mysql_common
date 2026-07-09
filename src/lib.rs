@@ -500,6 +500,7 @@ macro_rules! params {
     }
 }
 
+pub mod auth;
 pub mod collations;
 pub mod constants;
 pub mod crypto;
@@ -511,7 +512,6 @@ pub mod packets;
 pub mod params;
 pub mod proto;
 pub mod row;
-pub mod scramble;
 pub mod value;
 
 #[cfg(feature = "binlog")]
