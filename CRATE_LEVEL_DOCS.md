@@ -1,11 +1,3 @@
-[![Gitter](https://badges.gitter.im/rust-mysql/community.svg)](https://gitter.im/rust-mysql/community?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge)
-
-[![Crates.io](https://img.shields.io/crates/v/mysql_common.svg)](https://crates.io/crates/mysql_common)
-[![Docs.rs](https://docs.rs/mysql_common/badge.svg)](https://docs.rs/mysql_common)
-[![Build Status](https://travis-ci.org/blackbeam/rust_mysql_common.svg?branch=master)](https://travis-ci.org/blackbeam/rust_mysql_common)
-
-# mysql_common
-
 This crate is an implementation of basic MySql protocol primitives.
 
 This crate:
@@ -21,7 +13,7 @@ This crate:
   of rust types.
 * implements [FromRow and FromValue derive macros][2]
 
-### Supported rust types
+## Supported rust types
 
 Crate offers conversion from/to MySql values for following types (please see MySql documentation
 on supported ranges for numeric types). Following table refers to MySql protocol types
@@ -65,7 +57,7 @@ Also crate provides from-row conversion for the following list of types (see `Fr
 | `(T1: FromValue [, ..., T12: FromValue])`       | Row to a tuple of arity 1-12.                     |
 | [`frunk::hlist::HList`] types                   | Useful to overcome tuple arity limitation        |
 
-### Crate features
+## Crate features
 
 | Feature          | Description                                          | Default |
 | ---------------- | ---------------------------------------------------- | ------- |
@@ -82,9 +74,9 @@ Also crate provides from-row conversion for the following list of types (see `Fr
 [ed25519]: https://mariadb.com/kb/en/authentication-plugin-ed25519/
 [parsec]: https://mariadb.com/kb/en/authentication-plugin-parsec/
 
-## Derive Macros
+# Derive Macros
 
-### `FromValue` Derive
+## `FromValue` Derive
 
 Supported derivations:
 
@@ -92,9 +84,9 @@ Supported derivations:
 *   for newtypes (see [New Type Idiom][3]) – given that the wrapped type itself satisfies
     `FromValue`.
 
-#### Enums
+### Enums
 
-##### Container attributes:
+#### Container attributes:
 
 *  `#[mysql(crate_name = "some_name")]` – overrides an attempt to guess a crate that provides
    required traits
@@ -108,11 +100,13 @@ Supported derivations:
    ENUM. Macro won't warn if variants are sparse or greater than u16 and will not try to parse
    integer representation.
 
-##### Example
+#### Example
 
 Given `ENUM('x-small', 'small', 'medium', 'large', 'x-large')` on MySql side:
 
-```rust
+```no_run
+# use mysql_common_derive::FromValue;
+# use mysql_common::{row::Row, row::convert::from_row};
 
 fn main() {
 
@@ -135,13 +129,13 @@ fn assert_from_row_works(x: Row) -> Size {
 }
 ```
 
-#### Newtypes
+### Newtypes
 
 It is expected, that wrapper value satisfies `FromValue` or `deserialize_with` is given.
 Also note, that to support `FromRow` the wrapped value must satisfy `Into<Value>` or
 `serialize_with` must be given.
 
-##### Container attributes:
+#### Container attributes:
 
 *  `#[mysql(crate_name = "some_name")]` – overrides an attempt to guess a crate to import types from
 *  `#[mysql(bound = "Foo: Bar, Baz: Quux")]` – use the following additional bounds
@@ -150,25 +144,31 @@ Also note, that to support `FromRow` the wrapped value must satisfy `Into<Value>
 *  `#[mysql(serialize_with = "some::path")]` – use the following function to serialize
    the wrapped value. Expected signature is `fn (Wrapped) -> Value`.
 
-##### Example
+#### Example
 
-```rust
+```no_run
+# use mysql_common::{row::Row, row::convert::from_row, prelude::FromValue, value::Value, value::convert::{from_value, FromValueError}};
+# use std::convert::TryFrom;
 
 /// Trivial example
 #[derive(FromValue)]
+# #[mysql(crate_name = "mysql_common")]
 struct Inch(i32);
 
 /// Example of a {serialize|deserialize}_with.
 #[derive(FromValue)]
+# #[mysql(crate_name = "mysql_common")]
 #[mysql(deserialize_with = "neg_de", serialize_with = "neg_ser")]
 struct Neg(i64);
 
 /// Wrapped generic. Bounds are inferred.
 #[derive(FromValue)]
+# #[mysql(crate_name = "mysql_common")]
 struct Foo<T>(Option<T>);
 
 /// Example of additional bounds.
 #[derive(FromValue)]
+# #[mysql(crate_name = "mysql_common")]
 #[mysql(bound = "'b: 'a, T: 'a, U: From<String>, V: From<u64>")]
 struct Bar<'a, 'b, const N: usize, T, U, V>(ComplexTypeToWrap<'a, 'b, N, T, U, V>);
 
@@ -189,14 +189,24 @@ struct FakeIr;
 
 impl TryFrom<Value> for FakeIr {
     // ...
+#    type Error = FromValueError;
+#    fn try_from(v: Value) -> Result<Self, Self::Error> {
+#        unimplemented!();
+#    }
 }
 
 impl<'a, 'b: 'a, const N: usize, T: 'a, U: From<String>, V: From<u64>> From<FakeIr> for ComplexTypeToWrap<'a, 'b, N, T, U, V> {
     // ...
+#    fn from(x: FakeIr) -> Self {
+#        unimplemented!();
+#    }
 }
 
 impl From<FakeIr> for Value {
     // ...
+#    fn from(x: FakeIr) -> Self {
+#        unimplemented!();
+#    }
 }
 
 impl<'a, 'b: 'a, const N: usize, T: 'a, U: From<String>, V: From<u64>> FromValue for ComplexTypeToWrap<'a, 'b, N, T, U, V> {
@@ -215,9 +225,10 @@ fn neg_ser(x: i64) -> Value {
     Value::Int(-x)
 }
 
+# fn main() {}
 ```
 
-### `FromRow` Derive
+## `FromRow` Derive
 
 Also defines some constants on the struct:
 
@@ -229,7 +240,7 @@ Supported derivations:
 
 * for a struct with named fields – field name will be used as a column name to search for a value
 
-#### Container attributes:
+### Container attributes:
 
 *  `#[mysql(crate_name = "some_name")]` – overrides an attempt to guess a crate that provides
    required traits
@@ -238,7 +249,7 @@ Supported derivations:
    "snake_case", "SCREAMING_SNAKE_CASE", "kebab-case", "SCREAMING-KEBAB-CASE"
 *  `#[mysql(table_name = "some_name")]` – defines `pub const TABLE_NAME: &str` on the struct
 
-#### Field attributes:
+### Field attributes:
 
 *  `#[mysql(rename = "some_name")]` – overrides column name of a field
 *  `#[mysql(json)]` - column will be interpreted as a JSON string containing
@@ -250,9 +261,20 @@ Supported derivations:
    will be used to serialize the field (instead of `Into<Value>`). Expected signature is
    `fn (T) -> Value`.
 
-#### Example
+### Example
 
-```rust
+```
+# use mysql_common_derive::FromRow;
+# use mysql_common::{
+#     constants::ColumnType,
+#     packets::Column,
+#     prelude::FromValue,
+#     row::{Row, new_row},
+#     row::convert::from_row,
+#     value::Value,
+#     value::convert::from_value,
+#     FromValueError,
+# };
 use time::{
     macros::{datetime, offset}, OffsetDateTime, PrimitiveDateTime, UtcOffset,
 };
@@ -302,8 +324,22 @@ enum Bar {
 /// ```
 fn get_row() -> Row {
     // ...
+#   let values = vec![
+#       Value::Int(42),
+#       Value::Bytes(b"\"Right\"".as_slice().into()),
+#       Value::NULL,
+#       Value::Date(2015, 5, 15, 12, 0, 0, 0),
+#   ];
+#   let columns = vec![
+#       Column::new(ColumnType::MYSQL_TYPE_LONG).with_name(b"id"),
+#       Column::new(ColumnType::MYSQL_TYPE_BLOB).with_name(b"def"),
+#       Column::new(ColumnType::MYSQL_TYPE_NULL).with_name(b"child"),
+#       Column::new(ColumnType::MYSQL_TYPE_STRING).with_name(b"ctime"),
+#   ];
+#   new_row(values, columns.into_boxed_slice().into())
 }
 
+# fn main() {
 assert_eq!(Foo::TABLE_NAME, "Foos");
 assert_eq!(Foo::ID_FIELD, "id");
 assert_eq!(Foo::DEFINITION_FIELD, "def");
@@ -319,22 +355,10 @@ assert_eq!(
         ctime: datetime!(2015-05-15 12:00 +3),
     }
 );
+# }
 ```
 
 [1]: https://dev.mysql.com/doc/internals/en/binary-protocol-value.html
 [2]: #derive-macros
 [3]: https://doc.rust-lang.org/rust-by-example/generics/new_types.html
 [4]: https://dev.mysql.com/doc/refman/8.0/en/enum.html
-
-## License
-
-Licensed under either of
- * Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE) or <http://www.apache.org/licenses/LICENSE-2.0>)
- * MIT license ([LICENSE-MIT](LICENSE-MIT) or <http://opensource.org/licenses/MIT>)
-at your option.
-
-## Contribution
-
-Unless you explicitly state otherwise, any contribution intentionally submitted
-for inclusion in the work by you, as defined in the Apache-2.0 license, shall be dual licensed as above, without any
-additional terms or conditions.

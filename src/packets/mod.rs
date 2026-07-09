@@ -2793,7 +2793,7 @@ impl ComStmtBulkExecuteRequestBuilder<'_> {
         }
     }
 
-    /// Send [`SEND_UNIT_RESULTS`] flag to the server.
+    /// Send [`StmtBulkExecuteFlags::SEND_UNIT_RESULTS`] flag to the server.
     ///
     /// This feature is available since MariaDb v11.5.1 and requires
     /// `MARIADB_CLIENT_BULK_UNIT_RESULTS` capability from the server.
