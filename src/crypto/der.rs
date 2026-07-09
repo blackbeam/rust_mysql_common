@@ -11,6 +11,8 @@ use num_bigint::BigUint;
 use regex::bytes::Regex;
 use std::mem::size_of;
 
+use crate::crypto::rsa::PubkeyError;
+
 /// Type of a der-encoded public key.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
 pub enum PubKeyFileType {
@@ -19,7 +21,7 @@ pub enum PubKeyFileType {
 }
 
 /// Converts pem encoded RSA public key to der.
-pub fn pem_to_der(pem: impl AsRef<[u8]>) -> (Vec<u8>, PubKeyFileType) {
+pub fn pem_to_der(pem: impl AsRef<[u8]>) -> Result<(Vec<u8>, PubKeyFileType), PubkeyError> {
     let pkcs1_re = Regex::new(
         "-----BEGIN RSA PUBLIC KEY-----\
          ([^-]*)\
@@ -36,12 +38,12 @@ pub fn pem_to_der(pem: impl AsRef<[u8]>) -> (Vec<u8>, PubKeyFileType) {
     let (captures, key_file_type) = pkcs1_re
         .captures(pem.as_ref())
         .map(|captures| (captures, PubKeyFileType::Pkcs1))
-        .unwrap_or_else(|| {
+        .or_else(|| {
             pkcs8_re
                 .captures(pem.as_ref())
                 .map(|captures| (captures, PubKeyFileType::Pkcs8))
-                .expect("valid PEM is mandatory here")
-        });
+        })
+        .ok_or(PubkeyError::BadPemHeader)?;
     let pem_body = captures.get(1).unwrap().as_bytes();
     let pem_body = pem_body
         .iter()
@@ -49,11 +51,9 @@ pub fn pem_to_der(pem: impl AsRef<[u8]>) -> (Vec<u8>, PubKeyFileType) {
         .cloned()
         .collect::<Vec<_>>();
 
-    let der = STANDARD
-        .decode(&*pem_body)
-        .expect("valid base64 is mandatory here");
+    let der = STANDARD.decode(&*pem_body)?;
 
-    (der, key_file_type)
+    Ok((der, key_file_type))
 }
 
 fn big_uint_to_usize(x: BigUint) -> usize {
@@ -76,54 +76,73 @@ fn parse_len(der: &[u8]) -> (BigUint, &[u8]) {
 }
 
 /// der bytes -> (sequence bytes, rest of der bytes)
-pub fn parse_sequence(mut der: &[u8]) -> (&[u8], &[u8]) {
-    assert_eq!(der[0], 0x30, "expecting SEQUENCE in primitive encoding");
+pub fn parse_sequence(mut der: &[u8]) -> Result<(&[u8], &[u8]), PubkeyError> {
+    if der[0] != 0x30 {
+        // expecting SEQUENCE in primitive encoding
+        return Err(PubkeyError::BadDer);
+    }
+
     der = &der[1..];
     let (sequence_len, der) = parse_len(der);
     let sequence_len = big_uint_to_usize(sequence_len);
-    (&der[..sequence_len], &der[sequence_len..])
+    Ok((&der[..sequence_len], &der[sequence_len..]))
 }
 
 /// der bytes -> (unused bits, bytes of bit string, rest of der bytes)
-pub fn parse_bit_string(mut der: &[u8]) -> (u8, &[u8], &[u8]) {
-    assert_eq!(der[0], 0x03, "expecting BIT STRING in primitive encoding");
+pub fn parse_bit_string(mut der: &[u8]) -> Result<(u8, &[u8], &[u8]), PubkeyError> {
+    if der[0] != 0x03 {
+        // expecting BIT STRING in primitive encoding
+        return Err(PubkeyError::BadDer);
+    }
+
     der = &der[1..];
     let (bit_string_len, der) = parse_len(der);
     let bit_string_len = big_uint_to_usize(bit_string_len);
     let unused_bits = der[0];
-    (unused_bits, &der[1..bit_string_len], &der[bit_string_len..])
+    Ok((unused_bits, &der[1..bit_string_len], &der[bit_string_len..]))
 }
 
 /// der bytes -> (uint, rest of der bytes)
-pub fn parse_uint(mut der: &[u8]) -> (BigUint, &[u8]) {
-    assert_eq!(der[0], 0x02, "expecting INTEGER");
+pub fn parse_uint(mut der: &[u8]) -> Result<(BigUint, &[u8]), PubkeyError> {
+    if der[0] != 0x02 {
+        // expecting INTEGER
+        return Err(PubkeyError::BadDer);
+    }
+
     der = &der[1..];
     let (uint_len, der) = parse_len(der);
     let uint_len = big_uint_to_usize(uint_len);
     let out = BigUint::from_bytes_be(&der[..uint_len]);
-    (out, &der[uint_len..])
+    Ok((out, &der[uint_len..]))
 }
 
 /// Extracts modulus and exponent from pkcs1 der public key representation
-pub fn parse_pub_key_pkcs1(der: &[u8]) -> (BigUint, BigUint) {
-    let (pub_key_fields, _) = parse_sequence(der);
-    let (modulus, pub_key_fields) = parse_uint(pub_key_fields);
-    let (exponent, _) = parse_uint(pub_key_fields);
-    (modulus, exponent)
+pub fn parse_pub_key_pkcs1(der: &[u8]) -> Result<(BigUint, BigUint), PubkeyError> {
+    let (pub_key_fields, _) = parse_sequence(der)?;
+    let (modulus, pub_key_fields) = parse_uint(pub_key_fields)?;
+    let (exponent, _) = parse_uint(pub_key_fields)?;
+    Ok((modulus, exponent))
 }
 
 /// Extracts modulus and exponent from pkcs8 der public key representation
-pub fn parse_pub_key_pkcs8(der: &[u8]) -> (BigUint, BigUint) {
-    let (seq_data, _) = parse_sequence(der);
+pub fn parse_pub_key_pkcs8(der: &[u8]) -> Result<(BigUint, BigUint), PubkeyError> {
+    let (seq_data, _) = parse_sequence(der)?;
     // ignore algorithm
-    let (_, der) = parse_sequence(seq_data);
-    let (unused_bits, pub_key, _) = parse_bit_string(der);
-    assert_eq!(unused_bits, 0, "expecting no unused bits");
+    let (_, der) = parse_sequence(seq_data)?;
+    let (unused_bits, pub_key, _) = parse_bit_string(der)?;
+    if unused_bits != 0 {
+        // expecting no unused bits
+        return Err(PubkeyError::BadDer);
+    }
+
     parse_pub_key_pkcs1(pub_key)
 }
 
 /// Extracts modulus and exponent from specified der public key representation
-pub fn parse_pub_key(der: &[u8], file_type: PubKeyFileType) -> (BigUint, BigUint) {
+pub fn parse_pub_key(
+    der: &[u8],
+    file_type: PubKeyFileType,
+) -> Result<(BigUint, BigUint), PubkeyError> {
     match file_type {
         PubKeyFileType::Pkcs1 => parse_pub_key_pkcs1(der),
         PubKeyFileType::Pkcs8 => parse_pub_key_pkcs8(der),
@@ -142,7 +161,7 @@ C8W3Z7Xx7He2QDJsEWAqX197efw0L6j8X8Tyd8Uwb7zUB1tfMGhHfm9EwejPAtzx
 YQIDAQAB
 -----END PUBLIC KEY-----";
 
-    let (_der, key_type) = pem_to_der(PEM_DATA);
+    let (_der, key_type) = pem_to_der(PEM_DATA).unwrap();
 
     assert_eq!(key_type, PubKeyFileType::Pkcs8);
 }
