@@ -2,7 +2,7 @@
 
 [![Crates.io](https://img.shields.io/crates/v/mysql_common.svg)](https://crates.io/crates/mysql_common)
 [![Docs.rs](https://docs.rs/mysql_common/badge.svg)](https://docs.rs/mysql_common)
-[![Build Status](https://travis-ci.org/blackbeam/rust_mysql_common.svg?branch=master)](https://travis-ci.org/blackbeam/rust_mysql_common)
+[![Build Status](https://github.com/blackbeam/rust_mysql_common/actions/workflows/rust.yml/badge.svg)](https://github.com/blackbeam/rust_mysql_common/actions)
 
 # mysql_common
 
