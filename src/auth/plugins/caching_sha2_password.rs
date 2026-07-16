@@ -8,6 +8,9 @@ use crate::{
     crypto,
 };
 
+const FAST_AUTH_SUCCESS: u8 = 0x03;
+const PERFORM_FULL_AUTHENTICATION: u8 = 0x04;
+
 #[derive(Debug, Default)]
 pub struct CachingSha2Password(State);
 
@@ -63,23 +66,17 @@ impl super::ChallengeResponsePlugin for CachingSha2Password {
                 })
             }
             State::Step2 => {
-                let value = if let Ok([0x01, value]) = <&[u8; 2]>::try_from(challenge) {
-                    // escaping 0x01 byte was not removed by the caller
-                    value
-                } else if let Ok([value]) = <&[u8; 1]>::try_from(challenge) {
-                    // escaping 0x01 byte was removed by the caller
-                    value
-                } else {
+                let Ok([cache_state]) = <[u8; 1]>::try_from(challenge) else {
                     return Err(super::Error::Challenge);
                 };
 
-                match value {
-                    0x03 => {
+                match cache_state {
+                    FAST_AUTH_SUCCESS => {
                         // cached
                         self.0 = State::Done;
                         Ok(super::Response::Last { packet: None })
                     }
-                    0x04 => {
+                    PERFORM_FULL_AUTHENTICATION => {
                         // not cached
                         if ctx.is_secure_transport() {
                             // just send the password in case of a secure transport
@@ -105,15 +102,7 @@ impl super::ChallengeResponsePlugin for CachingSha2Password {
                 }
             }
             State::Step3 => {
-                let key = if challenge.starts_with(b"\x01") {
-                    // RSA public key starts with a dash, so the escaping 0x01 byte
-                    // was not removed by the caller
-                    &challenge[1..]
-                } else {
-                    challenge
-                };
-
-                let response = encrypt_pass(ctx.pass(), ctx.scramble(), key)?;
+                let response = encrypt_pass(ctx.pass(), ctx.scramble(), challenge)?;
                 self.0 = State::Done;
                 Ok(response)
             }

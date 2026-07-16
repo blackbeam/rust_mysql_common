@@ -137,6 +137,12 @@ impl Response {
 
 pub trait ChallengeResponsePlugin {
     /// Runs a single step of a challenge-response authentication.
+    ///
+    /// Note that the caller must properly preprocess the challenge, namely:
+    ///
+    /// * abort on error packet
+    /// * handle auth switch request
+    /// * remove leading 0x01 byte added by the server to escape the binary data
     fn run<C: Context>(&mut self, ctx: C, challenge: &[u8]) -> Result<Response, Error>;
 
     /// Returns a password hash for MariaDb "zero-config TLS" feature.
