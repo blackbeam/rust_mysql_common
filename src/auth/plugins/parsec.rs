@@ -117,13 +117,9 @@ impl super::ChallengeResponsePlugin for Parsec {
 
                 self.0 = State::Done { password_hash };
 
-                Ok(super::Response::Last {
-                    packet: Some(message_and_signature[32..].to_vec()),
-                })
+                Ok(super::Response::last(message_and_signature[32..].to_vec()))
             }
-            State::Done { .. } => {
-                panic!("ChallengeResponsePlugin::run called after Response::Last returned")
-            }
+            State::Done { .. } => Err(super::Error::Logic),
         }
     }
 

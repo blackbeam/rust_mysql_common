@@ -10,9 +10,7 @@ impl super::ChallengeResponsePlugin for MysqlClearPassword {
         let pass = ctx.pass();
         let mut cleartext_pass = vec![0_u8; pass.len() + 1];
         cleartext_pass[..pass.len()].copy_from_slice(pass);
-        Ok(super::Response::Last {
-            packet: Some(cleartext_pass),
-        })
+        Ok(super::Response::last(cleartext_pass))
     }
 
     fn password_hash<C: super::Context>(&self, _ctx: C) -> Option<Vec<u8>> {

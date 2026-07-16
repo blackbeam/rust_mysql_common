@@ -1198,7 +1198,7 @@ pub enum AuthPlugin<'a> {
     MysqlClearPassword,
     /// Legacy authentication plugin
     MysqlNativePassword,
-    /// Deprecated SHA-256 authentication plugin.
+    /// `sha256_password` plugin introduced in MySql 5.6 and deprecated in MySql 8.0.16
     Sha256Password,
     /// Default since MySql v8.0.4
     CachingSha2Password,
@@ -1238,52 +1238,52 @@ impl<'a> AuthPlugin<'a> {
             name
         };
         match name {
-            SHA256_PASSWORD_PLUGIN_NAME => AuthPlugin::Sha256Password,
             CACHING_SHA2_PASSWORD_PLUGIN_NAME => AuthPlugin::CachingSha2Password,
             MYSQL_NATIVE_PASSWORD_PLUGIN_NAME => AuthPlugin::MysqlNativePassword,
             MYSQL_OLD_PASSWORD_PLUGIN_NAME => AuthPlugin::MysqlOldPassword,
             MYSQL_CLEAR_PASSWORD_PLUGIN_NAME => AuthPlugin::MysqlClearPassword,
             ED25519_PLUGIN_NAME => AuthPlugin::Ed25519,
             PARSEC_PLUGIN_NAME => AuthPlugin::Parsec,
+            SHA256_PASSWORD_PLUGIN_NAME => AuthPlugin::Sha256Password,
             name => AuthPlugin::Other(Cow::Borrowed(name)),
         }
     }
 
     pub fn as_bytes(&self) -> &[u8] {
         match self {
-            AuthPlugin::Sha256Password => SHA256_PASSWORD_PLUGIN_NAME,
             AuthPlugin::CachingSha2Password => CACHING_SHA2_PASSWORD_PLUGIN_NAME,
             AuthPlugin::MysqlNativePassword => MYSQL_NATIVE_PASSWORD_PLUGIN_NAME,
             AuthPlugin::MysqlOldPassword => MYSQL_OLD_PASSWORD_PLUGIN_NAME,
             AuthPlugin::MysqlClearPassword => MYSQL_CLEAR_PASSWORD_PLUGIN_NAME,
             AuthPlugin::Ed25519 => ED25519_PLUGIN_NAME,
-            AuthPlugin::Parsec { .. } => PARSEC_PLUGIN_NAME,
+            AuthPlugin::Parsec => PARSEC_PLUGIN_NAME,
+            AuthPlugin::Sha256Password => SHA256_PASSWORD_PLUGIN_NAME,
             AuthPlugin::Other(name) => name,
         }
     }
 
     pub fn into_owned(self) -> AuthPlugin<'static> {
         match self {
-            AuthPlugin::Sha256Password => AuthPlugin::Sha256Password,
             AuthPlugin::CachingSha2Password => AuthPlugin::CachingSha2Password,
             AuthPlugin::MysqlNativePassword => AuthPlugin::MysqlNativePassword,
             AuthPlugin::MysqlOldPassword => AuthPlugin::MysqlOldPassword,
             AuthPlugin::MysqlClearPassword => AuthPlugin::MysqlClearPassword,
             AuthPlugin::Ed25519 => AuthPlugin::Ed25519,
             AuthPlugin::Parsec => AuthPlugin::Parsec,
+            AuthPlugin::Sha256Password => AuthPlugin::Sha256Password,
             AuthPlugin::Other(name) => AuthPlugin::Other(Cow::Owned(name.into_owned())),
         }
     }
 
     pub fn borrow(&self) -> AuthPlugin<'_> {
         match self {
-            AuthPlugin::Sha256Password => AuthPlugin::Sha256Password,
             AuthPlugin::CachingSha2Password => AuthPlugin::CachingSha2Password,
             AuthPlugin::MysqlNativePassword => AuthPlugin::MysqlNativePassword,
             AuthPlugin::MysqlOldPassword => AuthPlugin::MysqlOldPassword,
             AuthPlugin::MysqlClearPassword => AuthPlugin::MysqlClearPassword,
             AuthPlugin::Ed25519 => AuthPlugin::Ed25519,
             AuthPlugin::Parsec => AuthPlugin::Parsec,
+            AuthPlugin::Sha256Password => AuthPlugin::Sha256Password,
             AuthPlugin::Other(name) => AuthPlugin::Other(Cow::Borrowed(name.as_ref())),
         }
     }

@@ -21,9 +21,7 @@ impl super::ChallengeResponsePlugin for MysqlOldPassword {
             .map(|x| x.to_vec())
             .unwrap_or_default();
 
-        Ok(super::Response::Last {
-            packet: Some(response),
-        })
+        Ok(super::Response::last(response))
     }
 
     fn password_hash<C: super::Context>(&self, _ctx: C) -> Option<Vec<u8>> {

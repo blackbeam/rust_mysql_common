@@ -55,7 +55,25 @@ Also crate provides from-row conversion for the following list of types (see `Fr
 | `Row`                                           | Trivial conversion for `Row` itself.              |
 | `T: FromValue`                                  | For rows with a single column.                    |
 | `(T1: FromValue [, ..., T12: FromValue])`       | Row to a tuple of arity 1-12.                     |
-| [`frunk::hlist::HList`] types                   | Useful to overcome tuple arity limitation        |
+| [`frunk::hlist::HList`] types                   | Useful to overcome tuple arity limitation         |
+
+## Supproted auth plugins
+
+Auth plugins are implemented as state machines and exposed as [`AuthProc`] dispatcher
+implementing the [`ChallengeResponsePlugin`] trait.
+
+[`AuthProc`]: crate::auth::plugins::AuthProc
+[`ChallengeResponsePlugin`]: crate::auth::plugins::ChallengeResponsePlugin
+
+| Name                  | Notes                                                                                |
+| --------------------- | ------------------------------------------------------------------------------------ |
+| CachingSha2Password   | Default MySql plugin since v8                                                        |
+| Parsec                | The most recent MariaDb plugin (behind `client_parsec` feature)                      |
+| MysqlNativePassword   | Classic MySql/MariaDb authentication plugin                                          |
+| Sha256Password        | An improvement over MysqlNativePassword introduced in v5.6 and deprecated in v8.0.16 |
+| ClientEd25519         | Relatively new but controversial MariaDb plugin (behind `client_ed25519` feature)    |
+| MysqlOldPassword      | Old md5-based MySql authentication plugin replaced by MysqlNativePassword            |
+| MysqlClearPassword    | Client-side plugin that sends the password in clear text                             |
 
 ## Crate features
 
