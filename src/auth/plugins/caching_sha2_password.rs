@@ -8,10 +8,12 @@ use crate::{
     crypto,
 };
 
+const REQUEST_SERVER_KEY: u8 = 0x02;
+const FAST_AUTH_SUCCESS: u8 = 0x03;
+const PERFORM_FULL_AUTHENTICATION: u8 = 0x04;
+
 #[derive(Debug, Default)]
 pub struct CachingSha2Password(State);
-
-impl CachingSha2Password {}
 
 #[derive(Debug, Default, Clone, Copy)]
 enum State {
@@ -48,9 +50,7 @@ impl super::ChallengeResponsePlugin for CachingSha2Password {
 
                 if ctx.pass().is_empty() {
                     self.0 = State::Done;
-                    return Ok(super::Response::Last {
-                        packet: Some(Vec::new()),
-                    });
+                    return Ok(super::Response::last_empty());
                 }
 
                 let response = scramble_sha256(scramble, ctx.pass())
@@ -63,30 +63,24 @@ impl super::ChallengeResponsePlugin for CachingSha2Password {
                 })
             }
             State::Step2 => {
-                let value = if let Ok([0x01, value]) = <&[u8; 2]>::try_from(challenge) {
-                    // escaping 0x01 byte was not removed by the caller
-                    value
-                } else if let Ok([value]) = <&[u8; 1]>::try_from(challenge) {
-                    // escaping 0x01 byte was removed by the caller
-                    value
-                } else {
+                let Ok([cache_state]) = <[u8; 1]>::try_from(challenge) else {
                     return Err(super::Error::Challenge);
                 };
 
-                match value {
-                    0x03 => {
+                match cache_state {
+                    FAST_AUTH_SUCCESS => {
                         // cached
                         self.0 = State::Done;
-                        Ok(super::Response::Last { packet: None })
+                        Ok(super::Response::last_none())
                     }
-                    0x04 => {
+                    PERFORM_FULL_AUTHENTICATION => {
                         // not cached
-                        if ctx.is_secure_transport() {
-                            // just send the password in case of a secure transport
+                        if ctx.is_tls_transport() || ctx.is_ipc_transport() {
+                            // just send the null-terminated password in case of a secure transport
                             self.0 = State::Done;
                             let mut pass = ctx.pass().to_vec();
                             pass.push(0x00);
-                            Ok(super::Response::Last { packet: Some(pass) })
+                            Ok(super::Response::last(pass))
                         } else {
                             if let Some(key) = ctx.server_key_pem() {
                                 let response = encrypt_pass(ctx.pass(), ctx.scramble(), key)?;
@@ -95,9 +89,7 @@ impl super::ChallengeResponsePlugin for CachingSha2Password {
                             } else {
                                 // requesting server's public key
                                 self.0 = State::Step3;
-                                Ok(super::Response::Next {
-                                    packet: Some(vec![0x02]),
-                                })
+                                Ok(super::Response::next(vec![REQUEST_SERVER_KEY]))
                             }
                         }
                     }
@@ -105,21 +97,11 @@ impl super::ChallengeResponsePlugin for CachingSha2Password {
                 }
             }
             State::Step3 => {
-                let key = if challenge.starts_with(b"\x01") {
-                    // RSA public key starts with a dash, so the escaping 0x01 byte
-                    // was not removed by the caller
-                    &challenge[1..]
-                } else {
-                    challenge
-                };
-
-                let response = encrypt_pass(ctx.pass(), ctx.scramble(), key)?;
+                let response = encrypt_pass(ctx.pass(), ctx.scramble(), challenge)?;
                 self.0 = State::Done;
                 Ok(response)
             }
-            State::Done => {
-                panic!("ChallengeResponsePlugin::run called after Response::Last returned")
-            }
+            State::Done => Err(super::Error::Logic),
         }
     }
 

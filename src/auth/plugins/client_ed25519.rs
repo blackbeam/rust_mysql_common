@@ -73,9 +73,7 @@ impl super::ChallengeResponsePlugin for ClientEd25519 {
         result[..32].copy_from_slice(capital_r.as_bytes());
         result[32..].copy_from_slice(capital_s.as_bytes());
 
-        Ok(super::Response::Last {
-            packet: Some(result.to_vec()),
-        })
+        Ok(super::Response::last(result.to_vec()))
     }
 
     fn password_hash<C: super::Context>(&self, ctx: C) -> Option<Vec<u8>> {

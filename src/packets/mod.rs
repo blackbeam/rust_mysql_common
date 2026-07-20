@@ -1183,6 +1183,7 @@ impl MySerialize for LocalInfilePacket<'_> {
 
 const MYSQL_OLD_PASSWORD_PLUGIN_NAME: &[u8] = b"mysql_old_password";
 const MYSQL_NATIVE_PASSWORD_PLUGIN_NAME: &[u8] = b"mysql_native_password";
+const SHA256_PASSWORD_PLUGIN_NAME: &[u8] = b"sha256_password";
 const CACHING_SHA2_PASSWORD_PLUGIN_NAME: &[u8] = b"caching_sha2_password";
 const MYSQL_CLEAR_PASSWORD_PLUGIN_NAME: &[u8] = b"mysql_clear_password";
 const ED25519_PLUGIN_NAME: &[u8] = b"client_ed25519";
@@ -1197,6 +1198,8 @@ pub enum AuthPlugin<'a> {
     MysqlClearPassword,
     /// Legacy authentication plugin
     MysqlNativePassword,
+    /// `sha256_password` plugin introduced in MySql 5.6 and deprecated in MySql 8.0.16
+    Sha256Password,
     /// Default since MySql v8.0.4
     CachingSha2Password,
     /// MariaDB's Ed25519 based authentication
@@ -1241,6 +1244,7 @@ impl<'a> AuthPlugin<'a> {
             MYSQL_CLEAR_PASSWORD_PLUGIN_NAME => AuthPlugin::MysqlClearPassword,
             ED25519_PLUGIN_NAME => AuthPlugin::Ed25519,
             PARSEC_PLUGIN_NAME => AuthPlugin::Parsec,
+            SHA256_PASSWORD_PLUGIN_NAME => AuthPlugin::Sha256Password,
             name => AuthPlugin::Other(Cow::Borrowed(name)),
         }
     }
@@ -1252,7 +1256,8 @@ impl<'a> AuthPlugin<'a> {
             AuthPlugin::MysqlOldPassword => MYSQL_OLD_PASSWORD_PLUGIN_NAME,
             AuthPlugin::MysqlClearPassword => MYSQL_CLEAR_PASSWORD_PLUGIN_NAME,
             AuthPlugin::Ed25519 => ED25519_PLUGIN_NAME,
-            AuthPlugin::Parsec { .. } => PARSEC_PLUGIN_NAME,
+            AuthPlugin::Parsec => PARSEC_PLUGIN_NAME,
+            AuthPlugin::Sha256Password => SHA256_PASSWORD_PLUGIN_NAME,
             AuthPlugin::Other(name) => name,
         }
     }
@@ -1265,6 +1270,7 @@ impl<'a> AuthPlugin<'a> {
             AuthPlugin::MysqlClearPassword => AuthPlugin::MysqlClearPassword,
             AuthPlugin::Ed25519 => AuthPlugin::Ed25519,
             AuthPlugin::Parsec => AuthPlugin::Parsec,
+            AuthPlugin::Sha256Password => AuthPlugin::Sha256Password,
             AuthPlugin::Other(name) => AuthPlugin::Other(Cow::Owned(name.into_owned())),
         }
     }
@@ -1277,6 +1283,7 @@ impl<'a> AuthPlugin<'a> {
             AuthPlugin::MysqlClearPassword => AuthPlugin::MysqlClearPassword,
             AuthPlugin::Ed25519 => AuthPlugin::Ed25519,
             AuthPlugin::Parsec => AuthPlugin::Parsec,
+            AuthPlugin::Sha256Password => AuthPlugin::Sha256Password,
             AuthPlugin::Other(name) => AuthPlugin::Other(Cow::Borrowed(name.as_ref())),
         }
     }
@@ -4785,6 +4792,16 @@ mod test {
         let packet = AuthSwitchRequest::deserialize((), &mut ParseBuf(PAYLOAD)).unwrap();
         assert_eq!(packet.auth_plugin().as_bytes(), b"mysql_native_password",);
         assert_eq!(packet.plugin_data(), b"zQg4i6oNy6=rHN/>-b)A",)
+    }
+
+    #[test]
+    fn should_recognize_sha256_password_auth_plugin() {
+        let plugin = AuthPlugin::from_bytes(b"sha256_password");
+
+        assert_eq!(plugin, AuthPlugin::Sha256Password);
+        assert_eq!(plugin.as_bytes(), b"sha256_password");
+        assert_eq!(plugin.borrow(), AuthPlugin::Sha256Password);
+        assert_eq!(plugin.into_owned(), AuthPlugin::Sha256Password);
     }
 
     #[test]
