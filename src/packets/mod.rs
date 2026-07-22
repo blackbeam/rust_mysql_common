@@ -1482,9 +1482,12 @@ impl<'a> AuthSwitchRequest<'a> {
     }
 
     pub fn plugin_data(&self) -> &[u8] {
-        match self.plugin_data.as_bytes() {
-            [head @ .., 0] => head,
-            all => all,
+        if self.auth_plugin() == AuthPlugin::MysqlNativePassword
+            && let [head @ .., 0] = self.plugin_data.as_bytes()
+        {
+            head
+        } else {
+            self.plugin_data.as_bytes()
         }
     }
 
