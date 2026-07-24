@@ -1482,9 +1482,18 @@ impl<'a> AuthSwitchRequest<'a> {
     }
 
     pub fn plugin_data(&self) -> &[u8] {
-        if self.auth_plugin() == AuthPlugin::MysqlNativePassword
+        if [
+            AuthPlugin::MysqlNativePassword,
+            AuthPlugin::CachingSha2Password,
+            AuthPlugin::Sha256Password,
+            AuthPlugin::MysqlOldPassword,
+        ]
+        .contains(&self.auth_plugin())
             && let [head @ .., 0] = self.plugin_data.as_bytes()
         {
+            // mysql uses C-string for 20-byte scramble and puts terminator into the packet
+            // even though the field is encoded as EOF-terminated value. It is wrong however
+            // to always trim the last byte because other compatible servers might not do so
             head
         } else {
             self.plugin_data.as_bytes()
