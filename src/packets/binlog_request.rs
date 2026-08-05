@@ -15,6 +15,9 @@ use super::{BinlogDumpFlags, ComBinlogDump, ComBinlogDumpGtid, Sid};
 /// Binlog request representation. Please consult MySql documentation.
 ///
 /// This struct is a helper builder for [`ComBinlogDump`] and [`ComBinlogDumpGtid`].
+///
+/// `server_id`, `host`, `port` are inspectable Source server side with:
+/// `SHOW SLAVE HOSTS` mysql 5.7 or `SHOW REPLICAS` on mysql 8.x.
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct BinlogRequest<'a> {
     /// Server id of a slave.
@@ -25,6 +28,14 @@ pub struct BinlogRequest<'a> {
     flags: BinlogDumpFlags,
     /// Filename of the binlog on the master.
     filename: Cow<'a, [u8]>,
+    /// Replicat/Slave hostname
+    ///
+    /// Defaults to the Empty string.
+    hostname: Cow<'a, [u8]>,
+    /// Replicat/Slave port
+    ///
+    /// Defaults to 0.
+    port: u16,
     /// Position in the binlog-file to start the stream with.
     ///
     /// If `use_gtid` is `false`, then the value will be truncated to u32.
@@ -43,6 +54,8 @@ impl<'a> BinlogRequest<'a> {
             filename: Default::default(),
             pos: 4,
             sids: vec![],
+            hostname: Default::default(),
+            port: 0,
         }
     }
 
@@ -54,6 +67,23 @@ impl<'a> BinlogRequest<'a> {
     /// If true, then `COM_BINLOG_DUMP_GTID` will be used (defaults to `false`).
     pub fn use_gtid(&self) -> bool {
         self.use_gtid
+    }
+
+    /// Returns the hostname to report to the Source server used for replication.
+    ///
+    /// Purely informative it's not an information used for connection.
+    /// Be sure to set something meaningful.
+    pub fn hostname_raw(&'a self) -> &'a [u8] {
+        self.hostname.as_ref()
+    }
+
+    /// Returns the hostname to report to the Source server used for replication,
+    /// as a UTF-8 string (lossy converted).
+    ///
+    /// Purely informative it's not an information used for connection.
+    /// Be sure to set something meaningful.
+    pub fn hostname(&'a self) -> Cow<'a, str> {
+        String::from_utf8_lossy(self.hostname.as_ref())
     }
 
     /// If `use_gtid` is `false`, then all flags except `BINLOG_DUMP_NON_BLOCK` will be truncated
@@ -80,6 +110,13 @@ impl<'a> BinlogRequest<'a> {
         self.pos
     }
 
+    /// Port to report to the Source used for Replication.
+    ///
+    /// Purely informative be sure to define the same as the one used for connection.
+    pub fn port(&self) -> u16 {
+        self.port
+    }
+
     /// If `use_gtid` is `false`, then this value will be ignored (defaults to an empty vector).
     pub fn sids(&self) -> &[Sid<'_>] {
         &self.sids
@@ -88,6 +125,25 @@ impl<'a> BinlogRequest<'a> {
     /// Returns modified `self` with the given value of the `server_id` field.
     pub fn with_server_id(mut self, server_id: u32) -> Self {
         self.server_id = server_id;
+        self
+    }
+
+    /// Returns modified `self` with the given `host` value,
+    ///
+    /// The host value is purely informative and used in mysql replica inspection statements.
+    pub fn with_hostname(mut self, hostname: impl Into<Cow<'a, [u8]>>) -> Self {
+        self.hostname = hostname.into();
+        self
+    }
+
+    /// Returns modified `self` with the given `port` value to show in
+    ///
+    /// ## Warning
+    ///
+    /// Setting a reporting port different of the real port used to stream
+    /// the binlog will lead replica inspections sql statement to show the port setted here!
+    pub fn with_port(mut self, port: u16) -> Self {
+        self.port = port;
         self
     }
 
