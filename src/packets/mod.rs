@@ -222,7 +222,7 @@ impl MySerialize for ColumnMeta<'_> {
 /// Represents MySql Column (column packet).
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct Column {
-    catalog: ColumnDefinitionCatalog,
+    catalog: RawBytes<'static, LenEnc>,
     meta: Arc<ColumnMeta<'static>>,
     fixed_length_fields_len: FixedLengthFieldsLen,
     column_length: RawInt<LeU32>,
@@ -239,7 +239,7 @@ impl<'de> MyDeserialize<'de> for Column {
     type Ctx = ();
 
     fn deserialize((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
-        let catalog = buf.parse(())?;
+        let catalog = buf.parse::<RawBytes<'_, LenEnc>>(())?.into_owned();
         let meta = Arc::new(buf.parse::<ColumnMeta<'_>>(())?.into_owned());
         let mut buf: ParseBuf<'_> = buf.parse(13)?;
 
@@ -274,7 +274,7 @@ impl MySerialize for Column {
 impl Column {
     pub fn new(column_type: ColumnType) -> Self {
         Self {
-            catalog: Default::default(),
+            catalog: RawBytes::new(b"def").into_owned(),
             meta: Default::default(),
             fixed_length_fields_len: Default::default(),
             column_length: Default::default(),
@@ -4794,6 +4794,21 @@ mod test {
         assert_eq!(column.column_type(), ColumnType::MYSQL_TYPE_DECIMAL);
         assert_eq!(column.flags(), ColumnFlags::NOT_NULL_FLAG);
         assert_eq!(column.decimals(), 8);
+    }
+
+    #[test]
+    fn should_parse_and_preserve_nonstandard_column_catalog() {
+        const COLUMN_PACKET: &[u8] = b"\x04test\x06schema\x05table\x09org_table\x04name\
+              \x08org_name\x0c\x21\x00\x0F\x00\x00\x00\x00\x01\x00\x08\x00\x00";
+        let column = Column::deserialize((), &mut ParseBuf(COLUMN_PACKET)).unwrap();
+        let mut serialized = Vec::new();
+        column.serialize(&mut serialized);
+        let mut default_serialized = Vec::new();
+        Column::new(ColumnType::MYSQL_TYPE_DECIMAL).serialize(&mut default_serialized);
+
+        assert_eq!(column.name_str(), "name");
+        assert_eq!(&serialized[..5], b"\x04test");
+        assert_eq!(&default_serialized[..4], b"\x03def");
     }
 
     #[test]
