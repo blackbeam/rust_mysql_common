@@ -119,8 +119,9 @@ define_const!(
 );
 
 /// Dynamically-sized column metadata — a part of the [`Column`] packet.
-#[derive(Debug, Default, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 struct ColumnMeta<'a> {
+    catalog: RawBytes<'a, LenEnc>,
     schema: RawBytes<'a, LenEnc>,
     table: RawBytes<'a, LenEnc>,
     org_table: RawBytes<'a, LenEnc>,
@@ -128,15 +129,41 @@ struct ColumnMeta<'a> {
     org_name: RawBytes<'a, LenEnc>,
 }
 
+impl<'a> Default for ColumnMeta<'a> {
+    fn default() -> Self {
+        Self {
+            catalog: RawBytes::new(Cow::Borrowed(Self::DEFAULT_CATALOG_NAME.as_bytes())),
+            schema: Default::default(),
+            table: Default::default(),
+            org_table: Default::default(),
+            name: Default::default(),
+            org_name: Default::default(),
+        }
+    }
+}
+
 impl ColumnMeta<'_> {
+    pub const DEFAULT_CATALOG_NAME: &'static str = "def";
+
     pub fn into_owned(self) -> ColumnMeta<'static> {
         ColumnMeta {
+            catalog: self.catalog.into_owned(),
             schema: self.schema.into_owned(),
             table: self.table.into_owned(),
             org_table: self.org_table.into_owned(),
             name: self.name.into_owned(),
             org_name: self.org_name.into_owned(),
         }
+    }
+
+    /// Returns the value of the [`ColumnMeta::catalog`] field as a byte slice.
+    pub fn catalog_ref(&self) -> &[u8] {
+        self.schema.as_bytes()
+    }
+
+    /// Returns the value of the [`ColumnMeta::catalog`] field as a string (lossy converted).
+    pub fn catalog_str(&self) -> Cow<'_, str> {
+        String::from_utf8_lossy(self.catalog_ref())
     }
 
     /// Returns the value of the [`ColumnMeta::schema`] field as a byte slice.
@@ -200,6 +227,7 @@ impl<'de> MyDeserialize<'de> for ColumnMeta<'de> {
 
     fn deserialize(_ctx: Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
         Ok(Self {
+            catalog: buf.parse_unchecked(())?,
             schema: buf.parse_unchecked(())?,
             table: buf.parse_unchecked(())?,
             org_table: buf.parse_unchecked(())?,
@@ -211,18 +239,27 @@ impl<'de> MyDeserialize<'de> for ColumnMeta<'de> {
 
 impl MySerialize for ColumnMeta<'_> {
     fn serialize(&self, buf: &mut Vec<u8>) {
-        self.schema.serialize(&mut *buf);
-        self.table.serialize(&mut *buf);
-        self.org_table.serialize(&mut *buf);
-        self.name.serialize(&mut *buf);
-        self.org_name.serialize(&mut *buf);
+        let Self {
+            catalog,
+            schema,
+            table,
+            org_table,
+            name,
+            org_name,
+        } = self;
+
+        catalog.serialize(&mut *buf);
+        schema.serialize(&mut *buf);
+        table.serialize(&mut *buf);
+        org_table.serialize(&mut *buf);
+        name.serialize(&mut *buf);
+        org_name.serialize(&mut *buf);
     }
 }
 
 /// Represents MySql Column (column packet).
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct Column {
-    catalog: RawBytes<'static, LenEnc>,
     meta: Arc<ColumnMeta<'static>>,
     fixed_length_fields_len: FixedLengthFieldsLen,
     column_length: RawInt<LeU32>,
@@ -239,12 +276,10 @@ impl<'de> MyDeserialize<'de> for Column {
     type Ctx = ();
 
     fn deserialize((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
-        let catalog = buf.parse::<RawBytes<'_, LenEnc>>(())?.into_owned();
         let meta = Arc::new(buf.parse::<ColumnMeta<'_>>(())?.into_owned());
         let mut buf: ParseBuf<'_> = buf.parse(13)?;
 
         Ok(Column {
-            catalog,
             meta,
             fixed_length_fields_len: buf.parse_unchecked(())?,
             character_set: buf.parse_unchecked(())?,
@@ -259,7 +294,6 @@ impl<'de> MyDeserialize<'de> for Column {
 
 impl MySerialize for Column {
     fn serialize(&self, buf: &mut Vec<u8>) {
-        self.catalog.serialize(&mut *buf);
         self.meta.serialize(&mut *buf);
         self.fixed_length_fields_len.serialize(&mut *buf);
         self.column_length.serialize(&mut *buf);
@@ -274,7 +308,6 @@ impl MySerialize for Column {
 impl Column {
     pub fn new(column_type: ColumnType) -> Self {
         Self {
-            catalog: RawBytes::new(b"def").into_owned(),
             meta: Default::default(),
             fixed_length_fields_len: Default::default(),
             column_length: Default::default(),
@@ -284,6 +317,12 @@ impl Column {
             decimals: Default::default(),
             __filler: Skip,
         }
+    }
+
+    /// Overrides the default column `catalog` (that is "def").
+    pub fn with_catalog(mut self, catalog: &[u8]) -> Self {
+        Arc::make_mut(&mut self.meta).catalog = RawBytes::new(catalog).into_owned();
+        self
     }
 
     pub fn with_schema(mut self, schema: &[u8]) -> Self {
@@ -362,6 +401,18 @@ impl Column {
     /// *   `0x00..=0x51` for decimals
     pub fn decimals(&self) -> u8 {
         *self.decimals
+    }
+
+    /// Returns value of the `catalog` field of a column packet as a byte slice.
+    #[inline(always)]
+    pub fn catalog_ref(&self) -> &[u8] {
+        self.meta.catalog_ref()
+    }
+
+    /// Returns value of the `catalog` field of a column packet as a string (lossy converted).
+    #[inline(always)]
+    pub fn catalog_str(&self) -> Cow<'_, str> {
+        self.meta.catalog_str()
     }
 
     /// Returns value of the schema field of a column packet as a byte slice.
