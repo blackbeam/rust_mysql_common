@@ -52,8 +52,9 @@ use crate::{
 
 use self::session_state_change::SessionStateChange;
 
-static MARIADB_VERSION_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^(?:5.5.5-)?(\d{1,2})\.(\d{1,2})\.(\d{1,3})-MariaDB").unwrap());
+static MARIADB_VERSION_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^(?:5.5.5-)?(\d{1,2})\.(\d{1,2})\.(\d{1,3})(?:-\d+)?-MariaDB").unwrap()
+});
 static VERSION_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^(\d{1,2})\.(\d{1,2})\.(\d{1,3})(.*)").unwrap());
 
@@ -5151,6 +5152,44 @@ mod test {
         ]
         .to_vec();
         assert_eq!(expected, actual);
+    }
+
+    #[test]
+    fn should_parse_mariadb_server_version() {
+        fn handshake(server_version: &str) -> HandshakePacket<'_> {
+            HandshakePacket::new(
+                10,
+                server_version.as_bytes(),
+                0,
+                [0u8; 8],
+                None::<&[u8]>,
+                CapabilityFlags::empty(),
+                0,
+                StatusFlags::empty(),
+                None::<&[u8]>,
+            )
+        }
+
+        for (version_str, expected) in [
+            ("5.5.5-10.0.17-MariaDB-log", Some((10, 0, 17))),
+            ("5.5.5-11.4.7-MariaDB-log", Some((11, 4, 7))),
+            ("10.11.2-MariaDB", Some((10, 11, 2))),
+            // MariaDB Enterprise carries a build number before `-MariaDB`.
+            ("10.6.25-21-MariaDB-enterprise-log", Some((10, 6, 25))),
+            ("5.5.5-10.6.25-21-MariaDB-enterprise-log", Some((10, 6, 25))),
+            // Not MariaDB.
+            ("8.0.39", None),
+            ("5.7.44-log", None),
+            ("5.6.4-m7-log", None),
+            ("8.0.36-28", None),
+            ("totally-bogus", None),
+        ] {
+            assert_eq!(
+                handshake(version_str).maria_db_server_version_parsed(),
+                expected,
+                "version string: {version_str}"
+            );
+        }
     }
 
     #[test]
