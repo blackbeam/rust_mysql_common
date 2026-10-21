@@ -75,16 +75,16 @@ pub fn compress(
         dst.reserve(7 + chunk.len());
 
         if compression != Compression::none() && chunk.len() >= MIN_COMPRESS_LENGTH {
-            unsafe {
+            
                 let mut encoder = ZlibEncoder::new(chunk, compression);
                 let mut read = 0;
                 loop {
                     dst.reserve(max(chunk.len().saturating_sub(read), 1));
                     let dst_buf = &mut dst.chunk_mut()[7 + read..];
-                    match encoder.read(&mut *slice_from_raw_parts_mut(
+                    match unsafe { encoder.read(&mut *slice_from_raw_parts_mut(
                         dst_buf.as_mut_ptr(),
                         dst_buf.len(),
-                    ))? {
+                    ))? } {
                         0 => break,
                         count => read += count,
                     }
@@ -93,8 +93,8 @@ pub fn compress(
                 dst.put_uint_le(read as u64, 3);
                 dst.put_u8(seq_id);
                 dst.put_uint_le(chunk.len() as u64, 3);
-                dst.advance_mut(read);
-            }
+                unsafe { dst.advance_mut(read) };
+            
         } else {
             dst.put_uint_le(chunk.len() as u64, 3);
             dst.put_u8(seq_id);
@@ -320,9 +320,9 @@ impl CompDecoder {
                         }
                         CompData::Compressed(needed, plain_len) => {
                             dst.reserve(plain_len.get());
+                            let mut decoder = ZlibDecoder::new(&src[..needed.get()]);
+                            let dst_buf = &mut dst.chunk_mut()[..plain_len.get()];
                             unsafe {
-                                let mut decoder = ZlibDecoder::new(&src[..needed.get()]);
-                                let dst_buf = &mut dst.chunk_mut()[..plain_len.get()];
                                 decoder.read_exact(&mut *slice_from_raw_parts_mut(
                                     dst_buf.as_mut_ptr(),
                                     dst_buf.len(),
