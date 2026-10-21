@@ -237,8 +237,8 @@ impl TryFrom<Value> for ParseIrOpt<bool> {
             Value::Int(0) | Value::UInt(0) => Ok(ParseIrOpt::Ready(false)),
             Value::Int(_) | Value::UInt(_) => Ok(ParseIrOpt::Ready(true)),
             Value::Bytes(ref bytes) => match bytes.as_slice() {
-                [b'0'] => Ok(ParseIrOpt::Parsed(false, v)),
-                [b'1'] => Ok(ParseIrOpt::Parsed(true, v)),
+                [0] => Ok(ParseIrOpt::Parsed(false, v)),
+                [1] => Ok(ParseIrOpt::Parsed(true, v)),
                 _ => Err(FromValueError(v)),
             },
             v => Err(FromValueError(v)),
