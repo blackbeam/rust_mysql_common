@@ -12,12 +12,11 @@ pub use flate2::Compression;
 
 use byteorder::{ByteOrder, LittleEndian};
 use bytes::{Buf, BufMut, BytesMut};
-use flate2::read::{ZlibDecoder, ZlibEncoder};
+use flate2::{Compress, Decompress, FlushCompress, FlushDecompress, Status};
 
 use std::{
     cmp::{max, min},
-    io::Read,
-    mem,
+    io, mem,
     num::NonZeroUsize,
     ptr::slice_from_raw_parts_mut,
 };
@@ -61,8 +60,22 @@ pub fn packet_to_chunks<T: Buf>(mut seq_id: u8, packet: &mut T, dst: &mut BytesM
 ///
 /// Compressed packets will start with given `seq_id`. Resulting sequence id will be returned.
 pub fn compress(
+    seq_id: u8,
+    compression: Compression,
+    max_allowed_packet: usize,
+    src: &mut BytesMut,
+    dst: &mut BytesMut,
+) -> Result<u8, PacketCodecError> {
+    compress_with(seq_id, compression, &mut None, max_allowed_packet, src, dst)
+}
+
+/// Same as [`compress`], but deflates with `deflater`, creating it on first use.
+///
+/// `deflater` must have been created with `compression`.
+fn compress_with(
     mut seq_id: u8,
     compression: Compression,
+    deflater: &mut Option<Compress>,
     max_allowed_packet: usize,
     src: &mut BytesMut,
     dst: &mut BytesMut,
@@ -74,32 +87,27 @@ pub fn compress(
     for chunk in src.chunks(min(MAX_PAYLOAD_LEN, max_allowed_packet)) {
         dst.reserve(7 + chunk.len());
 
-        if compression != Compression::none() && chunk.len() >= MIN_COMPRESS_LENGTH {
-            unsafe {
-                let mut encoder = ZlibEncoder::new(chunk, compression);
-                let mut read = 0;
-                loop {
-                    dst.reserve(max(chunk.len().saturating_sub(read), 1));
-                    let dst_buf = &mut dst.chunk_mut()[7 + read..];
-                    match encoder.read(&mut *slice_from_raw_parts_mut(
-                        dst_buf.as_mut_ptr(),
-                        dst_buf.len(),
-                    ))? {
-                        0 => break,
-                        count => read += count,
-                    }
-                }
+        let compressed_len =
+            if compression != Compression::none() && chunk.len() >= MIN_COMPRESS_LENGTH {
+                let deflater = deflater.get_or_insert_with(|| Compress::new(compression, true));
+                deflate_into(deflater, chunk, dst)?
+            } else {
+                None
+            };
 
-                dst.put_uint_le(read as u64, 3);
+        match compressed_len {
+            Some(compressed_len) => unsafe {
+                dst.put_uint_le(compressed_len as u64, 3);
                 dst.put_u8(seq_id);
                 dst.put_uint_le(chunk.len() as u64, 3);
-                dst.advance_mut(read);
+                dst.advance_mut(compressed_len);
+            },
+            None => {
+                dst.put_uint_le(chunk.len() as u64, 3);
+                dst.put_u8(seq_id);
+                dst.put_uint_le(0, 3);
+                dst.put_slice(chunk);
             }
-        } else {
-            dst.put_uint_le(chunk.len() as u64, 3);
-            dst.put_u8(seq_id);
-            dst.put_uint_le(0, 3);
-            dst.put_slice(chunk);
         }
 
         seq_id = seq_id.wrapping_add(1);
@@ -108,6 +116,64 @@ pub fn compress(
     src.clear();
 
     Ok(seq_id)
+}
+
+/// Deflates `chunk` into the spare capacity of `dst`, leaving room for a compressed packet
+/// header, and returns the compressed length.
+///
+/// Returns `None` if `chunk` does not get smaller, so that it is sent uncompressed.
+/// `dst` must have at least `7 + chunk.len()` bytes of spare capacity.
+fn deflate_into(
+    deflater: &mut Compress,
+    chunk: &[u8],
+    dst: &mut BytesMut,
+) -> io::Result<Option<usize>> {
+    deflater.reset();
+    let dst_buf = &mut dst.chunk_mut()[7..7 + chunk.len()];
+    let status = unsafe {
+        deflater.compress(
+            chunk,
+            &mut *slice_from_raw_parts_mut(dst_buf.as_mut_ptr(), dst_buf.len()),
+            FlushCompress::Finish,
+        )
+    }
+    .map_err(io::Error::other)?;
+
+    let compressed_len = deflater.total_out() as usize;
+    if status == Status::StreamEnd && compressed_len < chunk.len() {
+        Ok(Some(compressed_len))
+    } else {
+        Ok(None)
+    }
+}
+
+/// Inflates `compressed` into `dst`, failing unless it inflates to exactly `plain_len` bytes.
+fn inflate_into(
+    inflater: &mut Decompress,
+    compressed: &[u8],
+    plain_len: usize,
+    dst: &mut BytesMut,
+) -> io::Result<()> {
+    inflater.reset(true);
+    dst.reserve(plain_len);
+    let dst_buf = &mut dst.chunk_mut()[..plain_len];
+    let status = unsafe {
+        inflater.decompress(
+            compressed,
+            &mut *slice_from_raw_parts_mut(dst_buf.as_mut_ptr(), dst_buf.len()),
+            FlushDecompress::Finish,
+        )
+    }
+    .map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err))?;
+
+    if status != Status::StreamEnd || inflater.total_out() != plain_len as u64 {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "compressed packet does not inflate to its declared length",
+        ));
+    }
+    unsafe { dst.advance_mut(plain_len) };
+    Ok(())
 }
 
 /// Chunk info.
@@ -263,6 +329,25 @@ impl CompData {
             CompData::Compressed(needed, _) | CompData::Uncompressed(needed) => needed.get(),
         }
     }
+
+    /// Writes the plain data of `payload` into `dst`, inflating it with `inflater` if compressed.
+    fn write_payload(
+        self,
+        payload: &[u8],
+        dst: &mut BytesMut,
+        inflater: &mut Option<Decompress>,
+    ) -> io::Result<()> {
+        match self {
+            CompData::Uncompressed(_) => {
+                dst.extend_from_slice(payload);
+                Ok(())
+            }
+            CompData::Compressed(_, plain_len) => {
+                let inflater = inflater.get_or_insert_with(|| Decompress::new(true));
+                inflate_into(inflater, payload, plain_len.get(), dst)
+            }
+        }
+    }
 }
 
 /// Decoder for MySql compressed packet.
@@ -289,6 +374,17 @@ impl CompDecoder {
         dst: &mut BytesMut,
         max_allowed_packet: usize,
     ) -> Result<Option<ChunkInfo>, PacketCodecError> {
+        self.decode_with(src, dst, max_allowed_packet, &mut None)
+    }
+
+    /// Same as [`CompDecoder::decode`], but inflates with `inflater`, creating it on first use.
+    fn decode_with(
+        &mut self,
+        src: &mut BytesMut,
+        dst: &mut BytesMut,
+        max_allowed_packet: usize,
+        inflater: &mut Option<Decompress>,
+    ) -> Result<Option<ChunkInfo>, PacketCodecError> {
         match *self {
             CompDecoder::Idle => {
                 if src.len() < 7 {
@@ -302,7 +398,7 @@ impl CompDecoder {
                     match CompData::new(compressed_len, uncompressed_len, max_allowed_packet)? {
                         Some(needed) => {
                             *self = CompDecoder::Packet { seq_id, needed };
-                            self.decode(src, dst, max_allowed_packet)
+                            self.decode_with(src, dst, max_allowed_packet, inflater)
                         }
                         None => {
                             src.advance(7);
@@ -314,23 +410,7 @@ impl CompDecoder {
             CompDecoder::Packet { seq_id, needed } => {
                 if src.len() >= 7 + needed.needed() {
                     src.advance(7);
-                    match needed {
-                        CompData::Uncompressed(needed) => {
-                            dst.extend_from_slice(&src[..needed.get()]);
-                        }
-                        CompData::Compressed(needed, plain_len) => {
-                            dst.reserve(plain_len.get());
-                            unsafe {
-                                let mut decoder = ZlibDecoder::new(&src[..needed.get()]);
-                                let dst_buf = &mut dst.chunk_mut()[..plain_len.get()];
-                                decoder.read_exact(&mut *slice_from_raw_parts_mut(
-                                    dst_buf.as_mut_ptr(),
-                                    dst_buf.len(),
-                                ))?;
-                                dst.advance_mut(plain_len.get());
-                            }
-                        }
-                    }
+                    needed.write_payload(&src[..needed.needed()], dst, inflater)?;
                     src.advance(needed.needed());
                     *self = CompDecoder::Idle;
                     Ok(Some(ChunkInfo::Last(seq_id)))
@@ -438,10 +518,17 @@ impl PacketCodecInner {
                     in_buf: BytesMut::with_capacity(DEFAULT_MAX_ALLOWED_PACKET),
                     out_buf: BytesMut::with_capacity(DEFAULT_MAX_ALLOWED_PACKET),
                     comp_decoder: CompDecoder::Idle,
+                    deflater: None,
+                    inflater: None,
                     plain_codec: mem::take(c),
                 })
             }
-            PacketCodecInner::Comp(c) => c.level = level,
+            PacketCodecInner::Comp(c) => {
+                if c.level != level {
+                    c.level = level;
+                    c.deflater = None;
+                }
+            }
         }
     }
 
@@ -582,6 +669,10 @@ struct CompPacketCodec {
     out_buf: BytesMut,
     /// Compressed packet decoder.
     comp_decoder: CompDecoder,
+    /// Deflate stream for outgoing packets, kept for the connection's lifetime.
+    deflater: Option<Compress>,
+    /// Inflate stream for incoming packets, kept for the connection's lifetime.
+    inflater: Option<Decompress>,
     /// Wrapped codec for plain MySql protocol.
     plain_codec: PlainPacketCodec,
 }
@@ -632,10 +723,12 @@ impl CompPacketCodec {
             return Ok(true);
         }
 
-        match self
-            .comp_decoder
-            .decode(src, &mut self.in_buf, max_allowed_packet)?
-        {
+        match self.comp_decoder.decode_with(
+            src,
+            &mut self.in_buf,
+            max_allowed_packet,
+            &mut self.inflater,
+        )? {
             Some(chunk_info) => {
                 if self.comp_seq_id != chunk_info.seq_id() {
                     return Err(PacketCodecError::PacketsOutOfSync);
@@ -659,9 +752,10 @@ impl CompPacketCodec {
         self.plain_codec
             .encode(packet, &mut self.out_buf, max_allowed_packet)?;
 
-        self.comp_seq_id = compress(
+        self.comp_seq_id = compress_with(
             self.comp_seq_id,
             self.level,
+            &mut self.deflater,
             max_allowed_packet,
             &mut self.out_buf,
             dst,
@@ -805,6 +899,179 @@ mod tests {
         let result = decoder.decode(&mut src, &mut dst).unwrap();
         assert!(result);
         assert_eq!(&*dst, PLAIN);
+    }
+
+    fn payload(len: usize, seed: u64) -> Vec<u8> {
+        let mut state = seed;
+        (0..len)
+            .map(|i| {
+                if i % 64 < 48 {
+                    b"SELECT id, name FROM users WHERE id = 1"[i % 39]
+                } else {
+                    state = state.wrapping_mul(6364136223846793005).wrapping_add(1);
+                    (state >> 56) as u8
+                }
+            })
+            .collect()
+    }
+
+    fn incompressible(len: usize) -> Vec<u8> {
+        let mut state = 0x9e3779b97f4a7c15u64;
+        (0..len)
+            .map(|_| {
+                state ^= state << 13;
+                state ^= state >> 7;
+                state ^= state << 17;
+                state as u8
+            })
+            .collect()
+    }
+
+    fn deflates_to_its_own_length(len: usize) -> Vec<u8> {
+        (0..len)
+            .map(|text_len| {
+                let mut packet: Vec<u8> = b"SELECT id, name FROM users WHERE id = 1"
+                    .iter()
+                    .cycle()
+                    .take(text_len)
+                    .copied()
+                    .collect();
+                packet.extend(incompressible(len - text_len));
+                packet
+            })
+            .find(|packet| {
+                let mut deflated = Vec::with_capacity(len + 64);
+                Compress::new(Compression::default(), true)
+                    .compress_vec(packet, &mut deflated, FlushCompress::Finish)
+                    .unwrap();
+                deflated.len() == len
+            })
+            .unwrap()
+    }
+
+    fn compressed_packet(seq_id: u8, plain_len: usize, plain: &[u8]) -> BytesMut {
+        let mut deflater = Compress::new(Compression::default(), true);
+        let mut deflated = Vec::with_capacity(plain.len() + 64);
+        deflater
+            .compress_vec(plain, &mut deflated, FlushCompress::Finish)
+            .unwrap();
+        let mut packet = BytesMut::new();
+        packet.put_uint_le(deflated.len() as u64, 3);
+        packet.put_u8(seq_id);
+        packet.put_uint_le(plain_len as u64, 3);
+        packet.put_slice(&deflated);
+        packet
+    }
+
+    #[test]
+    fn compressed_roundtrip_reuses_streams() {
+        let mut encoder = PacketCodec::default();
+        let mut decoder = PacketCodec::default();
+        encoder.max_allowed_packet = 64 * 1024 * 1024;
+        decoder.max_allowed_packet = 64 * 1024 * 1024;
+        encoder.compress(Compression::default());
+        decoder.compress(Compression::default());
+
+        let lengths = [
+            0,
+            1,
+            MIN_COMPRESS_LENGTH - 5,
+            MIN_COMPRESS_LENGTH - 4,
+            MIN_COMPRESS_LENGTH,
+            4096,
+            100_000,
+            MAX_PAYLOAD_LEN - 4,
+            MAX_PAYLOAD_LEN + 100,
+        ];
+        for (i, len) in lengths.into_iter().enumerate() {
+            if i == 4 {
+                encoder.compress(Compression::fast());
+            }
+            for packet in [payload(len, i as u64), incompressible(len)] {
+                let mut wire = BytesMut::new();
+                encoder.reset_seq_id();
+                encoder.encode(&mut &*packet, &mut wire).unwrap();
+                let mut dst = vec![];
+                decoder.reset_seq_id();
+                assert!(decoder.decode(&mut wire, &mut dst).unwrap(), "{len}");
+                assert_eq!(dst, packet, "{len}");
+                assert!(wire.is_empty());
+            }
+        }
+    }
+
+    #[test]
+    fn small_and_incompressible_packets_are_sent_uncompressed() {
+        for packet in [
+            payload(MIN_COMPRESS_LENGTH - 5, 1),
+            incompressible(MIN_COMPRESS_LENGTH * 4),
+            deflates_to_its_own_length(MIN_COMPRESS_LENGTH * 2),
+        ] {
+            let mut src = BytesMut::from(&packet[..]);
+            let mut wire = BytesMut::new();
+            compress(
+                0,
+                Compression::default(),
+                DEFAULT_MAX_ALLOWED_PACKET,
+                &mut src,
+                &mut wire,
+            )
+            .unwrap();
+            assert_eq!(LittleEndian::read_u24(&wire[4..]), 0);
+            assert_eq!(&wire[7..], &packet[..]);
+        }
+
+        let packet = payload(MIN_COMPRESS_LENGTH, 2);
+        let mut src = BytesMut::from(&packet[..]);
+        let mut wire = BytesMut::new();
+        compress(
+            0,
+            Compression::default(),
+            DEFAULT_MAX_ALLOWED_PACKET,
+            &mut src,
+            &mut wire,
+        )
+        .unwrap();
+        assert_eq!(LittleEndian::read_u24(&wire[4..]) as usize, packet.len());
+        assert!(wire.len() < packet.len());
+    }
+
+    #[test]
+    fn changing_compression_level_takes_effect() {
+        let packet = payload(4096, 4);
+        let mut codec = PacketCodec::default();
+        codec.compress(Compression::none());
+        codec.compress(Compression::default());
+        let mut wire = BytesMut::new();
+        codec.encode(&mut &*packet, &mut wire).unwrap();
+        assert_eq!(
+            LittleEndian::read_u24(&wire[4..]) as usize,
+            packet.len() + 4
+        );
+        assert!(wire.len() < packet.len());
+    }
+
+    #[test]
+    fn rejects_packet_that_inflates_to_another_length() {
+        let mut plain = BytesMut::new();
+        plain.put_uint_le(1000, 3);
+        plain.put_u8(0);
+        plain.put_slice(&payload(1000, 3));
+
+        for declared in [plain.len() + 1, plain.len() - 1] {
+            let mut decoder = PacketCodec::default();
+            decoder.compress(Compression::default());
+            let mut src = compressed_packet(0, declared, &plain);
+            let mut dst = vec![];
+            assert!(decoder.decode(&mut src, &mut dst).is_err(), "{declared}");
+        }
+
+        let mut decoder = PacketCodec::default();
+        decoder.compress(Compression::default());
+        let mut src = compressed_packet(0, plain.len(), &plain);
+        let mut dst = vec![];
+        assert!(decoder.decode(&mut src, &mut dst).unwrap());
+        assert_eq!(dst, &plain[4..]);
     }
 
     #[test]
