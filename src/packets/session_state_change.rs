@@ -3,7 +3,10 @@ use std::{borrow::Cow, io};
 use crate::{
     constants::SessionStateType,
     io::ParseBuf,
-    misc::raw::{RawBytes, bytes::EofBytes, int::LenEnc},
+    misc::{
+        raw::{RawBytes, int::LenEnc},
+        unexpected_buf_eof,
+    },
     proto::{MyDeserialize, MySerialize},
 };
 
@@ -71,7 +74,6 @@ impl<'de> MyDeserialize<'de> for SessionStateChange<'de> {
                 let is_tracked: RawBytes<'_, LenEnc> = buf.parse_unchecked(())?;
                 Ok(SessionStateChange::IsTracked(is_tracked.as_bytes() == b"1"))
             }
-            // Layout isn't specified in the documentation
             SessionStateType::SESSION_TRACK_GTIDS => {
                 Ok(SessionStateChange::Gtids(buf.parse_unchecked(())?))
             }
@@ -112,8 +114,11 @@ impl MySerialize for SessionStateChange<'_> {
 /// This tracker type indicates that GTIDs are available and contains the GTID string.
 ///
 /// The GTID string is in the standard format for specifying a set of GTID values.
+///
+/// On the wire it is a 1-byte encoding specification (only `0` is defined)
+/// followed by a length-encoded GTID string.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Gtids<'a>(RawBytes<'a, EofBytes>);
+pub struct Gtids<'a>(RawBytes<'a, LenEnc>);
 
 impl<'a> Gtids<'a> {
     pub fn new(gtid_set: impl Into<Cow<'a, [u8]>>) -> Self {
@@ -141,12 +146,17 @@ impl<'de> MyDeserialize<'de> for Gtids<'de> {
     type Ctx = ();
 
     fn deserialize((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
-        buf.parse_unchecked(()).map(Self)
+        // skip the encoding specification
+        if !buf.checked_skip(1) {
+            return Err(unexpected_buf_eof());
+        }
+        buf.parse(()).map(Self)
     }
 }
 
 impl MySerialize for Gtids<'_> {
     fn serialize(&self, buf: &mut Vec<u8>) {
+        buf.push(0x00);
         self.0.serialize(buf);
     }
 }
@@ -380,5 +390,30 @@ impl<'de> MyDeserialize<'de> for Unsupported<'de> {
 impl MySerialize for Unsupported<'_> {
     fn serialize(&self, buf: &mut Vec<u8>) {
         self.0.serialize(buf);
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn should_parse_gtids() {
+        // Captured from MySQL 8.4 with `session_track_gtids=ALL_GTIDS`.
+        const DATA: &[u8] = b"\x00\x28ed0c3572-cc98-11f1-ac96-7ac89c16d032:1-9";
+
+        let change = SessionStateChange::deserialize(
+            SessionStateType::SESSION_TRACK_GTIDS,
+            &mut ParseBuf(DATA),
+        )
+        .unwrap();
+        let SessionStateChange::Gtids(ref gtids) = change else {
+            panic!("expected Gtids, got {change:?}");
+        };
+        assert_eq!(gtids.as_str(), "ed0c3572-cc98-11f1-ac96-7ac89c16d032:1-9");
+
+        let mut output = Vec::new();
+        change.serialize(&mut output);
+        assert_eq!(output, DATA);
     }
 }
