@@ -32,7 +32,7 @@ pub fn my_time_packed_from_binary<T: io::Read>(mut input: T, dec: u32) -> io::Re
     match dec {
         1 | 2 => {
             let mut intpart = input.read_u24::<BE>()? as i64 - TIMEF_INT_OFS;
-            let mut frac = input.read_u8()? as u32;
+            let mut frac = input.read_u8()? as i32;
             if intpart < 0 && frac > 0 {
                 intpart += 1;
                 frac -= 0x100;
@@ -164,3 +164,32 @@ pub(crate) trait LimitWrite: Write + Sized {
 }
 
 impl<T: Write> LimitWrite for T {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn negative_time_with_a_fraction_of_one_or_two_digits() {
+        for dec in [1, 2] {
+            let v = my_time_packed_from_binary(&[0x7f, 0xff, 0xff, 0xce][..], dec).unwrap();
+            assert_eq!(time_from_packed(v), Value::Time(true, 0, 0, 0, 0, 500_000));
+            let v = my_time_packed_from_binary(&[0x7f, 0xff, 0xfe, 0xe7][..], dec).unwrap();
+            assert_eq!(time_from_packed(v), Value::Time(true, 0, 0, 0, 1, 250_000));
+        }
+    }
+
+    #[test]
+    fn negative_time_with_a_fraction_of_three_or_four_digits() {
+        for dec in [3, 4] {
+            let v = my_time_packed_from_binary(&[0x7f, 0xff, 0xff, 0xec, 0x78][..], dec).unwrap();
+            assert_eq!(time_from_packed(v), Value::Time(true, 0, 0, 0, 0, 500_000));
+        }
+    }
+
+    #[test]
+    fn positive_time_with_a_fraction() {
+        let v = my_time_packed_from_binary(&[0x80, 0x00, 0x00, 0x32][..], 2).unwrap();
+        assert_eq!(time_from_packed(v), Value::Time(false, 0, 0, 0, 0, 500_000));
+    }
+}
