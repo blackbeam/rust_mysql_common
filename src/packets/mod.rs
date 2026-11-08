@@ -103,6 +103,13 @@ macro_rules! define_const_bytes {
 pub mod binlog_request;
 pub mod caching_sha2_password;
 pub mod session_state_change;
+mod stmt_execute;
+
+pub use self::stmt_execute::{
+    ComStmtExecute, ComStmtExecuteCtx, ComStmtReset, LongDataMode, ParamsMetadata, ServerFlavor,
+    StmtExecuteError, StmtExecuteMetadataError, StmtExecuteParams, StmtExecuteRequest,
+    StmtExecuteRequestBuilder, StmtParam, StmtParamData, StmtParamError, StmtParamType,
+};
 
 define_const_bytes!(
     Catalog,
@@ -2590,11 +2597,16 @@ impl<T, U: AsRef<[u8]>> AsRef<[u8]> for NullBitmap<T, U> {
     }
 }
 
+#[deprecated(
+    since = "0.38.3",
+    note = "use `StmtExecuteRequestBuilder` and `StmtParam` instead"
+)]
 #[derive(Debug, Clone, PartialEq)]
 pub struct ComStmtExecuteRequestBuilder {
     pub stmt_id: u32,
 }
 
+#[allow(deprecated)]
 impl ComStmtExecuteRequestBuilder {
     pub const NULL_BITMAP_OFFSET: usize = 10;
 
@@ -2603,6 +2615,7 @@ impl ComStmtExecuteRequestBuilder {
     }
 }
 
+#[allow(deprecated)]
 impl ComStmtExecuteRequestBuilder {
     pub fn build(self, params: &[Value]) -> (ComStmtExecuteRequest<'_>, bool) {
         let bitmap_len = NullBitmap::<ClientSide>::bitmap_len(params.len());
@@ -2654,6 +2667,7 @@ define_const!(
     1
 );
 
+#[deprecated(since = "0.38.3", note = "use `StmtExecuteRequest` instead")]
 #[derive(Debug, Clone, PartialEq)]
 pub struct ComStmtExecuteRequest<'a> {
     com_stmt_execute: ComStmtExecuteHeader,
@@ -2667,6 +2681,7 @@ pub struct ComStmtExecuteRequest<'a> {
     as_long_data: bool,
 }
 
+#[allow(deprecated)]
 impl<'a> ComStmtExecuteRequest<'a> {
     pub fn stmt_id(&self) -> u32 {
         self.stmt_id.0
@@ -2693,6 +2708,7 @@ impl<'a> ComStmtExecuteRequest<'a> {
     }
 }
 
+#[allow(deprecated)]
 impl MySerialize for ComStmtExecuteRequest<'_> {
     fn serialize(&self, buf: &mut Vec<u8>) {
         self.com_stmt_execute.serialize(&mut *buf);
@@ -2794,6 +2810,22 @@ impl MySerialize for ComStmtSendLongData<'_> {
         self.stmt_id.serialize(&mut *buf);
         self.param_index.serialize(&mut *buf);
         self.data.serialize(&mut *buf);
+    }
+}
+
+impl<'de> MyDeserialize<'de> for ComStmtSendLongData<'de> {
+    const SIZE: Option<usize> = None;
+    type Ctx = ();
+
+    fn deserialize((): Self::Ctx, buf: &mut ParseBuf<'de>) -> io::Result<Self> {
+        let mut sbuf: ParseBuf<'_> = buf.parse(7)?;
+
+        Ok(Self {
+            __header: sbuf.parse_unchecked(())?,
+            stmt_id: sbuf.parse_unchecked(())?,
+            param_index: sbuf.parse_unchecked(())?,
+            data: buf.parse(())?,
+        })
     }
 }
 

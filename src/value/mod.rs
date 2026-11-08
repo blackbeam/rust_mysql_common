@@ -446,7 +446,10 @@ impl Value {
             | ColumnType::MYSQL_TYPE_DATETIME => Self::deserialize_datetime(buf),
             ColumnType::MYSQL_TYPE_TIME => Self::deserialize_time(buf),
             ColumnType::MYSQL_TYPE_NULL => Ok(NULL),
-            x => unimplemented!("Unsupported column type {:?}", x),
+            column_type => Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("unsupported column type {column_type:?}"),
+            )),
         }
     }
 }
