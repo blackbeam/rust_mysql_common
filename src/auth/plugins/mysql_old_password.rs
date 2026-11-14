@@ -31,6 +31,21 @@ impl super::ChallengeResponsePlugin for MysqlOldPassword {
 
 /// Old (pre 4.1) authentication plugin
 pub fn scramble_323(nonce: &[u8; SCRAMBLE_LENGTH_323], password: &[u8]) -> Option<[u8; 8]> {
+    if password.is_empty() {
+        return None;
+    }
+
+    let mut hash_pass = [0_u32; 2];
+    hash_password(&mut hash_pass, password);
+
+    Some(scramble_323_with_hash(nonce, hash_pass))
+}
+
+/// Same as [`scramble_323`], but takes the password hash computed by [`hash_password`]
+/// (the value `OLD_PASSWORD()` returns, as two words) instead of the password.
+///
+/// This allows a client that only stores the password hash to answer the challenge.
+pub fn scramble_323_with_hash(nonce: &[u8; SCRAMBLE_LENGTH_323], hash_pass: [u32; 2]) -> [u8; 8] {
     struct Rand323 {
         seed1: u32,
         seed2: u32,
@@ -55,16 +70,9 @@ pub fn scramble_323(nonce: &[u8; SCRAMBLE_LENGTH_323], password: &[u8]) -> Optio
         }
     }
 
-    let mut hash_pass = [0_u32; 2];
     let mut hash_message = [0_u32; 2];
-
-    if password.is_empty() {
-        return None;
-    }
-
     let mut output = [0_u8; 8];
 
-    hash_password(&mut hash_pass, password);
     hash_password(&mut hash_message, nonce);
 
     let mut rand_st = Rand323::init(
@@ -82,7 +90,7 @@ pub fn scramble_323(nonce: &[u8; SCRAMBLE_LENGTH_323], password: &[u8]) -> Optio
         *x ^= extra;
     }
 
-    Some(output)
+    output
 }
 
 /// Insecure password hasing used in mysql_old_password.
@@ -109,4 +117,41 @@ pub fn hash_password(output: &mut [u32; 2], password: &[u8]) {
 
     output[0] = nr & 0b01111111_11111111_11111111_11111111;
     output[1] = nr2 & 0b01111111_11111111_11111111_11111111;
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn hash_password_matches_old_password() {
+        // SELECT OLD_PASSWORD('password') = '5d2e19393cc5ef67'
+        let mut hash = [0_u32; 2];
+        hash_password(&mut hash, b"password");
+        assert_eq!(hash, [0x5d2e1939, 0x3cc5ef67]);
+
+        // Spaces and tabs are skipped.
+        let mut spaced = [0_u32; 2];
+        hash_password(&mut spaced, b"pass word\t");
+        assert_eq!(spaced, hash);
+    }
+
+    #[test]
+    fn scramble_323_with_hash_matches_scramble_323() {
+        let nonce = b"abcdefgh";
+        assert_eq!(scramble_323(nonce, b"password"), Some(*b"L^]ZDSEU"));
+        assert_eq!(
+            scramble_323_with_hash(nonce, [0x5d2e1939, 0x3cc5ef67]),
+            *b"L^]ZDSEU"
+        );
+        for password in [&b"password"[..], b"x", b"G!ider27"] {
+            let mut hash = [0_u32; 2];
+            hash_password(&mut hash, password);
+            assert_eq!(
+                scramble_323(nonce, password),
+                Some(scramble_323_with_hash(nonce, hash))
+            );
+        }
+        assert_eq!(scramble_323(nonce, b""), None);
+    }
 }
