@@ -96,6 +96,7 @@ implementing the [`ChallengeResponsePlugin`] trait.
 | `binlog`         | Binlog-related functionality                         | 🔴      |
 | `client_ed25519` | Enables [ed25519] authentication plugin support      | 🔴      |
 | `client_parsec`  | Enables [parsec] authentication plugin support       | 🔴      |
+| `zeroize`        | Wipes protocol bytes from the codec's buffers        | 🔴      |
 
 [ed25519]: https://mariadb.com/kb/en/authentication-plugin-ed25519/
 [parsec]: https://mariadb.com/kb/en/authentication-plugin-parsec/
