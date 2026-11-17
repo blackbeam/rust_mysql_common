@@ -71,6 +71,7 @@ serde_json = "1"
 mysql-common-derive = { path = "derive", version = "0.32.0", optional = true }
 btoi = "0.5"
 zstd = { version = "0.13", optional = true }
+zeroize = { version = "1.4", optional = true }
 
 [dev-dependencies]
 time = { version = "0.3", features = ["macros"] }
@@ -109,6 +110,7 @@ rust_decimal = ['dep:rust_decimal']
 time = ['dep:time']
 client_ed25519 = ['dep:curve25519-dalek']
 client_parsec = ['dep:ed25519-dalek', 'dep:pbkdf2', 'dep:rand']
+zeroize = ['dep:zeroize']
 
 [package.metadata.docs.rs]
 rustdoc-args = ["--cfg", "docsrs"]

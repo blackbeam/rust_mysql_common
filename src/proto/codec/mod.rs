@@ -26,6 +26,61 @@ use crate::constants::{DEFAULT_MAX_ALLOWED_PACKET, MAX_PAYLOAD_LEN, MIN_COMPRESS
 
 pub mod error;
 
+/// Overwrites `bytes` with zeros if the `zeroize` feature is enabled.
+#[inline]
+fn wipe(bytes: &mut [u8]) {
+    #[cfg(feature = "zeroize")]
+    zeroize::Zeroize::zeroize(bytes);
+    #[cfg(not(feature = "zeroize"))]
+    let _ = bytes;
+}
+
+/// Overwrites the first `len` bytes of spare capacity of `buf` with zeros if the `zeroize`
+/// feature is enabled.
+#[inline]
+fn wipe_spare(buf: &mut BytesMut, len: usize) {
+    #[cfg(feature = "zeroize")]
+    zeroize::Zeroize::zeroize(&mut buf.spare_capacity_mut()[..len]);
+    #[cfg(not(feature = "zeroize"))]
+    let _ = (buf, len);
+}
+
+/// Same as [`BytesMut::reserve`].
+///
+/// If the `zeroize` feature is enabled and `buf` needs to grow, the live bytes are moved
+/// into a new allocation and wiped from the old one, because `BytesMut::reserve` may
+/// release or reuse the old allocation without clearing it.
+#[inline]
+fn reserve_wiping(buf: &mut BytesMut, additional: usize) {
+    if cfg!(feature = "zeroize") && additional > buf.capacity() - buf.len() {
+        let required = buf
+            .len()
+            .checked_add(additional)
+            .expect("buffer capacity overflow");
+        let mut replacement = BytesMut::with_capacity(max(required, buf.capacity() * 2));
+        replacement.extend_from_slice(buf);
+        wipe(buf);
+        *buf = replacement;
+    } else {
+        buf.reserve(additional);
+    }
+}
+
+/// Same as [`BytesMut::clear`], but wipes the bytes first if the `zeroize` feature is enabled.
+#[inline]
+fn clear_wiping(buf: &mut BytesMut) {
+    wipe(buf);
+    buf.clear();
+}
+
+/// Same as [`Buf::advance`], but wipes the skipped bytes first if the `zeroize` feature is
+/// enabled.
+#[inline]
+fn advance_wiping(buf: &mut BytesMut, count: usize) {
+    wipe(&mut buf[..count]);
+    buf.advance(count);
+}
+
 /// Will split given `packet` to MySql packet chunks and write into `dst`.
 ///
 /// Chunk ids will start with given `seq_id`.
@@ -33,7 +88,10 @@ pub mod error;
 /// Resulting sequence id will be returned.
 pub fn packet_to_chunks<T: Buf>(mut seq_id: u8, packet: &mut T, dst: &mut BytesMut) -> u8 {
     let extra_packet = packet.remaining().is_multiple_of(MAX_PAYLOAD_LEN);
-    dst.reserve(packet.remaining() + (packet.remaining() / MAX_PAYLOAD_LEN) * 4 + 4);
+    reserve_wiping(
+        dst,
+        packet.remaining() + (packet.remaining() / MAX_PAYLOAD_LEN) * 4 + 4,
+    );
 
     while packet.has_remaining() {
         let mut chunk_len = min(packet.remaining(), MAX_PAYLOAD_LEN);
@@ -85,7 +143,7 @@ fn compress_with(
     }
 
     for chunk in src.chunks(min(MAX_PAYLOAD_LEN, max_allowed_packet)) {
-        dst.reserve(7 + chunk.len());
+        reserve_wiping(dst, 7 + chunk.len());
 
         let compressed_len =
             if compression != Compression::none() && chunk.len() >= MIN_COMPRESS_LENGTH {
@@ -113,7 +171,7 @@ fn compress_with(
         seq_id = seq_id.wrapping_add(1);
     }
 
-    src.clear();
+    clear_wiping(src);
 
     Ok(seq_id)
 }
@@ -130,14 +188,19 @@ fn deflate_into(
 ) -> io::Result<Option<usize>> {
     deflater.reset();
     let dst_buf = &mut dst.chunk_mut()[7..7 + chunk.len()];
-    let status = unsafe {
+    let status = match unsafe {
         deflater.compress(
             chunk,
             &mut *slice_from_raw_parts_mut(dst_buf.as_mut_ptr(), dst_buf.len()),
             FlushCompress::Finish,
         )
-    }
-    .map_err(io::Error::other)?;
+    } {
+        Ok(status) => status,
+        Err(err) => {
+            wipe_spare(dst, 7 + chunk.len());
+            return Err(io::Error::other(err));
+        }
+    };
 
     let compressed_len = deflater.total_out() as usize;
     if status == Status::StreamEnd && compressed_len < chunk.len() {
@@ -155,18 +218,25 @@ fn inflate_into(
     dst: &mut BytesMut,
 ) -> io::Result<()> {
     inflater.reset(true);
-    dst.reserve(plain_len);
+    reserve_wiping(dst, plain_len);
     let dst_buf = &mut dst.chunk_mut()[..plain_len];
-    let status = unsafe {
+    let status = match unsafe {
         inflater.decompress(
             compressed,
             &mut *slice_from_raw_parts_mut(dst_buf.as_mut_ptr(), dst_buf.len()),
             FlushDecompress::Finish,
         )
-    }
-    .map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err))?;
+    } {
+        Ok(status) => status,
+        Err(err) => {
+            // Partial plaintext may have been written to the spare capacity.
+            wipe_spare(dst, plain_len);
+            return Err(io::Error::new(io::ErrorKind::InvalidData, err));
+        }
+    };
 
     if status != Status::StreamEnd || inflater.total_out() != plain_len as u64 {
+        wipe_spare(dst, plain_len);
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
             "compressed packet does not inflate to its declared length",
@@ -259,7 +329,7 @@ impl ChunkDecoder {
                             }
                         }
                         None => {
-                            src.advance(4);
+                            advance_wiping(src, 4);
                             Ok(Some(ChunkInfo::Last(seq_id)))
                         }
                     }
@@ -267,10 +337,10 @@ impl ChunkDecoder {
             }
             ChunkDecoder::Chunk { seq_id, needed } => {
                 if src.len() >= 4 + needed.get() {
-                    src.advance(4);
+                    advance_wiping(src, 4);
 
                     dst.put_slice(&src[..needed.get()]);
-                    src.advance(needed.get());
+                    advance_wiping(src, needed.get());
 
                     *self = ChunkDecoder::Idle;
 
@@ -339,6 +409,7 @@ impl CompData {
     ) -> io::Result<()> {
         match self {
             CompData::Uncompressed(_) => {
+                reserve_wiping(dst, payload.len());
                 dst.extend_from_slice(payload);
                 Ok(())
             }
@@ -401,7 +472,7 @@ impl CompDecoder {
                             self.decode_with(src, dst, max_allowed_packet, inflater)
                         }
                         None => {
-                            src.advance(7);
+                            advance_wiping(src, 7);
                             Ok(Some(ChunkInfo::Last(seq_id)))
                         }
                     }
@@ -409,9 +480,9 @@ impl CompDecoder {
             }
             CompDecoder::Packet { seq_id, needed } => {
                 if src.len() >= 7 + needed.needed() {
-                    src.advance(7);
+                    advance_wiping(src, 7);
                     needed.write_payload(&src[..needed.needed()], dst, inflater)?;
-                    src.advance(needed.needed());
+                    advance_wiping(src, needed.needed());
                     *self = CompDecoder::Idle;
                     Ok(Some(ChunkInfo::Last(seq_id)))
                 } else {
@@ -425,6 +496,35 @@ impl CompDecoder {
 /// Codec for MySql protocol packets.
 ///
 /// Codec supports both plain and compressed protocols.
+///
+/// # The `zeroize` feature
+///
+/// With the `zeroize` feature enabled the codec makes a best-effort attempt to wipe protocol
+/// bytes it has finished with. Precisely, it overwrites with zeros:
+///
+/// * bytes consumed from the `src` buffer passed to [`PacketCodec::decode`], before the buffer
+///   advances past them;
+/// * the compressed codec's internal staging buffers when they are cleared, when they have to
+///   grow (the old allocation is wiped after the live bytes are copied out), and when the
+///   codec is dropped;
+/// * partial output left in spare capacity by a failed inflate or deflate.
+///
+/// The following is **not** wiped, so this feature is not a guarantee that no copy of the
+/// data remains in memory:
+///
+/// * the internal state of the `flate2` compressor and decompressor (including the zlib
+///   sliding window, up to 32 KiB of recent plaintext), which `flate2` does not expose for
+///   wiping;
+/// * the output buffers owned by the caller: the decoded packet in the `dst` passed to
+///   [`PacketCodec::decode`] (including earlier allocations it releases when it grows,
+///   whether it is a `BytesMut` or a `Vec<u8>`), and the encoded bytes in the `dst` passed to
+///   [`PacketCodec::encode`] (when the codec itself has to grow that `dst`, the old
+///   allocation is wiped);
+/// * the packet passed to [`PacketCodec::encode`], and anything outside the codec such as
+///   socket buffers, the kernel, or copies made by the caller;
+/// * the plain (uncompressed) codec, which keeps no buffers of its own beyond `src`/`dst`.
+///
+/// Without the feature, behaviour is unchanged.
 #[derive(Debug)]
 pub struct PacketCodec {
     /// Maximum size of a packet for this codec.
@@ -677,6 +777,14 @@ struct CompPacketCodec {
     plain_codec: PlainPacketCodec,
 }
 
+#[cfg(feature = "zeroize")]
+impl Drop for CompPacketCodec {
+    fn drop(&mut self) {
+        clear_wiping(&mut self.in_buf);
+        clear_wiping(&mut self.out_buf);
+    }
+}
+
 impl CompPacketCodec {
     /// Sets sequence id to `0`.
     fn reset_seq_id(&mut self) {
@@ -752,14 +860,18 @@ impl CompPacketCodec {
         self.plain_codec
             .encode(packet, &mut self.out_buf, max_allowed_packet)?;
 
-        self.comp_seq_id = compress_with(
+        let result = compress_with(
             self.comp_seq_id,
             self.level,
             &mut self.deflater,
             max_allowed_packet,
             &mut self.out_buf,
             dst,
-        )?;
+        );
+        if cfg!(feature = "zeroize") && result.is_err() {
+            clear_wiping(&mut self.out_buf);
+        }
+        self.comp_seq_id = result?;
 
         // compress() drains out_buf but leaves allocated capacity behind.
         // Reclaim if over threshold to avoid holding megabytes idle.
@@ -773,6 +885,9 @@ impl CompPacketCodec {
         Ok(())
     }
 }
+
+#[cfg(all(test, feature = "zeroize"))]
+mod zeroize_tests;
 
 #[cfg(test)]
 mod tests {
