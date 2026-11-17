@@ -497,9 +497,34 @@ impl CompDecoder {
 ///
 /// Codec supports both plain and compressed protocols.
 ///
-/// With the `zeroize` feature enabled, bytes consumed from the `src` buffer passed to
-/// [`PacketCodec::decode`] are overwritten with zeros before the buffer advances past them,
-/// and the codec's internal buffers are wiped before they are cleared, regrown or dropped.
+/// # The `zeroize` feature
+///
+/// With the `zeroize` feature enabled the codec makes a best-effort attempt to wipe protocol
+/// bytes it has finished with. Precisely, it overwrites with zeros:
+///
+/// * bytes consumed from the `src` buffer passed to [`PacketCodec::decode`], before the buffer
+///   advances past them;
+/// * the compressed codec's internal staging buffers when they are cleared, when they have to
+///   grow (the old allocation is wiped after the live bytes are copied out), and when the
+///   codec is dropped;
+/// * partial output left in spare capacity by a failed inflate or deflate.
+///
+/// The following is **not** wiped, so this feature is not a guarantee that no copy of the
+/// data remains in memory:
+///
+/// * the internal state of the `flate2` compressor and decompressor (including the zlib
+///   sliding window, up to 32 KiB of recent plaintext), which `flate2` does not expose for
+///   wiping;
+/// * the output buffers owned by the caller: the decoded packet in the `dst` passed to
+///   [`PacketCodec::decode`] (including earlier allocations it releases when it grows,
+///   whether it is a `BytesMut` or a `Vec<u8>`), and the encoded bytes in the `dst` passed to
+///   [`PacketCodec::encode`] (when the codec itself has to grow that `dst`, the old
+///   allocation is wiped);
+/// * the packet passed to [`PacketCodec::encode`], and anything outside the codec such as
+///   socket buffers, the kernel, or copies made by the caller;
+/// * the plain (uncompressed) codec, which keeps no buffers of its own beyond `src`/`dst`.
+///
+/// Without the feature, behaviour is unchanged.
 #[derive(Debug)]
 pub struct PacketCodec {
     /// Maximum size of a packet for this codec.

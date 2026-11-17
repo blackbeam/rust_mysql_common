@@ -7,6 +7,10 @@
 // modified, or distributed except according to those terms.
 
 //! Tests for the `zeroize` feature of the packet codec.
+//!
+//! These tests install a `#[global_allocator]`, which applies to every test in the library test
+//! binary when it is built with the `zeroize` feature. The allocator only delegates to the
+//! system allocator and watches one allocation at a time.
 
 use super::*;
 
