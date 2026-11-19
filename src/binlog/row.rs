@@ -175,6 +175,11 @@ impl<'de> MyDeserialize<'de> for BinlogRow {
         let mut primary_key_iter = opt_meta_extractor.iter_primary_key();
         let mut column_name_iter = opt_meta_extractor.iter_column_name();
 
+        // Column metadata is read in one pass, because `TableMapEvent::get_column_metadata`
+        // walks the metadata of all preceding columns.
+        let columns_metadata = table_info.columns_metadata_raw();
+        let mut metadata_offset = Some(0);
+
         for i in 0..(num_columns as usize) {
             let column_type = table_info.get_column_type(i);
 
@@ -187,7 +192,19 @@ impl<'de> MyDeserialize<'de> for BinlogRow {
                 Err(e) => return Err(io::Error::new(io::ErrorKind::InvalidData, e)),
             };
 
-            let column_meta = table_info.get_column_metadata(i).unwrap_or(&[]);
+            let column_meta = match metadata_offset
+                .and_then(|offset| columns_metadata.get(offset..))
+                .and_then(|ptr| column_type.get_metadata(ptr, false))
+            {
+                Some((metadata, len)) => {
+                    metadata_offset = metadata_offset.map(|offset| offset + len);
+                    metadata
+                }
+                None => {
+                    metadata_offset = None;
+                    &[]
+                }
+            };
 
             let is_partial = column_type == ColumnType::MYSQL_TYPE_JSON
                 && partial_cols
