@@ -180,6 +180,11 @@ impl<'a> TableMapEvent<'a> {
         None
     }
 
+    /// Returns raw metadata of all columns.
+    pub(crate) fn columns_metadata_raw(&self) -> &[u8] {
+        self.columns_metadata.as_bytes()
+    }
+
     pub fn iter_optional_meta(&'a self) -> OptionalMetadataIter<'a> {
         OptionalMetadataIter {
             columns: &self.columns_type,
